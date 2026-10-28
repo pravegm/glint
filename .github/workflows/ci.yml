@@ -1,0 +1,148 @@
+name: CI
+
+# Our only compiler: builds Glint with Xcode 27.1, runs the unit tests on an iPhone 18 Pro simulator, then captures
+# demo-mode screenshots (ci/scenarios.txt via ci/screenshots.sh) and renders the app icon (screen=icon).
+# Adapted from the sister projects' ci.yml (Hush, Snapjaw), proven on these runners. Artifacts: `logs` (build.log,
+# errors.txt) and `screenshots` (ci-screens/: <scenario>.png, logs/, captures.tsv, device.txt, app-icon-1024.png).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Glint/**"
+      - "GlintTests/**"
+      - "project.yml"
+      - "ci/**"
+      - ".github/workflows/ci.yml"
+  workflow_dispatch:
+    inputs:
+      filter:
+        description: "Regex of scenario names to capture (ci/scenarios.txt); 'none' skips the captures"
+        type: string
+        default: "."
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: xcode-27
+    timeout-minutes: 90
+    env:
+      DEVICE: "iPhone 18 Pro"
+      # Balance harness seeds per pilot skill (GlintTests/BalanceTests.swift reads GLINT_BAL_SEEDS).
+      TEST_RUNNER_GLINT_BAL_SEEDS: "6"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 27.1
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.1.app
+          xcodebuild -version
+
+      - name: Generate project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Build and test
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project Glint.xcodeproj -scheme Glint \
+            -destination "platform=iOS Simulator,name=$DEVICE" \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee build.log | grep -E "error:|warning: .*Glint/|Test run|Suite .* (passed|failed)|✘|GLINT-BAL|\*\* " || true
+          grep -q "\*\* TEST SUCCEEDED \*\*" build.log
+
+      - name: Summarise errors
+        if: failure()
+        run: |
+          grep -E "error:|✘|failed" build.log | sort -u | head -300 > errors.txt || true
+          cat errors.txt
+          {
+            echo "### Build/test errors"
+            echo '```'
+            head -80 errors.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Balance table
+        if: always()
+        continue-on-error: true
+        run: |
+          [ -f build.log ] || exit 0
+          if grep -q "GLINT-BAL" build.log; then
+            {
+              echo "### Balance (GLINT-BAL, $TEST_RUNNER_GLINT_BAL_SEEDS seeds per skill)"
+              echo '```'
+              grep -oE "GLINT-BAL.*" build.log | awk '!seen[$0]++' | head -120
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: App icon check (warning only)
+        if: always()
+        continue-on-error: true
+        env:
+          WARN_ONLY: "1"
+        run: bash ci/icon-check.sh
+
+      - name: Capture screenshots
+        if: success() && inputs.filter != 'none'
+        timeout-minutes: 60
+        env:
+          SCENARIO_FILTER: ${{ inputs.filter || '.' }}
+        run: bash ci/screenshots.sh
+
+      - name: Render the app icon
+        # Non-fatal. `-glintDemo "screen=icon"` renders UI/AppIconArt.swift to a 1024 PNG and prints
+        # `GLINT-ICON <absolute path>` (a path in the sim's data container, which is a host path).
+        if: success() && inputs.filter != 'none'
+        continue-on-error: true
+        timeout-minutes: 6
+        run: |
+          set +e
+          set -uo pipefail
+          OUT="$PWD/ci-screens"; mkdir -p "$OUT/logs"
+          UDID=$(awk -F= '$1=="udid" {print $2}' "$OUT/device.txt" 2>/dev/null)
+          UDID="${UDID:-booted}"
+          LOG="$OUT/logs/icon.txt"; : > "$LOG"
+          to() { local s="$1"; shift; if command -v gtimeout >/dev/null 2>&1; then gtimeout -k 5 "$s" "$@"; elif command -v timeout >/dev/null 2>&1; then timeout -k 5 "$s" "$@"; else "$@"; fi; }
+          to 30 xcrun simctl terminate "$UDID" com.pravegm.glint 2>/dev/null || true
+          to 90 xcrun simctl launch --terminate-running-process \
+            --stdout="$LOG" --stderr="$LOG" "$UDID" com.pravegm.glint -glintDemo "screen=icon" >/dev/null \
+            || echo "::warning::icon launch failed"
+          src=""
+          for i in $(seq 1 40); do
+            src=$(grep -m1 -oE "GLINT-ICON .+" "$LOG" 2>/dev/null | sed -E 's/^GLINT-ICON +//; s/[[:space:]]+$//')
+            [ -n "$src" ] && [ -f "$src" ] && break
+            sleep 1
+          done
+          to 30 xcrun simctl terminate "$UDID" com.pravegm.glint 2>/dev/null || true
+          if [ -n "$src" ] && [ -f "$src" ]; then
+            cp "$src" "$OUT/app-icon-1024.png"
+            dims=$(sips -g pixelWidth -g pixelHeight "$OUT/app-icon-1024.png" 2>/dev/null | awk '/pixel/ {printf "%s ", $2}')
+            echo "App icon rendered: \`app-icon-1024.png\` ($dims) in the screenshots artifact." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::no app icon PNG (no GLINT-ICON line)"
+          fi
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs
+          path: |
+            build.log
+            errors.txt
+          if-no-files-found: ignore
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: ci-screens/
+          if-no-files-found: ignore

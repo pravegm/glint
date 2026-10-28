@@ -1,0 +1,293 @@
+// Glint Core R1 JS mirror (tuning only; the Swift in Glint/Core is the truth). Run: node sim.js  (env SEEDS, SKILLS, LEVELS, EXTRA=1)
+'use strict';
+const M64 = (1n << 64n) - 1n;
+class RNG {
+  constructor(seed) { this.s = BigInt.asUintN(64, BigInt(seed)); }
+  next() {
+    this.s = (this.s + 0x9E3779B97F4A7C15n) & M64;
+    let z = this.s;
+    z = ((z ^ (z >> 30n)) * 0xBF58476D1CE4E5B9n) & M64;
+    z = ((z ^ (z >> 27n)) * 0x94D049BB133111EBn) & M64;
+    return z ^ (z >> 31n);
+  }
+  unit() { return Number(this.next() >> 11n) * (1.0 / 9007199254740992.0); }
+  range(a, b) { return a + (b - a) * this.unit(); }
+  int(a, b) { if (b <= a) return a; const span = BigInt(b - a) + 1n; return a + Number(this.next() % span); }
+}
+
+const T = {
+  bandMin: -0.2, core: 0.05, edge: 0.085, flowerCount: 5, chainWindow: 1.6, sweepWindow: 0.35, maxMult: 4,
+  chainStep: 0.25, sweepMin: 3, sweepPer: 30, flowerBonus: 40, pad: 0.4, burn: 1.0,
+  ffSpeed: 0.075, ffRadius: 0.02, ffScorch: 0.35, ffDecay: 0.6, ffBloom: 50, ffWaveAmp: 0.06, ffWaveHz: 0.35,
+  splitCount: 2, splitFling: 0.07, splitFlingSpeed: 0.30, splitFlingTime: 0.6, splitSpreadU: 0.06,
+  hopRest: 0.9, hopDist: 0.14, hopTime: 0.22, hopHurry: 2.0,
+  substep: 1 / 120, endlessWave: 30, endlessSun: 600, dailyDuration: 90,
+};
+function smooth(t) { t = Math.min(Math.max(t, 0), 1); return t * t * (3 - 2 * t); }
+function intensityDist(dist) {
+  if (dist <= T.core) return 1;
+  if (dist >= T.edge) return 0;
+  return smooth((T.edge - dist) / (T.edge - T.core));
+}
+const SPEC = {
+  murk: { hp: 0.55, speed: 0.10, r: 0.050, pts: 10 },
+  wisp: { hp: 0.12, speed: 0.21, r: 0.030, pts: 5 },
+  brute: { hp: 3.6, speed: 0.065, r: 0.085, pts: 40 },
+  splitter: { hp: 0.7, speed: 0.09, r: 0.060, pts: 15 },
+  hopper: { hp: 0.8, speed: 0.14 / (0.9 + 0.22), r: 0.050, pts: 20 },
+};
+if (process.env.BRUTE_HP) SPEC.brute.hp = Number(process.env.BRUTE_HP);
+
+// ---------------- LevelBook ----------------
+// recipe: [title, dur, murks, flocks, flockSize, brutes, splitters, hoppers, fireflies, speed, crowd]
+const R = require('./recipes.js');
+function levelSeed(n) { return (0x474C494E54n * 1000n + BigInt(n) * 7919n); }
+const COST = { murk: 0.55, wisp: 0.22, brute: 3.0, splitter: 1.3, hopper: 1.3, firefly: 0.7 };
+const BIAS = { murk: 0, wisp: 0.1, brute: 0.3, splitter: 0.15, hopper: 0.2, firefly: 0.1 };
+function build(rec, rng, start, span, endPad) {
+  const items = [];
+  const S = rec.speed;
+  function uRange(w) { const c = rng.range(0.1 + w / 2, 0.9 - w / 2); return [c - w / 2, c + w / 2]; }
+  let left = rec.murks;
+  while (left > 0) {
+    const k = Math.min(left, rng.int(1, rec.crowd)); left -= k;
+    const line = k >= 3 && rng.unit() < 0.4;
+    items.push({ kind: 'murk', count: k, u: uRange(k === 1 ? 0.2 : 0.5), form: line ? 'line' : 'cluster' });
+  }
+  for (let i = 0; i < rec.flocks; i++) items.push({ kind: 'wisp', count: rec.flockSize, u: uRange(0.6), form: rng.unit() < 0.5 ? 0.16 : 'cluster' });
+  for (let i = 0; i < rec.brutes; i++) items.push({ kind: 'brute', count: 1, u: uRange(0.3), form: 'cluster' });
+  for (let i = 0; i < rec.splitters; i++) items.push({ kind: 'splitter', count: rng.unit() < rec.pair ? 2 : 1, u: uRange(0.5), form: 'line' });
+  for (let i = 0; i < rec.hoppers; i++) items.push({ kind: 'hopper', count: rng.unit() < rec.pair ? 2 : 1, u: uRange(0.5), form: 'line' });
+  for (let i = 0; i < rec.fireflies; i++) items.push({ kind: 'firefly', count: 1, u: uRange(0.4), form: 'cluster' });
+  for (const it of items) it.key = rng.unit() * (1 - BIAS[it.kind]) + BIAS[it.kind];
+  items.sort((x, y) => x.key - y.key);
+  let total = 0; for (const it of items) total += COST[it.kind] * it.count;
+  const t1 = span - endPad; let cum = 0;
+  const g = [];
+  for (const it of items) {
+    const c = COST[it.kind] * it.count; const mid = (cum + c / 2) / Math.max(total, 1e-9); cum += c;
+    // density 0.6 + 0.8x: F(x) = 0.6x + 0.4x^2  ->  x = (-0.6 + sqrt(0.36 + 1.6F)) / 0.8
+    const x = (-0.7 + Math.sqrt(0.49 + 1.2 * mid)) / 0.6;
+    const t = start + t1 * x;
+    g.push({ time: t, kind: it.kind, count: it.count, u: it.u, form: it.form, s: it.kind === 'firefly' ? 1 : S * (0.95 + 0.1 * x) });
+  }
+  return g;
+}
+function level(n) {
+  n = Math.min(Math.max(n, 1), 30);
+  const rec = R.levels[n - 1];
+  const rng = new RNG(levelSeed(n));
+  return { number: n, world: Math.floor((n - 1) / 10) + 1, title: rec.title, duration: rec.dur, groups: build(rec, rng, 2.5, rec.dur - 2.5, 8) };
+}
+function daily(day) {
+  const rng = new RNG(dailySeed(day) ^ 0x5A5A5A5An);
+  const rec = R.dailyRecipe(rng);
+  return { number: 0, world: 2, title: "Today's Dawn", duration: 90, groups: build(rec, rng, 2.5, 87.5, 8) };
+}
+function dailySeed(day) { const r = new RNG(0x474C494E54000000n ^ BigInt.asUintN(64, BigInt(day))); return r.next(); }
+
+// ---------------- Session ----------------
+class Session {
+  constructor(spec, seed, endless) {
+    this.rng = new RNG(seed);
+    this.spec = spec; this.endless = !!endless;
+    this.duration = spec ? spec.duration : 0;
+    this.phase = 'waiting'; this.time = 0; this.glooms = []; this.ffs = []; this.flowers = [true, true, true, true, true];
+    this.score = 0; this.chain = 0; this.lastPop = -1e9; this.sweep = 0; this.pops = 0; this.nextId = 1;
+    this.queue = []; this.qi = 0; this.seq = 0; this.firstBand = null; this.band = T.bandMin; this.wave = 0;
+    this.eaten = 0; this.scorched = 0; this.delivered = 0; this.longestChain = 0;
+    if (spec) this.expand(spec.groups, 0);
+  }
+  expand(groups, offset) {
+    for (const gr of groups) {
+      for (let i = 0; i < gr.count; i++) {
+        let t = gr.time + offset, u;
+        if (gr.form === 'cluster') u = this.rng.range(gr.u[0], gr.u[1]);
+        else if (gr.form === 'line') u = gr.u[0] + (gr.u[1] - gr.u[0]) * (i + 0.5) / gr.count;
+        else { u = gr.u[0] + (gr.u[1] - gr.u[0]) * (gr.count > 1 ? i / (gr.count - 1) : 0.5); t += gr.form * i; }
+        const phase = this.rng.unit();
+        this.queue.push({ seq: this.seq++, t, kind: gr.kind, u: Math.min(Math.max(u, 0.03), 0.97), s: gr.s, phase });
+      }
+    }
+    const rest = this.queue.slice(this.qi); rest.sort((a, b) => a.t - b.t || a.seq - b.seq); this.queue = rest; this.qi = 0;
+  }
+  get finished() { return this.phase === 'won' || this.phase === 'lost'; }
+  step(dt, inp) {
+    if (dt <= 0 || this.finished) return [];
+    const ev = [];
+    const b = Math.min(Math.max(inp.band, T.bandMin), 1);
+    if (this.phase === 'waiting') {
+      if (this.firstBand === null) this.firstBand = b;
+      if (!inp.isShut && (b >= 0 || Math.abs(b - this.firstBand) > 0.02)) { this.phase = 'playing'; ev.push(['started']); if (this.endless) this.startWave(ev); }
+      else { this.band = b; return ev; }
+    }
+    const n = Math.max(1, Math.ceil(dt / T.substep - 1e-9)); const h = dt / n;
+    const b0 = this.band;
+    for (let k = 1; k <= n && !this.finished; k++) {
+      const bb = b0 + (b - b0) * k / n;
+      this.sub(h, bb, !inp.isShut, ev);
+    }
+    this.band = b;
+    return ev;
+  }
+  startWave(ev) {
+    this.wave += 1;
+    if (this.wave > 1) ev.push(['waveUp', this.wave]);
+    const rec = R.endlessRecipe(this.wave, this.rng);
+    this.expand(build(rec, this.rng, 0, 30, 0), this.time);
+  }
+  sub(h, b, on, ev) {
+    this.time += h;
+    const now = this.time;
+    if (this.endless && now >= this.wave * T.endlessWave) this.startWave(ev);
+    while (this.qi < this.queue.length && this.queue[this.qi].t <= now) {
+      const e = this.queue[this.qi++];
+      if (e.kind === 'firefly') {
+        this.ffs.push({ id: this.nextId++, u: e.u, baseU: e.u, d: -T.ffRadius, scorch: 0, lit: 0, age: 0, speed: T.ffSpeed * e.s, phase: e.phase });
+      } else this.spawn(e.kind, e.u, null, e.s);
+    }
+    const kids = [];
+    let w = 0;
+    for (let r = 0; r < this.glooms.length; r++) {
+      const g = this.glooms[r];
+      const dist = Math.max(0, Math.abs(g.d - b) - T.pad * g.r);
+      const lit = on ? intensityDist(dist) : 0;
+      g.lit = lit;
+      g.hp -= lit * h * T.burn;
+      if (g.kind === 'hopper') {
+        if (!g.hopping) {
+          if (lit > 0 && !g.wasLit) { g.hopping = true; g.timer = 0; g.from = g.d; ev.push(['hopped', true]); }
+          else { g.timer += h * (1 + T.hopHurry * lit); if (g.timer >= g.rest) { g.hopping = true; g.timer = 0; g.from = g.d; ev.push(['hopped', false]); } }
+          g.tension = g.hopping ? 0 : Math.min(g.timer / g.rest, 1);
+        } else {
+          g.timer += h;
+          const f = Math.min(g.timer / T.hopTime, 1);
+          g.d = g.from + T.hopDist * smooth(f);
+          g.tension = 0;
+          if (f >= 1) { g.hopping = false; g.timer = 0; }
+        }
+      } else if (g.fling > 0) { g.d += T.splitFlingSpeed * h; g.fling -= h; g.tension = g.fling > 0 ? 1 : 0; }
+      else g.d += g.speed * h;
+      g.wasLit = lit > 0; g.age += h;
+      if (g.hp <= 0) { this.pop(g, ev); if (g.kind === 'splitter') kids.push(g); continue; }
+      if (g.d >= 1) { this.eat(g, ev); if (this.finished) return; continue; }
+      this.glooms[w++] = g;
+    }
+    this.glooms.length = w;
+    for (const p of kids) {
+      ev.push(['split']);
+      for (let i = 0; i < T.splitCount; i++) {
+        const du = (i === 0 ? -1 : 1) * T.splitSpreadU;
+        this.spawn('wisp', Math.min(Math.max(p.u + du, 0.03), 0.97), p.d + T.splitFling, p.speedScale, true);
+      }
+    }
+    w = 0;
+    for (let r = 0; r < this.ffs.length; r++) {
+      const f = this.ffs[r];
+      const dist = Math.max(0, Math.abs(f.d - b) - T.pad * T.ffRadius);
+      const lit = on ? intensityDist(dist) : 0;
+      f.lit = lit;
+      if (lit > 0) f.scorch += lit * h; else f.scorch = Math.max(0, f.scorch - T.ffDecay * h);
+      f.d += f.speed * h; f.age += h;
+      f.u = Math.min(Math.max(f.baseU + T.ffWaveAmp * Math.sin(2 * Math.PI * (f.age * T.ffWaveHz + f.phase)), 0.03), 0.97);
+      if (f.scorch >= T.ffScorch) { this.scorched++; ev.push(['scorched']); this.breakChain(ev); continue; }
+      if (f.d >= 1) { this.deliver(f, ev); continue; }
+      this.ffs[w++] = f;
+    }
+    this.ffs.length = w;
+    if (this.chain > 0 && now - this.lastPop > T.chainWindow) { ev.push(['chainEnded', this.chain]); this.chain = 0; this.sweep = 0; }
+    if (!this.endless && now >= this.duration) this.sunrise(ev);
+  }
+  spawn(kind, u, d, s, flung) {
+    const sp = SPEC[kind];
+    const g = { id: this.nextId++, kind, u, d: d === null ? -sp.r : d, r: sp.r, hp: sp.hp, maxHP: sp.hp, lit: 0, age: 0, tension: flung ? 1 : 0,
+      speed: sp.speed * s, speedScale: s, rest: T.hopRest / s, timer: 0, hopping: false, from: 0, fling: flung ? T.splitFlingTime : 0, wasLit: false };
+    this.glooms.push(g);
+  }
+  pop(g, ev) {
+    const now = this.time;
+    this.chain = (this.chain > 0 && now - this.lastPop <= T.chainWindow) ? this.chain + 1 : 1;
+    this.sweep = (this.sweep > 0 && now - this.lastPop <= T.sweepWindow) ? this.sweep + 1 : 1;
+    this.lastPop = now;
+    this.longestChain = Math.max(this.longestChain, this.chain);
+    const mult = Math.min(1 + T.chainStep * (this.chain - 1), T.maxMult);
+    const pts = Math.round(SPEC[g.kind].pts * mult);
+    this.score += pts; this.pops++;
+    ev.push(['popped', g.kind, this.chain, pts]);
+    if (this.sweep >= T.sweepMin) { const bonus = this.sweep === T.sweepMin ? T.sweepPer * T.sweepMin : T.sweepPer; this.score += bonus; ev.push(['swept', this.sweep, bonus]); }
+  }
+  breakChain(ev) { if (this.chain > 0) ev.push(['chainBroken', this.chain]); this.chain = 0; this.sweep = 0; }
+  lane(u) { return Math.min(Math.max(Math.floor(u * 5), 0), 4); }
+  eat(g, ev) {
+    let lane = this.lane(g.u);
+    if (!this.flowers[lane]) lane = this.nearest(lane, true);
+    if (lane < 0) return;
+    this.flowers[lane] = false; this.eaten++;
+    const left = this.flowers.filter(x => x).length;
+    ev.push(['eaten', lane, left, g.kind]);
+    this.breakChain(ev);
+    if (left === 0) { this.phase = 'lost'; ev.push(['nightWins']); }
+  }
+  nearest(lane, standing) {
+    for (let k = 1; k < 5; k++) for (const c of [lane - k, lane + k]) if (c >= 0 && c < 5 && this.flowers[c] === standing) return c;
+    return -1;
+  }
+  deliver(f, ev) {
+    this.delivered++;
+    let lane = this.lane(f.u);
+    if (this.flowers.some(x => !x)) {
+      if (this.flowers[lane]) lane = this.nearest(lane, false);
+      this.flowers[lane] = true; ev.push(['delivered', lane, true, 0]);
+    } else { this.score += T.ffBloom; ev.push(['delivered', lane, false, T.ffBloom]); }
+  }
+  sunrise(ev) {
+    const left = this.flowers.filter(x => x).length;
+    const bonus = T.flowerBonus * left; this.score += bonus;
+    this.glooms = []; this.ffs = [];
+    this.phase = left > 0 ? 'won' : 'lost';
+    ev.push(['sunrise', left]);
+  }
+  snapshot() { return { phase: this.phase, glooms: this.glooms, ffs: this.ffs, band: this.band, time: this.time, flowers: this.flowers }; }
+}
+
+// ---------------- Pilot ----------------
+const Pilot = require('./pilot.js')(T, SPEC, RNG);
+
+function run(spec, skill, seed, endless, cap) {
+  const s = new Session(spec, seed, endless);
+  const p = new Pilot(skill, seed * 7 + 1);
+  const dt = 1 / 60; let frames = 0; const maxF = (cap || 400) * 60;
+  while (!s.finished && frames < maxF) {
+    const b = p.band_(s.snapshot(), dt);
+    s.step(dt, { band: b, isShut: false });
+    frames++;
+  }
+  return { won: s.phase === 'won', flowers: s.flowers.filter(x => x).length, score: s.score, eaten: s.eaten, scorched: s.scorched, delivered: s.delivered, time: s.time, chain: s.longestChain, pops: s.pops };
+}
+module.exports = { run, level, daily, Session, Pilot, RNG, T, SPEC };
+
+if (require.main === module) {
+  const seeds = Number(process.env.SEEDS || 3);
+  const skills = (process.env.SKILLS || '0.3,0.6,0.9,1').split(',').map(Number);
+  const only = process.env.LEVELS ? process.env.LEVELS.split(',').map(Number) : null;
+  for (let n = 1; n <= 30; n++) {
+    if (only && !only.includes(n)) continue;
+    const spec = level(n);
+    const parts = [];
+    for (const sk of skills) {
+      let won = 0, fl = 0, sc = 0, ea = 0, fz = 0;
+      for (let i = 0; i < seeds; i++) { const r = run(spec, sk, 1 + i * 7919); if (r.won) won++; fl += r.flowers; sc += r.score; ea += r.eaten; fz += r.scorched; }
+      parts.push(`s${sk}: ${won}/${seeds} fl=${(fl / seeds).toFixed(1)} eat=${(ea / seeds).toFixed(1)} fz=${(fz / seeds).toFixed(1)} sc=${(sc / seeds).toFixed(0)}`);
+    }
+    const hp = spec.groups.reduce((a, g) => a + g.count * (g.kind === 'firefly' ? 0 : SPEC[g.kind].hp), 0);
+    console.log(`L${String(n).padStart(2)} ${spec.duration}s hp=${hp.toFixed(1)} | ` + parts.join(' | '));
+  }
+  if (process.env.EXTRA) {
+    for (const sk of skills) {
+      let t = 0, sc = 0; for (let i = 0; i < seeds; i++) { const r = run(null, sk, 1 + i * 7919, true, 900); t += r.time; sc += r.score; }
+      console.log(`endless s${sk}: time=${(t / seeds).toFixed(0)} score=${(sc / seeds).toFixed(0)}`);
+      let w = 0, f = 0; for (let d = 290; d < 290 + seeds; d++) { const r = run(daily(d), sk, Number(dailySeed(d) & 0xffffffn)); if (r.won) w++; f += r.flowers; }
+      console.log(`daily s${sk}: won=${w}/${seeds} fl=${(f / seeds).toFixed(1)}`);
+    }
+  }
+}

@@ -1,6 +1,6 @@
 name: TestFlight build status
 
-# Read-only: asks App Store Connect for Snapjaw's latest builds and their processing state (PROCESSING, VALID,
+# Read-only: asks App Store Connect for Glint's latest builds and their processing state (PROCESSING, VALID,
 # INVALID, FAILED), so "I can't see build N in TestFlight" can be answered without the founder opening the website.
 # Uses the same ASC_* secrets as testflight.yml; the key is written to a temp file and never echoed.
 
@@ -15,7 +15,7 @@ jobs:
       ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
       ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
-      BUNDLE_ID: com.pravegm.snapjaw
+      BUNDLE_ID: com.pravegm.glint
     steps:
       - name: Query App Store Connect
         run: |
@@ -45,5 +45,5 @@ jobs:
           out = "\n".join(lines)
           print(out)
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
-              f.write("### Snapjaw builds in App Store Connect\n\n" + out + "\n")
+              f.write("### Glint builds in App Store Connect\n\n" + out + "\n")
           PY

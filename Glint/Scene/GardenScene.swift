@@ -1,0 +1,1067 @@
+import Foundation
+import QuartzCore
+import SpriteKit
+import UIKit
+
+/// The frame loop's other half (ARCHITECTURE "Scene API"): the App's `GameController` advances the session and hands
+/// back what to draw; the scene forwards drags (SwiftUI-space points, y down).
+@MainActor
+protocol GardenDriver: AnyObject {
+    func advance(dt: Double, now: TimeInterval) -> (DawnSnapshot, [GameEvent])
+    func dragBegan(_ p: CGPoint)
+    func dragMoved(_ p: CGPoint)
+    func dragEnded()
+}
+
+/// How the canonical garden sits on the scene for a `GardenLayout`.
+///
+/// The canonical garden is drawn once in its own coordinates: x = d × depth (0 at the crease, `depth` at the flower
+/// edge) and y = u × span. A node with `position = origin`, `zRotation = dAngle` and `yScale = uFlip` puts it exactly on
+/// `layout.point(u:d:)` (converted to SpriteKit's y-up space) for all four layouts.
+struct GardenFrame {
+    let layout: GardenLayout
+    /// Scene point of (u 0, d 0).
+    let origin: CGPoint
+    /// The angle of +d in the scene.
+    let dAngle: CGFloat
+    /// +1 or −1: the canonical y axis's sign so it runs along +u.
+    let uFlip: CGFloat
+    let depth: CGFloat
+    let span: CGFloat
+    /// Unit vectors in the scene: towards the flowers (+d), and along +u.
+    let dUnit: CGVector
+    let uUnit: CGVector
+    /// The garden and mirror halves in scene coordinates (y up).
+    let gardenRect: CGRect
+    let mirrorRect: CGRect
+
+    init(layout: GardenLayout) {
+        self.layout = layout
+        let o = layout.scenePoint(layout.point(u: 0, d: 0))
+        let dd = layout.dDirection
+        let dScene = CGVector(dx: dd.dx, dy: -dd.dy)
+        let pu = layout.scenePoint(layout.point(u: 1, d: 0))
+        var uScene = CGVector(dx: pu.x - o.x, dy: pu.y - o.y)
+        let ul = max(sqrt(uScene.dx * uScene.dx + uScene.dy * uScene.dy), 0.000_1)
+        uScene = CGVector(dx: uScene.dx / ul, dy: uScene.dy / ul)
+        let a = atan2(dScene.dy, dScene.dx)
+        let localY = CGVector(dx: -sin(a), dy: cos(a))
+        let dot = localY.dx * uScene.dx + localY.dy * uScene.dy
+        origin = o
+        dAngle = a
+        uFlip = dot >= 0 ? 1 : -1
+        depth = layout.gardenDepth
+        span = layout.gardenSpan
+        dUnit = dScene
+        uUnit = uScene
+        let h = layout.size.height
+        gardenRect = GardenFrame.sceneRect(layout.gardenRect, height: h)
+        mirrorRect = GardenFrame.sceneRect(layout.mirrorRect, height: h)
+    }
+
+    /// A floor point in scene coordinates.
+    func scene(u: Double, d: Double) -> CGPoint { layout.scenePoint(layout.point(u: u, d: d)) }
+
+    /// A floor point in the canonical garden's coordinates.
+    func local(u: Double, d: Double) -> CGPoint { CGPoint(x: CGFloat(d) * depth, y: CGFloat(u) * span) }
+
+    /// A SwiftUI-space rect (y down) in scene coordinates (y up).
+    static func sceneRect(_ r: CGRect, height: CGFloat) -> CGRect {
+        CGRect(x: r.minX, y: height - r.maxY, width: r.width, height: r.height)
+    }
+}
+
+/// The garden: the SpriteKit view of a `DawnSnapshot` (ARCHITECTURE "Scene API"). It draws everything inside the canvas
+/// (the mirror with its dawn sky and rising sun, the crease, the lawn, the band of light, the glooms, fireflies,
+/// flowers and every cosmetic FX) and never changes game state.
+///
+/// Composition (z, all under `world`, which shakes):
+/// - 0  `garden` (canonical, rotated per layout): night lawn, dawn lawn, night veil, crease ink, dew glints, the band
+///   (bloom, warm wash, core, shimmer rays), the crease's pooled glow; the seam (46) and the night rolling in (55) too.
+/// - 12 flowers, 19 contact shadows, 20 glooms (ordered by d), 24 fireflies — upright, in scene points.
+/// - 30 particles and rings. 40 the mirror (it covers anything still inside the crease). 50 floating words.
+/// - 56 the sunrise flood.
+@MainActor
+final class GardenScene: SKScene {
+    weak var driver: GardenDriver?
+
+    /// Phone fallback: draw the brass lever on the mirror half.
+    var showsLever: Bool = false
+
+    /// Menus behind glass: softer, no floating words, no shake.
+    var attract: Bool = false {
+        didSet { applyMood() }
+    }
+
+    /// No shimmer, no shake, gentler idle motion, fewer particles.
+    var reduceMotion: Bool = false {
+        didSet { applyMood() }
+    }
+
+    private(set) var layout: GardenLayout
+    private(set) var gardenFrame: GardenFrame
+    /// The snapshot drawn last.
+    private(set) var snapshot: DawnSnapshot
+    /// Frames drawn since the scene was made.
+    private(set) var frameIndex: Int = 0
+    /// Gloom and firefly nodes ever created (pooling: this stops growing once the pool is warm).
+    private(set) var gloomNodesMade: Int = 0
+    private(set) var fireflyNodesMade: Int = 0
+
+    private let world = SKNode()
+    private let garden = SKNode()
+    private let groundNight = SKSpriteNode()
+    private let groundDawn = SKSpriteNode()
+    private let nightVeil = SKSpriteNode(color: .black, size: CGSize(width: 4, height: 4))
+    private let creaseInk = SKSpriteNode()
+    private let bandBloom = SKSpriteNode()
+    private let bandWash = SKSpriteNode()
+    private let bandCore = SKSpriteNode()
+    private let bandRays = SKSpriteNode()
+    private let creaseGlow = SKSpriteNode()
+    private let seam = SKSpriteNode()
+    private let seamGlow = SKSpriteNode()
+    private let nightRoll = SKSpriteNode()
+    private let flowersRoot = SKNode()
+    private let shadowsRoot = SKNode()
+    private let actorsRoot = SKNode()
+    private let firefliesRoot = SKNode()
+    private let flood = SKSpriteNode(color: .white, size: CGSize(width: 4, height: 4))
+    private let floodRays = SKSpriteNode()
+    private let mirror: GardenMirror
+    private let fx: GardenFX
+    private let labels: GardenLabels
+
+    private struct DewSpot {
+        let u: Double
+        let d: Double
+        let phase: CGFloat
+        let size: CGFloat
+    }
+
+    private var dew: [SKSpriteNode] = []
+    private var dewSpots: [DewSpot] = []
+    private var flowers: [GardenFlower] = []
+    private var laneDanger: [CGFloat] = []
+    private var glooms: [Int: GloomNode] = [:]
+    private var gloomPool: [GloomNode] = []
+    private var dyingGlooms: [GloomNode] = []
+    private var fireflies: [Int: GardenFirefly] = [:]
+    private var fireflyPool: [GardenFirefly] = []
+    private var dyingFireflies: [GardenFirefly] = []
+    private var scratch: [Int] = []
+    private var framePopped: [Int] = []
+    private var frameScorched: [Int] = []
+    private var frameDelivered: [Int] = []
+    private var frameEatenLanes: [Int] = []
+    private var frameEvaporate = false
+    private var recentPops: [(CGPoint, CGFloat)] = []
+    private var sweepSlot = -1
+    private var hasSnapshot = false
+    private var lastUpdate: TimeInterval?
+    private var animTime: CGFloat = 0
+    private var shakeAmp: CGFloat = 0
+    private var moteClock: CGFloat = 0
+    private var sunriseAge: CGFloat = -1
+    private var nightAge: CGFloat = -1
+    private(set) var nightLevel: CGFloat = 0
+    private(set) var floodLevel: CGFloat = 0
+    private var dragTouch: ObjectIdentifier?
+    private var groundKeys: [String] = []
+    private var rng = GardenRNG(seed: 0x6A2D)
+
+    // MARK: Read-outs (tests, the App)
+
+    /// Glooms drawn (alive in the snapshot), leaving (evaporating, diving, fading), and waiting in the pool.
+    var activeGloomCount: Int { glooms.count }
+    var dyingGloomCount: Int { dyingGlooms.count }
+    var pooledGloomCount: Int { gloomPool.count }
+    var activeFireflyCount: Int { fireflies.count }
+    /// Live particles, rings and flashes.
+    var fxActiveCount: Int { fx.activeCount }
+    /// The floating words on screen now.
+    var floatingTexts: [String] { labels.visibleTexts }
+    /// Every node under the scene, and those actually drawn (not hidden, not transparent).
+    var nodeCount: Int { GardenScene.countNodes(self, visibleOnly: false) }
+    var drawnNodeCount: Int { GardenScene.countNodes(self, visibleOnly: true) }
+    /// The canonical garden node (tests convert through it).
+    var gardenNode: SKNode { garden }
+    /// The lever is drawn (phone fallback).
+    var leverShowing: Bool { mirror.leverShowing }
+    var leverPoint: CGPoint { mirror.leverPoint }
+    /// The sun as drawn on the mirror (scene points).
+    var sunPoint: CGPoint { mirror.sunPoint }
+    /// The mirror's glass inside its frame (scene points).
+    var mirrorGlass: CGRect { mirror.inner }
+    /// The world drawn on the mirror's horizon (1…3).
+    var mirrorWorld: Int { mirror.world }
+    /// The canvas shake this frame (zero with Reduce Motion or in attract mode).
+    var shakeOffset: CGPoint { world.position }
+    /// The flowers as drawn: standing or not.
+    var flowersStanding: [Bool] { flowers.map { $0.standing } }
+    /// The band's core as drawn: its centre in scene points (nil while hidden).
+    var bandCenter: CGPoint? {
+        guard !bandCore.isHidden else { return nil }
+        return garden.convert(bandCore.position, to: self)
+    }
+
+    /// Where gloom `id` is drawn (scene points), if it is on screen.
+    func gloomPoint(id: Int) -> CGPoint? { glooms[id]?.drawnPoint }
+    /// Gloom `id` has its eyes squeezed shut in the light.
+    func gloomSqueezing(id: Int) -> Bool { glooms[id]?.isSqueezing ?? false }
+
+    /// The flowers as drawn (petals and leaves), in SwiftUI space (y down), for `layout`. The App keeps its HUD clear of
+    /// them. Lane i sits at u = (i + 0.5) / count, just inside the flower edge.
+    nonisolated static func flowerRects(layout: GardenLayout, count: Int = GardenMath.flowerCount) -> [CGRect] {
+        let n = max(count, 0)
+        guard n > 0 else { return [] }
+        let depth = layout.gardenDepth
+        let span = layout.gardenSpan
+        let r = GardenMath.flowerRadius(depth: depth, span: span, count: n) * 1.3
+        let d = GardenMath.flowerD(depth: depth, span: span, count: n)
+        var out: [CGRect] = []
+        for i in 0..<n {
+            let p = layout.point(u: (Double(i) + 0.5) / Double(n), d: d)
+            out.append(CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r))
+        }
+        return out
+    }
+
+    /// A floor point in scene coordinates.
+    func scenePoint(u: Double, d: Double) -> CGPoint { gardenFrame.scene(u: u, d: d) }
+
+    /// A scene point (y up) in SwiftUI space (y down), as the drag fallback wants it.
+    func swiftUIPoint(fromScene p: CGPoint) -> CGPoint { CGPoint(x: p.x, y: layout.size.height - p.y) }
+
+    // MARK: Life cycle
+
+    init(layout: GardenLayout) {
+        self.layout = layout
+        gardenFrame = GardenFrame(layout: layout)
+        snapshot = DawnSnapshot(mode: .level(1))
+        mirror = GardenMirror()
+        fx = GardenFX()
+        labels = GardenLabels(capacity: 8)
+        super.init(size: layout.size)
+        setUp()
+    }
+
+    required init?(coder aDecoder: NSCoder) {
+        fatalError("GardenScene is created in code with init(layout:)")
+    }
+
+    private func setUp() {
+        scaleMode = .aspectFill
+        anchorPoint = .zero
+        backgroundColor = GardenPalette.backdrop.ui
+
+        // Every texture the frame loop can ask for, built now (never mid-play).
+        CreatureArt.warmGlooms()
+        CreatureArt.warmFlowers(count: GardenMath.flowerCount)
+        MirrorArt.warm()
+        for i in 0..<3 { _ = GardenArt.petal(i) }
+        _ = GardenArt.inkDrop
+        _ = GardenArt.ring
+        _ = GardenArt.rays
+
+        world.zPosition = 0
+        addChild(world)
+
+        garden.zPosition = 0
+        world.addChild(garden)
+        groundNight.texture = nil
+        groundNight.zPosition = 0
+        groundDawn.zPosition = 0.5
+        nightVeil.color = GardenPalette.night.ui
+        nightVeil.zPosition = 1
+        creaseInk.texture = GardenArt.creaseInk
+        creaseInk.colorBlendFactor = 1
+        creaseInk.color = GardenInk(hex: 0x07040F).ui
+        creaseInk.anchorPoint = CGPoint(x: 0, y: 0.5)
+        creaseInk.zPosition = 2
+        bandBloom.texture = GardenArt.bandBloom
+        bandBloom.blendMode = .add
+        bandBloom.colorBlendFactor = 1
+        bandBloom.color = GardenPalette.amber.ui
+        bandBloom.zPosition = 4
+        bandWash.texture = GardenArt.bandProfile(lines: false)
+        bandWash.colorBlendFactor = 1
+        bandWash.color = GardenPalette.bandWash.ui
+        bandWash.zPosition = 5
+        bandCore.texture = GardenArt.bandProfile(lines: true)
+        bandCore.blendMode = .add
+        bandCore.colorBlendFactor = 1
+        bandCore.color = GardenPalette.bandCore.ui
+        bandCore.zPosition = 6
+        bandRays.texture = GardenArt.bandRays
+        bandRays.blendMode = .add
+        bandRays.colorBlendFactor = 1
+        bandRays.color = GardenPalette.goldHot.ui
+        bandRays.zPosition = 7
+        creaseGlow.texture = GardenArt.creaseGlow
+        creaseGlow.blendMode = .add
+        creaseGlow.colorBlendFactor = 1
+        creaseGlow.color = GardenPalette.amber.ui
+        creaseGlow.anchorPoint = CGPoint(x: 0, y: 0.5)
+        creaseGlow.zPosition = 8
+        seam.texture = GardenArt.seam
+        seam.zPosition = 46
+        seamGlow.texture = GardenArt.line
+        seamGlow.blendMode = .add
+        seamGlow.colorBlendFactor = 1
+        seamGlow.color = GardenPalette.gold.ui
+        seamGlow.zPosition = 46.5
+        nightRoll.texture = GardenArt.nightRoll
+        nightRoll.colorBlendFactor = 1
+        nightRoll.color = GardenInk(hex: 0x05061A).ui
+        nightRoll.anchorPoint = CGPoint(x: 1, y: 0.5)
+        nightRoll.zPosition = 55
+        nightRoll.isHidden = true
+        for n in [groundNight, groundDawn, nightVeil, creaseInk, bandBloom, bandWash, bandCore, bandRays, creaseGlow,
+                  seam, seamGlow, nightRoll] {
+            garden.addChild(n)
+        }
+        for n in [groundNight, groundDawn, nightVeil] { n.anchorPoint = .zero }
+
+        // Dew glints: fixed drops that sparkle where the band crosses them.
+        var dr = GardenRNG(seed: 0xDE_77)
+        for _ in 0..<22 {
+            let s = SKSpriteNode(texture: GardenArt.sparkle)
+            s.blendMode = .add
+            s.colorBlendFactor = 1
+            s.color = GardenInk(hex: 0xFFF8DC).ui
+            s.zPosition = 3
+            s.isHidden = true
+            garden.addChild(s)
+            dew.append(s)
+            dewSpots.append(DewSpot(u: Double(dr.range(0.03, 0.97)), d: Double(dr.range(0.08, 0.84)),
+                                    phase: dr.range(0, 6.28), size: dr.range(9, 16)))
+        }
+
+        flowersRoot.zPosition = 12
+        shadowsRoot.zPosition = 19
+        actorsRoot.zPosition = 20
+        firefliesRoot.zPosition = 24
+        fx.root.zPosition = 30
+        mirror.root.zPosition = 40
+        labels.root.zPosition = 50
+        flood.zPosition = 56
+        floodRays.zPosition = 56.5
+        let layers: [SKNode] = [flowersRoot, shadowsRoot, actorsRoot, firefliesRoot, fx.root, mirror.root, labels.root,
+                                flood, floodRays]
+        for n in layers { world.addChild(n) }
+        flood.blendMode = .add
+        flood.color = GardenInk(hex: 0xFFB648).ui
+        flood.isHidden = true
+        floodRays.texture = GardenArt.rays
+        floodRays.blendMode = .add
+        floodRays.colorBlendFactor = 1
+        floodRays.color = GardenPalette.goldHot.ui
+        floodRays.isHidden = true
+
+        // A warm pool, so the first wave never allocates nodes mid-play.
+        for _ in 0..<12 {
+            gloomPool.append(GloomNode())
+            gloomNodesMade += 1
+        }
+        for _ in 0..<3 {
+            fireflyPool.append(GardenFirefly())
+            fireflyNodesMade += 1
+        }
+        rebuildFlowers(count: GardenMath.flowerCount)
+        applyMood()
+        applyLayoutNow()
+    }
+
+    /// Rotation, swap or resize: rebuild every position for `newLayout`, keeping each gloom's state.
+    func apply(layout newLayout: GardenLayout) {
+        let old = gardenFrame
+        layout = newLayout
+        applyLayoutNow()
+        let f = gardenFrame
+        if old.layout.foldVertical == f.layout.foldVertical && old.layout.gardenAfter == f.layout.gardenAfter {
+            // Same way round: in-flight bursts move with the garden.
+            let delta = CGVector(dx: f.origin.x - old.origin.x, dy: f.origin.y - old.origin.y)
+            fx.shift(by: delta)
+            labels.shift(by: delta)
+        } else {
+            // Turned: bursts can't follow; the glooms keep their own state (light, hops, blinks).
+            fx.clear()
+            labels.clear()
+            for n in dyingGlooms { releaseGloom(n) }
+            dyingGlooms.removeAll()
+        }
+    }
+
+    /// A new session the App announces (also detected on its own when the clock runs backwards or the mode changes).
+    func reset() {
+        hasSnapshot = false
+    }
+
+    private func applyMood() {
+        var k: CGFloat = attract ? 0.6 : 1
+        if reduceMotion { k *= 0.5 }
+        fx.density = k
+        if attract { labels.clear() }
+        if attract || reduceMotion {
+            shakeAmp = 0
+            world.position = .zero
+        }
+    }
+
+    private func applyLayoutNow() {
+        let f = GardenFrame(layout: layout)
+        gardenFrame = f
+        if size != layout.size { size = layout.size }
+        garden.position = f.origin
+        garden.zRotation = f.dAngle
+        garden.xScale = 1
+        garden.yScale = f.uFlip
+        let depth = max(f.depth, 1)
+        let span = max(f.span, 1)
+
+        // The lawn, cached per size (a few recent sizes are kept for rotating back and forth).
+        groundNight.texture = GardenArt.ground(depth: depth, span: span, warm: false)
+        groundDawn.texture = GardenArt.ground(depth: depth, span: span, warm: true)
+        let keys = [GardenArt.groundKey(depth: depth, span: span, warm: false),
+                    GardenArt.groundKey(depth: depth, span: span, warm: true)]
+        groundKeys.removeAll { keys.contains($0) }
+        groundKeys.append(contentsOf: keys)
+        if groundKeys.count > 4 { groundKeys.removeFirst(groundKeys.count - 4) }
+        GardenArt.purge(prefix: "ground-", keeping: groundKeys)
+        for n in [groundNight, groundDawn, nightVeil] {
+            n.position = .zero
+            n.size = CGSize(width: depth, height: span)
+        }
+        creaseInk.position = CGPoint(x: 0, y: span / 2)
+        creaseInk.size = CGSize(width: depth * 0.14, height: span)
+        creaseGlow.position = CGPoint(x: 0, y: span / 2)
+        creaseGlow.size = CGSize(width: depth * 0.22, height: span)
+        seam.position = CGPoint(x: 0, y: span / 2)
+        seam.size = CGSize(width: max(6, depth * 0.014), height: span)
+        seamGlow.position = CGPoint(x: 0, y: span / 2)
+        seamGlow.size = CGSize(width: max(12, depth * 0.035), height: span)
+        let edgeW = CGFloat(GardenMath.bandEdge) * depth * 2
+        bandWash.size = CGSize(width: edgeW, height: span)
+        bandCore.size = CGSize(width: edgeW, height: span)
+        bandRays.size = CGSize(width: edgeW, height: span * 1.3)
+        bandBloom.size = CGSize(width: depth * 0.4, height: span)
+        nightRoll.size = CGSize(width: 1, height: span)
+        for (i, s) in dew.enumerated() {
+            let sp = dewSpots[i]
+            s.position = f.local(u: sp.u, d: sp.d)
+            s.size = CGSize(width: sp.size, height: sp.size)
+        }
+        placeFlowers()
+        mirror.apply(rect: f.mirrorRect, towardCrease: f.dUnit)
+        flood.size = layout.size
+        flood.position = CGPoint(x: layout.size.width / 2, y: layout.size.height / 2)
+        let fr = max(layout.size.width, layout.size.height) * 1.3
+        floodRays.size = CGSize(width: fr, height: fr)
+    }
+
+    private func rebuildFlowers(count n: Int) {
+        for fl in flowers { fl.root.removeFromParent() }
+        flowers.removeAll()
+        for i in 0..<max(n, 0) {
+            let fl = GardenFlower(index: i)
+            flowersRoot.addChild(fl.root)
+            flowers.append(fl)
+        }
+        laneDanger = Array(repeating: 0, count: max(n, 0))
+        placeFlowers()
+    }
+
+    private var flowerRadius: CGFloat {
+        GardenMath.flowerRadius(depth: gardenFrame.depth, span: gardenFrame.span, count: max(flowers.count, 1))
+    }
+
+    private var flowerD: Double {
+        GardenMath.flowerD(depth: gardenFrame.depth, span: gardenFrame.span, count: max(flowers.count, 1))
+    }
+
+    private func placeFlowers() {
+        let n = flowers.count
+        guard n > 0 else { return }
+        let r = flowerRadius
+        let d = flowerD
+        for (i, fl) in flowers.enumerated() {
+            let u = (Double(i) + 0.5) / Double(n)
+            fl.place(at: gardenFrame.scene(u: u, d: d), radius: r)
+        }
+    }
+
+    private func flowerPoint(_ lane: Int) -> CGPoint {
+        let n = max(flowers.count, 1)
+        let l = min(max(lane, 0), n - 1)
+        return gardenFrame.scene(u: (Double(l) + 0.5) / Double(n), d: flowerD)
+    }
+
+    private func flowerColor(_ lane: Int) -> GardenInk {
+        guard lane >= 0, lane < flowers.count else { return GardenPalette.petals[0] }
+        return flowers[lane].color
+    }
+
+    private static func lane(for u: Double, count: Int) -> Int {
+        guard count > 0, u.isFinite else { return 0 }
+        let k = Int((min(max(u, 0), 1) * Double(count)).rounded(.down))
+        return min(max(k, 0), count - 1)
+    }
+
+    // MARK: Sizes
+
+    private var labelSize: CGFloat {
+        GardenMath.clamp(min(gardenFrame.depth, gardenFrame.span) * 0.075, 24, 46)
+    }
+
+    private var fireflySize: CGFloat { GardenMath.clamp(gardenFrame.depth * 0.03, 10, 18) }
+
+    /// A kind's typical radius (points), for FX when the node isn't on screen.
+    private func nominalRadius(_ kind: GloomKind) -> CGFloat {
+        let d: CGFloat
+        switch kind {
+        case .murk: d = 0.050
+        case .wisp: d = 0.030
+        case .brute: d = 0.085
+        case .splitter: d = 0.060
+        case .hopper: d = 0.050
+        }
+        return max(d * gardenFrame.depth, 6)
+    }
+
+    /// Keeps a floating word inside the garden.
+    private func clampLabel(_ p: CGPoint) -> CGPoint {
+        let g = gardenFrame.gardenRect.insetBy(dx: labelSize * 1.6, dy: labelSize * 0.9)
+        guard g.width > 0, g.height > 0 else { return p }
+        return CGPoint(x: min(max(p.x, g.minX), g.maxX), y: min(max(p.y, g.minY), g.maxY))
+    }
+
+    // MARK: Frame loop
+
+    override func update(_ currentTime: TimeInterval) {
+        super.update(currentTime)
+        var dt: Double = 1.0 / 120.0
+        if let last = lastUpdate { dt = min(max(currentTime - last, 0), 1.0 / 30.0) }
+        lastUpdate = currentTime
+        if let d = driver {
+            let out = d.advance(dt: dt, now: CACurrentMediaTime())
+            render(out.0, events: out.1, dt: dt)
+        } else {
+            render(snapshot, events: [], dt: dt)
+        }
+    }
+
+    private func isNewSession(_ s: DawnSnapshot) -> Bool {
+        if !hasSnapshot { return true }
+        if s.mode != snapshot.mode { return true }
+        if s.time + 0.25 < snapshot.time { return true }
+        let wasOver = snapshot.phase == .won || snapshot.phase == .lost
+        if wasOver && (s.phase == .waiting || s.phase == .playing) { return true }
+        return false
+    }
+
+    /// Clears every effect and draws `s` as it stands (no animations).
+    private func beginSession(_ s: DawnSnapshot) {
+        for (_, n) in glooms { releaseGloom(n) }
+        glooms.removeAll()
+        for n in dyingGlooms { releaseGloom(n) }
+        dyingGlooms.removeAll()
+        for (_, f) in fireflies { releaseFirefly(f) }
+        fireflies.removeAll()
+        for f in dyingFireflies { releaseFirefly(f) }
+        dyingFireflies.removeAll()
+        fx.clear()
+        labels.clear()
+        recentPops.removeAll()
+        sweepSlot = -1
+        shakeAmp = 0
+        world.position = .zero
+        sunriseAge = s.phase == .won ? 10 : -1
+        nightAge = s.phase == .lost ? 10 : -1
+        if s.flowers.count != flowers.count { rebuildFlowers(count: s.flowers.count) }
+        for (i, fl) in flowers.enumerated() where i < s.flowers.count {
+            fl.setStanding(s.flowers[i], animated: false)
+        }
+    }
+
+    /// Draws one frame from `s` and its `events` with `dt` seconds of animation (tests call it directly).
+    func render(_ s: DawnSnapshot, events: [GameEvent], dt rawDt: Double) {
+        let dt = CGFloat(min(max(rawDt.isFinite ? rawDt : 0, 0), 0.1))
+        if isNewSession(s) { beginSession(s) }
+        snapshot = s
+        hasSnapshot = true
+        frameIndex += 1
+        animTime += dt
+        let motion: CGFloat = reduceMotion ? 0.35 : 1
+        let dawn = GardenMath.dawn(s)
+        let w = GardenMath.world(for: s.mode)
+        if mirror.world != w { mirror.setWorld(w) }
+
+        framePopped.removeAll(keepingCapacity: true)
+        frameScorched.removeAll(keepingCapacity: true)
+        frameDelivered.removeAll(keepingCapacity: true)
+        frameEatenLanes.removeAll(keepingCapacity: true)
+        frameEvaporate = false
+        if !events.isEmpty { handle(events) }
+
+        syncFlowers(s, dt: dt, dawn: dawn, motion: motion)
+        syncGlooms(s, dt: dt, motion: motion)
+        syncFireflies(s, dt: dt, motion: motion)
+        drawLight(s, dt: dt, dawn: dawn, motion: motion)
+        drawOverlays(dt: dt)
+
+        let band = CGFloat(s.band)
+        let light = max(CGFloat(GardenMath.clamp(s.creaseGlow, 0, 1)), band >= 0 ? 1 : 0)
+        let leverT = CGFloat((GardenMath.clamp(s.band, GardenMath.bandMin, 1) - GardenMath.bandMin)
+                             / (1 - GardenMath.bandMin))
+        mirror.update(dt: dt, time: animTime, dawn: dawn, band: band, light: light, veilLevel: nightLevel,
+                      lever: showsLever, leverT: leverT, motion: motion)
+
+        fx.update(dt)
+        labels.update(dt)
+
+        if shakeAmp > 0.05 && !reduceMotion && !attract {
+            shakeAmp *= exp(-dt * 9)
+            world.position = CGPoint(x: sin(animTime * 67) * shakeAmp, y: cos(animTime * 53) * shakeAmp)
+        } else {
+            shakeAmp = 0
+            world.position = .zero
+        }
+    }
+
+    // MARK: Events → FX
+
+    private func recordPop(_ p: CGPoint) {
+        recentPops.append((p, animTime))
+        if recentPops.count > 12 { recentPops.removeFirst(recentPops.count - 12) }
+    }
+
+    /// The centre of the last pops (a sweep's burst).
+    private func sweepCentre() -> CGPoint {
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var n: CGFloat = 0
+        for (p, t) in recentPops where animTime - t < 0.6 {
+            x += p.x
+            y += p.y
+            n += 1
+        }
+        if n > 0 { return CGPoint(x: x / n, y: y / n) }
+        let g = gardenFrame.gardenRect
+        return CGPoint(x: g.midX, y: g.midY)
+    }
+
+    private func handle(_ events: [GameEvent]) {
+        let f = gardenFrame
+        for e in events {
+            switch e {
+            case .emerged(_, let kind, let u):
+                fx.ink(at: f.scene(u: u, d: 0.02), radius: nominalRadius(kind), count: 4, toward: f.dUnit)
+            case .popped(let id, let kind, let u, let d, let chain, _):
+                framePopped.append(id)
+                var p = f.scene(u: u, d: d)
+                var r = nominalRadius(kind)
+                if let n = glooms[id] {
+                    p = n.drawnPoint
+                    r = n.radiusPts
+                }
+                fx.pop(at: p, radius: r, big: kind == .brute || kind == .splitter, chain: chain)
+                recordPop(p)
+                if chain >= 3 && !attract {
+                    labels.show("×\(chain)", at: clampLabel(CGPoint(x: p.x, y: p.y + r * 1.3)), size: labelSize * 0.72,
+                                color: GardenPalette.goldHot, rise: 34, life: 0.8)
+                }
+            case .swept(let count, _):
+                let c = sweepCentre()
+                fx.rings.spawn(at: c, fromRadius: 10, toRadius: labelSize * 4, life: 0.55, color: GardenPalette.gold.ui,
+                               alpha: 0.9)
+                if !attract {
+                    let text = count > 3 ? "Sweep ×\(count)!" : "Sweep!"
+                    if !labels.retext(sweepSlot, text, size: labelSize, color: GardenPalette.gold) {
+                        sweepSlot = labels.show(text, at: clampLabel(CGPoint(x: c.x, y: c.y + labelSize)),
+                                                size: labelSize, color: GardenPalette.gold, rise: 40, life: 1.1)
+                    }
+                }
+            case .split(let u, let d):
+                fx.ink(at: f.scene(u: u, d: d), radius: nominalRadius(.splitter), count: 6,
+                       toward: CGVector(dx: 0, dy: 0))
+            case .hopped(let id, let u, let d, let skittish):
+                var p = f.scene(u: u, d: d)
+                var r = nominalRadius(.hopper)
+                if let n = glooms[id] {
+                    n.hop()
+                    p = n.drawnPoint
+                    r = n.radiusPts
+                }
+                fx.dust(at: p, radius: r, color: GardenInk(hex: 0xB9C7A8))
+                if skittish && !attract {
+                    labels.show("!", at: clampLabel(CGPoint(x: p.x + r * 0.9, y: p.y + r * 1.4)), size: labelSize * 0.8,
+                                color: GardenInk.white, rise: 20, life: 0.5)
+                }
+            case .fireflyEmerged(_, let u):
+                fx.twinkle(at: f.scene(u: u, d: 0.03), size: fireflySize * 2.4, color: GardenPalette.firefly)
+            case .fireflyScorched(let id, let u, let d):
+                frameScorched.append(id)
+                var p = f.scene(u: u, d: d)
+                if let ff = fireflies[id] { p = ff.drawnPoint }
+                fx.fizzle(at: p, size: fireflySize)
+            case .fireflyDelivered(let id, let lane, let replanted, let points):
+                frameDelivered.append(id)
+                let target = flowerPoint(lane)
+                var from = CGPoint(x: target.x - f.dUnit.dx * 40, y: target.y - f.dUnit.dy * 40)
+                if let ff = fireflies[id] { from = ff.drawnPoint }
+                fx.trail(from: from, to: target, color: GardenPalette.firefly)
+                fx.rings.spawn(at: target, fromRadius: 6, toRadius: flowerRadius * 2.4, life: 0.5,
+                               color: GardenPalette.firefly.ui, alpha: 0.8)
+                let col = flowerColor(lane)
+                fx.petals(at: target, spread: 60, count: 6, colors: [col, col.lighter(0.35)])
+                if !replanted && !attract {
+                    labels.show("+\(points)", at: clampLabel(CGPoint(x: target.x, y: target.y + flowerRadius * 1.6)),
+                                size: labelSize * 0.7, color: GardenPalette.firefly, rise: 30, life: 0.9)
+                }
+            case .flowerEaten(let lane, _, _):
+                frameEatenLanes.append(lane)
+                let p = flowerPoint(lane)
+                let col = flowerColor(lane)
+                fx.petals(at: p, spread: 120, count: 12, colors: [col, col.lighter(0.3), col.darker(0.15)])
+                fx.ink(at: p, radius: flowerRadius, count: 6, toward: CGVector(dx: 0, dy: 0))
+                if !reduceMotion && !attract { shakeAmp = max(shakeAmp, 7) }
+            case .chainBroken(_), .chainEnded(_), .hint(_):
+                break
+            case .started:
+                for i in 0..<7 {
+                    let u = (Double(i) + 0.5) / 7
+                    fx.twinkle(at: f.scene(u: u, d: 0.02), size: 18, color: GardenPalette.goldHot)
+                }
+            case .sunrise(_, _):
+                frameEvaporate = true
+                sunriseAge = 0
+                fx.confetti(in: f.gardenRect, count: attract ? 10 : 22)
+            case .nightWins:
+                nightAge = 0
+            case .waveUp(let n):
+                if !attract {
+                    let g = f.gardenRect
+                    labels.show("Wave \(n)", at: CGPoint(x: g.midX, y: g.midY), size: labelSize * 1.1,
+                                color: GardenPalette.goldHot, rise: 24, life: 1.6)
+                }
+            }
+        }
+    }
+
+    // MARK: Glooms
+
+    private func acquireGloom(_ kind: GloomKind, id: Int) -> GloomNode {
+        let n: GloomNode
+        if let last = gloomPool.popLast() {
+            n = last
+        } else {
+            n = GloomNode()
+            gloomNodesMade += 1
+        }
+        n.configure(kind: kind, id: id)
+        if n.root.parent == nil { actorsRoot.addChild(n.root) }
+        if n.shadow.parent == nil { shadowsRoot.addChild(n.shadow) }
+        return n
+    }
+
+    private func releaseGloom(_ n: GloomNode) {
+        n.root.removeFromParent()
+        n.shadow.removeFromParent()
+        gloomPool.append(n)
+    }
+
+    private func syncGlooms(_ s: DawnSnapshot, dt: CGFloat, motion: CGFloat) {
+        let f = gardenFrame
+        for g in s.glooms {
+            let node: GloomNode
+            if let n = glooms[g.id] {
+                node = n
+                if n.kind != g.kind { n.configure(kind: g.kind, id: g.id) }
+            } else {
+                node = acquireGloom(g.kind, id: g.id)
+                glooms[g.id] = node
+            }
+            node.seenFrame = frameIndex
+            let p = f.scene(u: g.u, d: g.d)
+            let r = max(CGFloat(g.radius) * f.depth, 4)
+            // Further along d draws in front.
+            node.root.zPosition = CGFloat(GardenMath.clamp(g.d, -0.5, 1.5)) * 2
+            node.update(g, at: p, radius: r, dir: f.dUnit, dt: dt, time: animTime, motion: motion)
+            if g.lit > 0.02 && dt > 0 {
+                let lit = CGFloat(g.lit)
+                node.steamClock += dt * lit * 14 * fx.density
+                while node.steamClock >= 1 {
+                    node.steamClock -= 1
+                    fx.steam(at: node.drawnPoint, radius: r)
+                }
+                node.emberClock += dt * lit * 9 * fx.density
+                while node.emberClock >= 1 {
+                    node.emberClock -= 1
+                    fx.ember(at: node.drawnPoint, radius: r)
+                }
+            }
+            if g.kind == .wisp && node.tension > 0.5 && dt > 0 {
+                node.trailClock += dt * 30 * fx.density
+                while node.trailClock >= 1 {
+                    node.trailClock -= 1
+                    fx.trailMote(at: node.drawnPoint, size: r * 1.4, color: GardenPalette.inkMid, inky: true)
+                }
+            }
+        }
+
+        // Gone from the snapshot: popped (the burst already played), evaporated, eaten, or simply removed.
+        scratch.removeAll(keepingCapacity: true)
+        for (id, n) in glooms where n.seenFrame != frameIndex { scratch.append(id) }
+        for id in scratch {
+            guard let n = glooms.removeValue(forKey: id) else { continue }
+            if framePopped.contains(id) {
+                releaseGloom(n)
+                continue
+            }
+            if frameEvaporate || s.phase == .won {
+                n.startDeath(.evaporate, target: nil)
+                fx.evaporate(at: n.drawnPoint, radius: n.radiusPts)
+            } else if !frameEatenLanes.isEmpty && n.lastD > 0.75 {
+                let lane = GardenScene.lane(for: n.lastU, count: flowers.count)
+                let target = frameEatenLanes.contains(lane) ? flowerPoint(lane) : flowerPoint(frameEatenLanes[0])
+                n.startDeath(.eaten, target: target)
+            } else {
+                n.startDeath(.fade, target: nil)
+            }
+            dyingGlooms.append(n)
+        }
+        var i = 0
+        while i < dyingGlooms.count {
+            if dyingGlooms[i].updateDying(dt: dt, time: animTime) {
+                i += 1
+            } else {
+                let n = dyingGlooms.remove(at: i)
+                releaseGloom(n)
+            }
+        }
+    }
+
+    // MARK: Fireflies
+
+    private func acquireFirefly(id: Int) -> GardenFirefly {
+        let n: GardenFirefly
+        if let last = fireflyPool.popLast() {
+            n = last
+        } else {
+            n = GardenFirefly()
+            fireflyNodesMade += 1
+        }
+        n.configure(id: id)
+        if n.root.parent == nil { firefliesRoot.addChild(n.root) }
+        return n
+    }
+
+    private func releaseFirefly(_ n: GardenFirefly) {
+        n.root.removeFromParent()
+        fireflyPool.append(n)
+    }
+
+    private func syncFireflies(_ s: DawnSnapshot, dt: CGFloat, motion: CGFloat) {
+        let f = gardenFrame
+        let size = fireflySize
+        for ff in s.fireflies {
+            let node: GardenFirefly
+            if let n = fireflies[ff.id] {
+                node = n
+            } else {
+                node = acquireFirefly(id: ff.id)
+                fireflies[ff.id] = node
+            }
+            node.seenFrame = frameIndex
+            node.update(ff, at: f.scene(u: ff.u, d: ff.d), size: size, dt: dt, time: animTime, motion: motion)
+            if dt > 0 {
+                node.trailClock += dt * 16 * fx.density
+                while node.trailClock >= 1 {
+                    node.trailClock -= 1
+                    fx.trailMote(at: node.tailPoint, size: size * 0.7, color: node.tint, inky: false)
+                }
+            }
+        }
+        scratch.removeAll(keepingCapacity: true)
+        for (id, n) in fireflies where n.seenFrame != frameIndex { scratch.append(id) }
+        for id in scratch {
+            guard let n = fireflies.removeValue(forKey: id) else { continue }
+            if frameScorched.contains(id) || frameDelivered.contains(id) {
+                releaseFirefly(n)
+            } else {
+                n.startFade()
+                dyingFireflies.append(n)
+            }
+        }
+        var i = 0
+        while i < dyingFireflies.count {
+            if dyingFireflies[i].updateFade(dt: dt) {
+                i += 1
+            } else {
+                let n = dyingFireflies.remove(at: i)
+                releaseFirefly(n)
+            }
+        }
+    }
+
+    // MARK: Flowers
+
+    private func syncFlowers(_ s: DawnSnapshot, dt: CGFloat, dawn: CGFloat, motion: CGFloat) {
+        let n = s.flowers.count
+        if n != flowers.count { rebuildFlowers(count: n) }
+        guard n > 0 else { return }
+        for i in 0..<laneDanger.count { laneDanger[i] = 0 }
+        for g in s.glooms {
+            let lane = GardenScene.lane(for: g.u, count: n)
+            let k = GardenMath.smooth(0.6, 0.95, CGFloat(g.d))
+            if lane < laneDanger.count && k > laneDanger[lane] { laneDanger[lane] = k }
+        }
+        let edgeLight = CGFloat(GardenMath.intensity(d: flowerD, band: s.band))
+        let r = flowerRadius
+        for (i, fl) in flowers.enumerated() {
+            let want = s.flowers[i]
+            if fl.standing != want {
+                fl.setStanding(want, animated: true)
+                if want {
+                    let p = flowerPoint(i)
+                    fx.rings.spawn(at: p, fromRadius: r * 0.4, toRadius: r * 2.6, life: 0.6,
+                                   color: fl.color.lighter(0.4).ui, alpha: 0.9)
+                    fx.petals(at: p, spread: 50, count: 5, colors: [fl.color])
+                }
+            }
+            let danger: CGFloat = i < laneDanger.count ? laneDanger[i] : 0
+            fl.update(dt: dt, time: animTime, dawn: dawn, light: edgeLight, danger: danger, motion: motion)
+        }
+    }
+
+    // MARK: Light, lawn and crease
+
+    private func drawLight(_ s: DawnSnapshot, dt: CGFloat, dawn: CGFloat, motion: CGFloat) {
+        let f = gardenFrame
+        let depth = f.depth
+        let span = f.span
+        let band = CGFloat(s.band)
+        let glowIn = CGFloat(GardenMath.clamp(s.creaseGlow, 0, 1))
+
+        // The band: a full-width stripe at d = band (its profile is Core's intensity).
+        let x = band * depth
+        let visible = band > -0.3
+        for n in [bandBloom, bandWash, bandCore, bandRays] {
+            n.isHidden = !visible
+            n.position = CGPoint(x: x, y: span / 2)
+        }
+        let shimmer: CGFloat = motion > 0.5 ? 0.94 + 0.06 * sin(animTime * 2.3) : 1
+        bandWash.alpha = 0.36 * shimmer
+        bandCore.alpha = (0.44 + 0.06 * dawn) * shimmer
+        bandBloom.alpha = 0.2 + 0.05 * sin(animTime * 1.1) * motion
+        bandRays.alpha = 0.3 * shimmer
+        if motion > 0.5 {
+            bandRays.position = CGPoint(x: x, y: span / 2 + sin(animTime * 0.35) * span * 0.08)
+        }
+
+        // Dawn in the crease: light pooled at the seam while the band is still hidden.
+        let hidden = GardenMath.clamp(1 - (band + 0.02) / 0.15, 0, 1)
+        creaseGlow.alpha = glowIn * hidden * (0.8 + 0.15 * sin(animTime * 2.1) * motion)
+        seamGlow.alpha = glowIn * 0.7
+        creaseInk.xScale = 1 + 0.08 * sin(animTime * 1.3) * motion
+        creaseInk.alpha = 0.85 * (1 - 0.45 * dawn)
+
+        // The lawn warms from night teal to dawn gold; a night veil lifts as the light comes in.
+        groundDawn.alpha = GardenMath.smooth(0.05, 0.95, dawn)
+        let lightLevel = max(glowIn, band >= 0 ? 1 : 0)
+        nightVeil.alpha = 0.4 * (1 - lightLevel * 0.55) * (1 - 0.8 * dawn)
+
+        // Dew glints where the band crosses the drops.
+        for (i, sp) in dewSpots.enumerated() {
+            let k = CGFloat(GardenMath.intensity(d: sp.d, band: s.band))
+            let tw: CGFloat = motion > 0.5 ? max(0, sin(animTime * 2.4 + sp.phase)) : 0.6
+            let a = k * (0.25 + 0.75 * tw * tw)
+            let glint = dew[i]
+            glint.alpha = a
+            glint.isHidden = a < 0.01
+            if motion > 0.5 { glint.zRotation = animTime * 0.8 + sp.phase }
+        }
+
+        // Dust motes drifting in the light.
+        if band > -0.03 && band < 1.05 && dt > 0 {
+            moteClock += dt * 10 * fx.density
+            while moteClock >= 1 {
+                moteClock -= 1
+                let u = Double(rng.unit())
+                let dd = s.band + Double(rng.range(-1, 1)) * GardenMath.bandCore
+                if dd >= 0 { fx.mote(at: f.scene(u: u, d: dd), color: GardenPalette.goldHot) }
+            }
+        }
+    }
+
+    private func drawOverlays(dt: CGFloat) {
+        // Sunrise: a warm flood from the mirror, settling into a glow.
+        if sunriseAge >= 0 {
+            sunriseAge += dt
+            let a: CGFloat = sunriseAge < 0.3 ? sunriseAge / 0.3 * 0.5 : 0.5 * exp(-(sunriseAge - 0.3) * 1.3) + 0.07
+            floodLevel = a * (attract ? 0.5 : 1)
+            flood.isHidden = false
+            flood.alpha = floodLevel
+            floodRays.isHidden = false
+            floodRays.position = mirror.sunPoint
+            floodRays.alpha = floodLevel * 0.9
+            floodRays.zRotation = animTime * 0.06 * (reduceMotion ? 0 : 1)
+        } else {
+            floodLevel = 0
+            flood.isHidden = true
+            floodRays.isHidden = true
+        }
+
+        // Night wins: darkness rolls out of the crease over the garden.
+        if nightAge >= 0 {
+            nightAge += dt
+            let k = GardenMath.easeOut(min(nightAge / 1.8, 1))
+            nightLevel = k
+            let lead = k * gardenFrame.depth * 1.3
+            nightRoll.isHidden = lead < 1
+            nightRoll.position = CGPoint(x: lead, y: gardenFrame.span / 2)
+            nightRoll.size = CGSize(width: max(lead, 1), height: gardenFrame.span)
+            nightRoll.alpha = 0.88
+        } else {
+            nightLevel = 0
+            nightRoll.isHidden = true
+        }
+    }
+
+    // MARK: Touches (the drag fallback; the App ignores them on a Duo)
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard dragTouch == nil, let t = touches.first else { return }
+        dragTouch = ObjectIdentifier(t)
+        driver?.dragBegan(swiftUIPoint(fromScene: t.location(in: self)))
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let id = dragTouch, let t = touches.first(where: { ObjectIdentifier($0) == id }) else { return }
+        driver?.dragMoved(swiftUIPoint(fromScene: t.location(in: self)))
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        finishTouch(touches)
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        finishTouch(touches)
+    }
+
+    private func finishTouch(_ touches: Set<UITouch>) {
+        guard let id = dragTouch, touches.contains(where: { ObjectIdentifier($0) == id }) else { return }
+        dragTouch = nil
+        driver?.dragEnded()
+    }
+
+    // MARK: Helpers
+
+    private static func countNodes(_ n: SKNode, visibleOnly: Bool) -> Int {
+        if visibleOnly && (n.isHidden || n.alpha <= 0.001) { return 0 }
+        var c = 1
+        for k in n.children { c += countNodes(k, visibleOnly: visibleOnly) }
+        return c
+    }
+}

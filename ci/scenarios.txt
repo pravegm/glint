@@ -1,0 +1,24 @@
+# CI screenshot scenarios (ci/screenshots.sh on the "iPhone 18 Pro" simulator: no hinge, portrait, drag-to-aim, so a
+# pilot= / t= fast-forward drives the light). Keys: design/ROUND-1.md "App engineer" 5 (DemoMode).
+# name|demo args (-glintDemo)|wait s|caption (what the frame should show)|expect
+#  - wait: a scenario with t= waits for the app's "GLINT-T freeze" line (up to max(wait, 60) s), then 2 s.
+#  - No "|" inside a field.
+01-home-fresh|screen=home;progress=fresh|6|Home, first launch: "Glint" title over the live garden (attract pilot), big Play "Level 1", Long Night and Today's Dawn locked with how to open them, Levels / Settings|GLINT-T screen home
+02-home-mid|screen=home;progress=mid|6|Home, returning: Play says the next level, stars total, Long Night best, Today's Dawn open|GLINT-T screen home
+03-home-duo|screen=home;progress=mid;fold=1|6|Home on the Duo split (fold=1): mirror half above, garden below, the menu centred, nothing important on the crease|GLINT-T canvas [0-9]+x[0-9]+ fold=1
+04-levels-meadow|screen=levels;progress=mid|6|Level map: Meadow tab, ten sun medallions on a winding path, 1–6 starred, 7 glowing, 8–10 locked, Rooftops shows "x more ★"|GLINT-T screen levels
+05-play-start|screen=play;level=1;progress=fresh|6|Level 1 waiting: dark garden, crease glow off, "Drag down to let the light in", flowers along the edge, the brass lever on the mirror half|GLINT-T screen play
+06-play-l1|screen=play;level=1;t=14;skill=0.8|20|Level 1 at 14 s: the gold band mid-garden, a murk sizzling and shrinking inside it, others creeping from the crease, score + chain on the garden corner|GLINT-T freeze
+07-play-l6-brute|screen=play;level=6;t=25;skill=0.8|30|Level 6: a brute tracked by the band, steam rising, wisps behind, a firefly drifting|GLINT-T freeze
+08-play-l15|screen=play;level=15;t=30;skill=0.8|35|Rooftops level 15: splitter wisps flung outwards, a hopper crouching, chain ×3+ text near a pop|GLINT-T freeze
+09-play-l27|screen=play;level=27;t=40;skill=0.7|45|Harbour level 27: a dense wave, one or two flowers eaten (sad stalks), the sun high in the mirror|GLINT-T freeze
+10-play-duo-split|screen=play;level=8;t=20;skill=0.8;fold=1|25|Level 8 on the Duo split (fold=1): the mirror is the top half, the garden the bottom, the crease exactly at the middle, no lever|GLINT-T freeze
+11-play-swap|screen=play;level=8;t=20;skill=0.8;fold=1;swap=1|25|Swap halves: garden on top, mirror below, the band still runs from the crease towards the flowers|GLINT-T freeze
+12-results-won|screen=results;results=won;level=4|6|Results, won: three stars landing, score, best, Next / Retry / Levels|GLINT-T screen results
+13-results-lost|screen=results;results=lost;level=22|6|Results, lost: "The night won", kind copy, Retry / Levels|GLINT-T screen results
+14-endless|screen=play;mode=endless;t=60;skill=0.8|70|Long Night at 60 s: wave banner, score, chain|GLINT-T freeze
+15-daily|screen=play;mode=daily;t=20;skill=0.8|30|Today's Dawn: date chip, score|GLINT-T freeze
+16-settings|screen=settings|6|Settings: Sound, Music, Haptics, Swap halves, Reduce motion, Game Center, About|GLINT-T screen settings
+17-about|screen=about|6|About: credits, "Glint collects no data", version|GLINT-T screen about
+18-cover|screen=cover;fold=1|6|The Duo's cover display: Glint, "Open the phone to play", best|GLINT-T screen cover
+19-hint-fireflies|screen=play;level=4;t=12;skill=0.6;hint=spareTheFireflies|20|Level 4: the hint line "Spare the fireflies" over the garden, a firefly lit at the band's edge|GLINT-T freeze

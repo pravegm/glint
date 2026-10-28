@@ -1,0 +1,978 @@
+import CoreGraphics
+import Foundation
+import Testing
+@testable import Glint
+
+// MARK: - Core rules (Round 1): tuning maths, the band profile, RNG, DailySeed, LevelBook, every DawnSession rule,
+// determinism, the pilot, and a 30-level smoke run with a strong pilot.
+
+/// Shared drivers for Core tests and BalanceTests.
+enum CoreHarness {
+    /// One timed event.
+    struct Timed {
+        var time: Double
+        var event: GameEvent
+    }
+
+    /// A one-off script.
+    static func spec(_ groups: [SpawnGroup], duration: Double = 60, number: Int = 5) -> LevelSpec {
+        return LevelSpec(number: number, world: LevelBook.world(of: number), title: "Test", duration: duration,
+                         groups: groups)
+    }
+
+    static func group(_ kind: SpawnKind, at time: Double, count: Int = 1, u: ClosedRange<Double> = 0.5...0.5,
+                      formation: Formation = .cluster, speed: Double = 1) -> SpawnGroup {
+        return SpawnGroup(time: time, kind: kind, count: count, u: u, formation: formation, speedScale: speed)
+    }
+
+    /// Steps `s` for `seconds` at `dt`, the band from `band(t, session)`; `shut(t)` darkens the phone.
+    static func run(_ s: DawnSession, seconds: Double, dt: Double = 1.0 / 120.0,
+                    shut: (Double) -> Bool = { (_: Double) -> Bool in false },
+                    band: (Double, DawnSession) -> Double) -> [Timed] {
+        var out: [Timed] = []
+        var t: Double = 0
+        while t < seconds - 1e-9 && !s.isFinished {
+            let b: Double = band(t, s)
+            let input = MirrorInput(band: b, creaseGlow: Tuning.creaseGlow(band: b), isShut: shut(t), bandSpeed: 0)
+            let events: [GameEvent] = s.step(dt: dt, input: input)
+            for e in events { out.append(Timed(time: t, event: e)) }
+            t += dt
+        }
+        return out
+    }
+
+    /// Starts on the first frame (band 0), then the phone is shut (no light at all).
+    static func runDark(_ s: DawnSession, seconds: Double) -> [Timed] {
+        return run(s, seconds: seconds, shut: { (t: Double) -> Bool in t > 0 }) { (_: Double, _: DawnSession) -> Double in
+            return 0
+        }
+    }
+
+    /// The band parked at `d` from the first frame.
+    static func runParked(_ s: DawnSession, at d: Double, seconds: Double) -> [Timed] {
+        return run(s, seconds: seconds) { (_: Double, _: DawnSession) -> Double in d }
+    }
+
+    /// A pilot plays `s` (the way GameController feeds a PilotSource: the previous frame's snapshot).
+    static func play(_ s: DawnSession, skill: Double, pilotSeed: UInt64, dt: Double = 1.0 / 60.0,
+                     cap: Double = 200) -> [GameEvent] {
+        var pilot = PilotBrain(skill: skill, seed: pilotSeed)
+        var out: [GameEvent] = []
+        var t: Double = 0
+        while !s.isFinished && t < cap {
+            let input: MirrorInput = pilot.input(for: s.snapshot, dt: dt)
+            out.append(contentsOf: s.step(dt: dt, input: input))
+            t += dt
+        }
+        return out
+    }
+
+    static func pops(_ events: [Timed]) -> [Timed] {
+        return events.filter { (e: Timed) -> Bool in
+            if case .popped = e.event { return true }
+            return false
+        }
+    }
+
+    static func count(_ events: [Timed], _ match: (GameEvent) -> Bool) -> Int {
+        var n: Int = 0
+        for e in events where match(e.event) { n += 1 }
+        return n
+    }
+
+    static func isEaten(_ e: GameEvent) -> Bool {
+        if case .flowerEaten = e { return true }
+        return false
+    }
+
+    static func isScorched(_ e: GameEvent) -> Bool {
+        if case .fireflyScorched = e { return true }
+        return false
+    }
+}
+
+struct CoreTests {
+
+    // MARK: Tuning
+
+    @Test func angleMapsToTheBand() {
+        #expect(abs(Tuning.band(angle: 80) - 0) < 1e-12)
+        #expect(abs(Tuning.band(angle: 145) - 1) < 1e-12)
+        #expect(abs(Tuning.band(angle: 112.5) - 0.5) < 1e-12)
+        #expect(abs(Tuning.band(angle: 15) - Tuning.bandMin) < 1e-12)
+        #expect(abs(Tuning.band(angle: 180) - 1) < 1e-12)
+        #expect(abs(Tuning.band(angle: 67) - (-0.2)) < 1e-9)
+        #expect(abs(Tuning.band(angle: Double.nan) - Tuning.bandMin) < 1e-12)
+        #expect(abs(Tuning.angle(forBand: 0.5) - 112.5) < 1e-9)
+        #expect(abs(Tuning.band(angle: Tuning.angle(forBand: 0.37)) - 0.37) < 1e-9)
+    }
+
+    @Test func creaseGlowRisesFromShutToCrease() {
+        #expect(abs(Tuning.creaseGlow(angle: 15) - 0) < 1e-12)
+        #expect(abs(Tuning.creaseGlow(angle: 10) - 0) < 1e-12)
+        #expect(abs(Tuning.creaseGlow(angle: 47.5) - 0.5) < 1e-12)
+        #expect(abs(Tuning.creaseGlow(angle: 80) - 1) < 1e-12)
+        #expect(abs(Tuning.creaseGlow(angle: 120) - 1) < 1e-12)
+        #expect(abs(Tuning.creaseGlow(band: 0.3) - 1) < 1e-12)
+    }
+
+    @Test func intensityIsFlatThenSmooth() {
+        #expect(abs(Tuning.intensity(d: 0.4, band: 0.4) - 1) < 1e-12)
+        #expect(abs(Tuning.intensity(d: 0.45, band: 0.4) - 1) < 1e-9)
+        #expect(abs(Tuning.intensity(d: 0.35, band: 0.4) - 1) < 1e-9)
+        #expect(abs(Tuning.intensity(d: 0.485, band: 0.4) - 0) < 1e-9)
+        #expect(abs(Tuning.intensity(d: 0.6, band: 0.4) - 0) < 1e-12)
+        // Halfway down the edge the smoothstep is exactly 0.5.
+        #expect(abs(Tuning.intensity(distance: 0.0675) - 0.5) < 1e-9)
+        // Symmetric and never rising with distance.
+        var last: Double = 2
+        var x: Double = 0
+        while x < 0.1 {
+            let a: Double = Tuning.intensity(d: 0.5 + x, band: 0.5)
+            let b: Double = Tuning.intensity(d: 0.5 - x, band: 0.5)
+            #expect(abs(a - b) < 1e-9)
+            #expect(a <= last + 1e-12)
+            #expect(a >= 0 && a <= 1)
+            last = a
+            x += 0.001
+        }
+    }
+
+    @Test func intensityIsPaddedByTheRadius() {
+        // A brute (r 0.085) is lit 0.034 further out than its centre.
+        let r: Double = GloomSpec.of(.brute).radius
+        #expect(abs(Tuning.intensity(d: 0.5 + 0.05 + 0.4 * r, radius: r, band: 0.5) - 1) < 1e-9)
+        #expect(Tuning.intensity(d: 0.5 + 0.09, radius: r, band: 0.5) > 0.9)
+        #expect(Tuning.intensity(d: 0.5 + 0.09, radius: 0, band: 0.5) < 1e-12)
+    }
+
+    @Test func multiplierAndLanes() {
+        #expect(abs(Tuning.multiplier(chain: 0) - 1) < 1e-12)
+        #expect(abs(Tuning.multiplier(chain: 1) - 1) < 1e-12)
+        #expect(abs(Tuning.multiplier(chain: 2) - 1.25) < 1e-12)
+        #expect(abs(Tuning.multiplier(chain: 13) - 4) < 1e-12)
+        #expect(abs(Tuning.multiplier(chain: 40) - 4) < 1e-12)
+        #expect(Tuning.lane(u: 0) == 0)
+        #expect(Tuning.lane(u: 0.19) == 0)
+        #expect(Tuning.lane(u: 0.2) == 1)
+        #expect(Tuning.lane(u: 0.5) == 2)
+        #expect(Tuning.lane(u: 0.999) == 4)
+        #expect(Tuning.lane(u: 1) == 4)
+        #expect(Tuning.lane(u: -3) == 0)
+        #expect(abs(Tuning.laneCentre(2) - 0.5) < 1e-12)
+    }
+
+    @Test func starsByFlowers() {
+        #expect(DawnSession.stars(flowersLeft: 5) == 3)
+        #expect(DawnSession.stars(flowersLeft: 4) == 2)
+        #expect(DawnSession.stars(flowersLeft: 3) == 2)
+        #expect(DawnSession.stars(flowersLeft: 2) == 1)
+        #expect(DawnSession.stars(flowersLeft: 1) == 1)
+        #expect(DawnSession.stars(flowersLeft: 0) == 0)
+    }
+
+    @Test func tuningMatchesTheDesign() {
+        #expect(abs(Tuning.shutAngle - 15) < 1e-12)
+        #expect(abs(Tuning.creaseAngle - 80) < 1e-12)
+        #expect(abs(Tuning.edgeAngle - 145) < 1e-12)
+        #expect(abs(Tuning.resumeAngle - 25) < 1e-12)
+        #expect(abs(Tuning.shutDwell - 0.25) < 1e-12)
+        #expect(abs(Tuning.bandCoreHalfWidth - 0.05) < 1e-12)
+        #expect(abs(Tuning.bandEdgeHalfWidth - 0.085) < 1e-12)
+        #expect(Tuning.flowerCount == 5)
+        #expect(abs(Tuning.chainWindow - 1.6) < 1e-12)
+        #expect(abs(Tuning.sweepWindow - 0.35) < 1e-12)
+        #expect(abs(Tuning.maxMultiplier - 4) < 1e-12)
+        #expect(abs(Tuning.dragSpeedCap - 2.4) < 1e-12)
+        #expect(abs(Tuning.resumeGrace - 0.6) < 1e-12)
+    }
+
+    // MARK: SeededRandom, DailySeed, GloomSpec
+
+    @Test func seededRandomIsDeterministicAndInRange() {
+        var a = SeededRandom(seed: 42)
+        var b = SeededRandom(seed: 42)
+        var c = SeededRandom(seed: 43)
+        var same: Bool = true
+        var differs: Bool = false
+        var i: Int = 0
+        while i < 500 {
+            let x: UInt64 = a.next()
+            let y: UInt64 = b.next()
+            let z: UInt64 = c.next()
+            if x != y { same = false }
+            if x != z { differs = true }
+            i += 1
+        }
+        #expect(same)
+        #expect(differs)
+        var r = SeededRandom(seed: 7)
+        i = 0
+        while i < 2000 {
+            let u: Double = r.unit()
+            #expect(u >= 0 && u < 1)
+            let k: Int = r.int(2...5)
+            #expect(k >= 2 && k <= 5)
+            let v: Double = r.range(0.25...0.75)
+            #expect(v >= 0.25 && v <= 0.75)
+            i += 1
+        }
+        let one: Int = r.int(3...3)
+        #expect(one == 3)
+    }
+
+    @Test func dailySeedCountsUTCDays() {
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(secondsFromGMT: 0) ?? utc.timeZone
+        func date(_ y: Int, _ m: Int, _ d: Int, _ h: Int, _ min: Int) -> Date {
+            var c = DateComponents()
+            c.year = y
+            c.month = m
+            c.day = d
+            c.hour = h
+            c.minute = min
+            return utc.date(from: c) ?? Date(timeIntervalSince1970: 0)
+        }
+        #expect(DailySeed.day(for: date(2026, 1, 1, 0, 0)) == 0)
+        #expect(DailySeed.day(for: date(2026, 1, 1, 23, 59)) == 0)
+        #expect(DailySeed.day(for: date(2026, 1, 2, 0, 1)) == 1)
+        #expect(DailySeed.day(for: date(2025, 12, 31, 23, 59)) == -1)
+        #expect(DailySeed.day(for: date(2026, 10, 28, 12, 0)) == 300)
+        #expect(DailySeed.seed(day: 300) == DailySeed.seed(day: 300))
+        #expect(DailySeed.seed(day: 300) != DailySeed.seed(day: 301))
+    }
+
+    @Test func gloomSpecs() {
+        for k in GloomKind.allCases {
+            let s: GloomSpec = GloomSpec.of(k)
+            #expect(s.kind == k)
+            #expect(s.hp > 0 && s.speed > 0 && s.radius > 0 && s.points > 0)
+        }
+        #expect(GloomSpec.of(.murk).points == 10)
+        #expect(GloomSpec.of(.wisp).points == 5)
+        #expect(GloomSpec.of(.brute).points == 40)
+        #expect(GloomSpec.of(.splitter).points == 15)
+        #expect(GloomSpec.of(.hopper).points == 20)
+        #expect(abs(GloomSpec.of(.murk).hp - 0.55) < 1e-12)
+        #expect(abs(GloomSpec.of(.wisp).speed - 0.21) < 1e-12)
+        #expect(GloomSpec.of(.brute).radius > GloomSpec.of(.murk).radius)
+        #expect(GloomSpec.of(.wisp).radius < GloomSpec.of(.murk).radius)
+    }
+
+    // MARK: LevelBook
+
+    @Test func levelBookShape() {
+        #expect(LevelBook.count == 30)
+        #expect(LevelBook.worldCount == 3)
+        #expect(LevelBook.recipes.count == 30)
+        #expect(LevelBook.worldName(1) == "Meadow")
+        #expect(LevelBook.worldName(2) == "Rooftops")
+        #expect(LevelBook.worldName(3) == "Harbour")
+        #expect(LevelBook.levels(inWorld: 1) == 1...10)
+        #expect(LevelBook.levels(inWorld: 2) == 11...20)
+        #expect(LevelBook.levels(inWorld: 3) == 21...30)
+        #expect(LevelBook.world(of: 1) == 1)
+        #expect(LevelBook.world(of: 10) == 1)
+        #expect(LevelBook.world(of: 11) == 2)
+        #expect(LevelBook.world(of: 30) == 3)
+        #expect(LevelBook.level(0).number == 1)
+        #expect(LevelBook.level(99).number == 30)
+        var titles: Set<String> = []
+        var n: Int = 1
+        while n <= 30 {
+            let l: LevelSpec = LevelBook.level(n)
+            #expect(l.number == n)
+            #expect(l.world == LevelBook.world(of: n))
+            #expect(l.duration >= 45 && l.duration <= 95)
+            #expect(!l.title.isEmpty && l.title.count <= 18)
+            titles.insert(l.title)
+            #expect(!l.groups.isEmpty)
+            var last: Double = -1
+            for g in l.groups {
+                #expect(g.time >= last - 1e-9)
+                #expect(g.time >= 0 && g.time <= l.duration - LevelBook.endPad + 1e-6)
+                #expect(g.count >= 1)
+                #expect(g.u.lowerBound >= 0 && g.u.upperBound <= 1)
+                #expect(g.speedScale > 0.5 && g.speedScale < 2)
+                last = g.time
+            }
+            n += 1
+        }
+        #expect(titles.count == 30)
+    }
+
+    @Test func levelOneIsGentle() {
+        let l: LevelSpec = LevelBook.level(1)
+        #expect(l.title == "First Light")
+        #expect(abs(l.duration - 60) < 1e-12)
+        #expect(l.gloomCount == 12)
+        #expect(l.kinds == [.murk])
+        #expect(l.fireflyCount == 0)
+        for g in l.groups {
+            #expect(g.speedScale <= 0.85)
+            #expect(g.count == 1)
+        }
+    }
+
+    @Test func kindsArriveOnSchedule() {
+        func first(_ kind: GloomKind) -> Int {
+            var n: Int = 1
+            while n <= 30 {
+                if LevelBook.level(n).kinds.contains(kind) { return n }
+                n += 1
+            }
+            return 99
+        }
+        func firstFirefly() -> Int {
+            var n: Int = 1
+            while n <= 30 {
+                if LevelBook.level(n).fireflyCount > 0 { return n }
+                n += 1
+            }
+            return 99
+        }
+        #expect(first(.wisp) == 3)
+        #expect(first(.brute) == 2)
+        #expect(first(.splitter) == 11)
+        #expect(first(.hopper) == 14)
+        #expect(firstFirefly() == 4)
+        #expect(!LevelBook.level(3).kinds.contains(.brute))
+        #expect(!LevelBook.level(4).kinds.contains(.brute))
+        #expect(LevelBook.level(5).kinds.contains(.brute))
+        // Harbour has everything and fewer fireflies than Rooftops.
+        let w3: [GloomKind] = LevelBook.level(25).kinds
+        #expect(w3.count == GloomKind.allCases.count)
+        var ff2: Int = 0
+        var ff3: Int = 0
+        for k in LevelBook.levels(inWorld: 2) { ff2 += LevelBook.level(k).fireflyCount }
+        for k in LevelBook.levels(inWorld: 3) { ff3 += LevelBook.level(k).fireflyCount }
+        #expect(ff3 < ff2)
+    }
+
+    @Test func worldsGetHarder() {
+        var hp: [Double] = [0, 0, 0]
+        var speed: [Double] = [0, 0, 0]
+        var w: Int = 1
+        while w <= 3 {
+            for k in LevelBook.levels(inWorld: w) {
+                hp[w - 1] += LevelBook.level(k).totalHP / 10
+                speed[w - 1] += LevelBook.recipes[k - 1].speed / 10
+            }
+            w += 1
+        }
+        #expect(hp[0] < hp[1] && hp[1] < hp[2])
+        #expect(speed[0] < speed[1] && speed[1] < speed[2])
+    }
+
+    @Test func levelsAreDeterministic() {
+        let a: LevelSpec = LevelBook.build(17)
+        let b: LevelSpec = LevelBook.build(17)
+        #expect(a == b)
+        #expect(a == LevelBook.level(17))
+        #expect(LevelBook.level(17) != LevelBook.level(18))
+    }
+
+    @Test func dailyIsSeededByTheDay() {
+        let a: LevelSpec = LevelBook.daily(day: 300)
+        let b: LevelSpec = LevelBook.daily(day: 300)
+        let c: LevelSpec = LevelBook.daily(day: 301)
+        #expect(a == b)
+        #expect(a != c)
+        #expect(abs(a.duration - 90) < 1e-12)
+        #expect(a.number == 0)
+        #expect(a.kinds.count == GloomKind.allCases.count)
+    }
+
+    @Test func endlessWavesEscalate() {
+        let w1: LevelRecipe = LevelBook.endlessRecipe(1)
+        #expect(w1.murks > 0 && w1.flocks == 0 && w1.brutes == 0 && w1.splitters == 0 && w1.hoppers == 0)
+        #expect(w1.fireflies == 0)
+        let w5: LevelRecipe = LevelBook.endlessRecipe(5)
+        #expect(w5.flocks > 0 && w5.brutes > 0 && w5.splitters > 0 && w5.hoppers > 0 && w5.fireflies > 0)
+        let w20: LevelRecipe = LevelBook.endlessRecipe(20)
+        #expect(w20.murks > w5.murks && w20.speed > w5.speed)
+        #expect(w20.speed <= 1.6 + 1e-12)
+        var rng = SeededRandom(seed: 9)
+        let groups: [SpawnGroup] = LevelBook.endlessWave(3, rng: &rng)
+        for g in groups { #expect(g.time >= 0 && g.time <= Tuning.endlessWaveSeconds + 1e-9) }
+    }
+
+    // MARK: DawnSession: waiting and starting
+
+    @Test func waitsForTheFirstLight() {
+        let s = DawnSession(spec: CoreHarness.spec([CoreHarness.group(.gloom(.murk), at: 0.5)]))
+        #expect(s.snapshot.phase == .waiting)
+        let hidden = MirrorInput(band: -0.2, creaseGlow: 0.5)
+        var i: Int = 0
+        var any: Int = 0
+        while i < 240 {
+            let e: [GameEvent] = s.step(dt: 1.0 / 120.0, input: hidden)
+            any += e.count
+            i += 1
+        }
+        #expect(any == 0)
+        #expect(s.snapshot.phase == .waiting)
+        #expect(abs(s.snapshot.time) < 1e-12)
+        #expect(s.snapshot.glooms.isEmpty)
+        #expect(abs(s.snapshot.creaseGlow - 0.5) < 1e-12)
+        let started: [GameEvent] = s.step(dt: 1.0 / 120.0, input: MirrorInput(band: 0.0, creaseGlow: 1))
+        #expect(started.first == .started)
+        #expect(s.snapshot.phase == .playing)
+    }
+
+    @Test func shutNeverStarts() {
+        let s = DawnSession(spec: CoreHarness.spec([]))
+        let shut = MirrorInput(band: 0.5, creaseGlow: 0, isShut: true)
+        var i: Int = 0
+        while i < 60 {
+            _ = s.step(dt: 1.0 / 60.0, input: shut)
+            i += 1
+        }
+        #expect(s.snapshot.phase == .waiting)
+    }
+
+    @Test func aDragNudgeStarts() {
+        let s = DawnSession(spec: CoreHarness.spec([]))
+        _ = s.step(dt: 1.0 / 60.0, input: MirrorInput(band: -0.2))
+        _ = s.step(dt: 1.0 / 60.0, input: MirrorInput(band: -0.19))
+        #expect(s.snapshot.phase == .waiting)
+        let e: [GameEvent] = s.step(dt: 1.0 / 60.0, input: MirrorInput(band: -0.17))
+        #expect(e.contains(.started))
+        #expect(s.snapshot.phase == .playing)
+    }
+
+    @Test func zeroDtChangesNothing() {
+        let s = DawnSession(spec: CoreHarness.spec([CoreHarness.group(.gloom(.murk), at: 0.1)]))
+        _ = CoreHarness.runParked(s, at: 0.8, seconds: 1)
+        let before: DawnSnapshot = s.snapshot
+        let e: [GameEvent] = s.step(dt: 0, input: MirrorInput(band: 0.2))
+        #expect(e.isEmpty)
+        #expect(s.snapshot == before)
+    }
+
+    // MARK: Glooms
+
+    @Test func gloomsEmergeFromTheCrease() {
+        let s = DawnSession(spec: CoreHarness.spec([CoreHarness.group(.gloom(.murk), at: 0.5, u: 0.3...0.3)]))
+        let events = CoreHarness.runParked(s, at: 0.9, seconds: 0.55)
+        let emerged: Int = CoreHarness.count(events) { (e: GameEvent) -> Bool in
+            if case .emerged(_, let kind, let u) = e { return kind == .murk && abs(u - 0.3) < 1e-9 }
+            return false
+        }
+        #expect(emerged == 1)
+        #expect(s.snapshot.glooms.count == 1)
+        if let g = s.snapshot.glooms.first {
+            #expect(g.d < 0 && g.d > -GloomSpec.of(.murk).radius - 1e-9)
+            #expect(abs(g.radius - GloomSpec.of(.murk).radius) < 1e-12)
+            #expect(abs(g.hp - g.maxHP) < 1e-9)
+        }
+    }
+
+    @Test func gloomsNeverStopInTheLight() {
+        let s = DawnSession(spec: CoreHarness.spec([CoreHarness.group(.gloom(.brute), at: 0.1)]))
+        var lastD: Double = -1
+        var litFrames: Int = 0
+        var moving: Bool = true
+        _ = CoreHarness.run(s, seconds: 6) { (_: Double, session: DawnSession) -> Double in
+            if let g = session.snapshot.glooms.first {
+                if g.lit > 0 {
+                    litFrames += 1
+                    if g.d <= lastD { moving = false }
+                }
+                lastD = g.d
+            }
+            return 0.3
+        }
+        #expect(litFrames > 100)
+        #expect(moving)
+    }
+
+    @Test func aParkedBandPopsAMurk() {
+        let s = DawnSession(spec: CoreHarness.spec([CoreHarness.group(.gloom(.murk), at: 0.5)]))
+        let events = CoreHarness.runParked(s, at: 0.3, seconds: 15)
+        let pops = CoreHarness.pops(events)
+        #expect(pops.count == 1)
+        if let p = pops.first, case .popped(_, let kind, _, let d, let chain, let points) = p.event {
+            #expect(kind == .murk)
+            #expect(chain == 1)
+            #expect(points == 10)
+            #expect(d < 0.3)
+        }
+        #expect(CoreHarness.count(events, CoreHarness.isEaten) == 0)
+        #expect(s.snapshot.score == 10)
+        #expect(s.snapshot.pops == 1)
+    }
+
+    @Test func aParkedBandCannotFinishABrute() {
+        let parked = DawnSession(spec: CoreHarness.spec([CoreHarness.group(.gloom(.brute), at: 0.5)]))
+        let a = CoreHarness.runParked(parked, at: 0.3, seconds: 25)
+        #expect(CoreHarness.pops(a).isEmpty)
+        #expect(CoreHarness.count(a, CoreHarness.isEaten) == 1)
+
+        let tracked = DawnSession(spec: CoreHarness.spec([CoreHarness.group(.gloom(.brute), at: 0.5)]))
+        let b = CoreHarness.run(tracked, seconds: 25) { (_: Double, session: DawnSession) -> Double in
+            if let g = session.snapshot.glooms.first { return max(g.d, 0) }
+            return 0
+        }
+        #expect(CoreHarness.pops(b).count == 1)
+        #expect(CoreHarness.count(b, CoreHarness.isEaten) == 0)
+    }
+
+    @Test func leadingAHopperBeatsParking() {
+        func popTime(_ s: DawnSession, _ band: (Double, DawnSession) -> Double) -> Double {
+            let e = CoreHarness.run(s, seconds: 20, band: band)
+            return CoreHarness.pops(e).first?.time ?? 99
+        }
+        let parked: Double = popTime(DawnSession(spec: CoreHarness.spec([CoreHarness.group(.gloom(.hopper), at: 0.5)]))) {
+            (_: Double, _: DawnSession) -> Double in 0.3
+        }
+        let led: Double = popTime(DawnSession(spec: CoreHarness.spec([CoreHarness.group(.gloom(.hopper), at: 0.5)]))) {
+            (_: Double, session: DawnSession) -> Double in
+            if let g = session.snapshot.glooms.first { return g.d + (g.tension < 0.02 ? 0.06 : 0.02) }
+            return 0
+        }
+        #expect(led < parked)
+        #expect(led < 5)
+    }
+
+    @Test func hoppersHopAndTheLightStartlesThem() {
+        let s = DawnSession(spec: CoreHarness.spec([CoreHarness.group(.gloom(.hopper), at: 0.2)]))
+        var regular: Int = 0
+        var skittish: Int = 0
+        var landed: Bool = false
+        let events = CoreHarness.run(s, seconds: 8, shut: { (t: Double) -> Bool in t > 0 && t < 4 }) {
+            (t: Double, session: DawnSession) -> Double in
+            if t < 4 { return 0 }
+            // After 4 s in the dark, put the light right on the resting hopper.
+            if let g = session.snapshot.glooms.first {
+                if !landed && g.tension > 0.2 { landed = true }
+                return landed ? g.d : -0.2
+            }
+            return -0.2
+        }
+        for e in events {
+            if case .hopped(_, _, _, let sk) = e.event {
+                if sk { skittish += 1 } else { regular += 1 }
+            }
+        }
+        #expect(regular >= 2)
+        #expect(skittish >= 1)
+    }
+
+    @Test func splittersPopIntoFlungWisps() {
+        let s = DawnSession(spec: CoreHarness.spec([CoreHarness.group(.gloom(.splitter), at: 0.5)]))
+        var lastSplitterD: Double = -1
+        var seenWisps: Bool = false
+        var flung: Bool = true
+        let events = CoreHarness.run(s, seconds: 12) { (_: Double, session: DawnSession) -> Double in
+            var wisps: Int = 0
+            for g in session.snapshot.glooms {
+                if g.kind == .splitter { lastSplitterD = g.d }
+                if g.kind == .wisp { wisps += 1 }
+            }
+            if !seenWisps && wisps == 2 {
+                seenWisps = true
+                for g in session.snapshot.glooms where g.kind == .wisp {
+                    if g.tension < 1 || g.d < lastSplitterD + Tuning.splitFling - 1e-6 { flung = false }
+                }
+            }
+            return 0.45
+        }
+        var splits: Int = 0
+        var wispEmerged: Int = 0
+        var splitD: Double = -1
+        for e in events {
+            if case .split(_, let d) = e.event {
+                splits += 1
+                splitD = d
+            }
+            if case .emerged(_, let kind, _) = e.event, kind == .wisp { wispEmerged += 1 }
+        }
+        #expect(splits == 1)
+        #expect(wispEmerged == Tuning.splitWispCount)
+        #expect(splitD > 0)
+        #expect(seenWisps)
+        #expect(flung)
+        #expect(s.stats.splits == 1)
+    }
+
+    // MARK: Flowers, fireflies, outcomes
+
+    @Test func gloomsEatTheirLaneThenTheNearest() {
+        let s = DawnSession(spec: CoreHarness.spec([
+            CoreHarness.group(.gloom(.murk), at: 0.5, u: 0.5...0.5),
+            CoreHarness.group(.gloom(.murk), at: 1.5, u: 0.5...0.5),
+        ]))
+        let events = CoreHarness.runDark(s, seconds: 20)
+        var eaten: [Int] = []
+        var left: [Int] = []
+        var broken: Int = 0
+        for e in events {
+            if case .flowerEaten(let lane, let l, let by) = e.event {
+                eaten.append(lane)
+                left.append(l)
+                #expect(by == .murk)
+            }
+            if case .chainBroken = e.event { broken += 1 }
+        }
+        #expect(eaten == [2, 1])
+        #expect(left == [4, 3])
+        #expect(broken == 0)
+        #expect(s.snapshot.flowers == [true, false, false, true, true])
+        #expect(s.snapshot.flowersLeft == 3)
+    }
+
+    @Test func theNightWinsWhenEveryFlowerIsGone() {
+        let s = DawnSession(spec: CoreHarness.spec([
+            CoreHarness.group(.gloom(.murk), at: 0.5, count: 5, u: 0.1...0.9, formation: .line),
+            CoreHarness.group(.gloom(.murk), at: 0.6, count: 3),
+        ]))
+        let events = CoreHarness.runDark(s, seconds: 30)
+        let nightWon: Bool = events.contains { (e: CoreHarness.Timed) -> Bool in e.event == .nightWins }
+        #expect(nightWon)
+        #expect(s.snapshot.phase == .lost)
+        #expect(s.isFinished)
+        #expect(s.snapshot.flowersLeft == 0)
+        let after: [GameEvent] = s.step(dt: 1.0 / 60.0, input: MirrorInput(band: 0.5))
+        #expect(after.isEmpty)
+    }
+
+    @Test func sunriseScoresTheFlowers() {
+        let s = DawnSession(spec: CoreHarness.spec([
+            CoreHarness.group(.gloom(.murk), at: 0.5),
+            CoreHarness.group(.gloom(.murk), at: 9.5, u: 0.2...0.2),
+        ], duration: 10))
+        let events = CoreHarness.runParked(s, at: 0.3, seconds: 12)
+        var sunrise: (Int, Int)? = nil
+        for e in events {
+            if case .sunrise(let stars, let bonus) = e.event { sunrise = (stars, bonus) }
+        }
+        #expect(sunrise?.0 == 3)
+        #expect(sunrise?.1 == 200)
+        #expect(s.snapshot.phase == .won)
+        #expect(s.snapshot.glooms.isEmpty)
+        // The late murk evaporated silently: one pop only.
+        #expect(CoreHarness.pops(events).count == 1)
+        #expect(s.snapshot.score == 10 + 200)
+        #expect(abs(s.snapshot.sun - 1) < 1e-9)
+    }
+
+    @Test func chainAndMultiplier() {
+        let s = DawnSession(spec: CoreHarness.spec([
+            CoreHarness.group(.gloom(.murk), at: 0.5, count: 3, u: 0.2...0.8, formation: .stagger(0.5)),
+        ]))
+        let events = CoreHarness.runParked(s, at: 0.3, seconds: 12)
+        var chains: [Int] = []
+        var points: [Int] = []
+        var ended: [Int] = []
+        var swept: Int = 0
+        for e in events {
+            if case .popped(_, _, _, _, let c, let p) = e.event {
+                chains.append(c)
+                points.append(p)
+            }
+            if case .chainEnded(let was) = e.event { ended.append(was) }
+            if case .swept = e.event { swept += 1 }
+        }
+        #expect(chains == [1, 2, 3])
+        #expect(points == [10, 13, 15])
+        #expect(ended == [3])
+        #expect(swept == 0)
+        #expect(s.snapshot.chain == 0)
+        #expect(abs(s.snapshot.multiplier - 1) < 1e-12)
+    }
+
+    @Test func aFlockInOneSweep() {
+        let s = DawnSession(spec: CoreHarness.spec([
+            CoreHarness.group(.gloom(.wisp), at: 0.5, count: 4, u: 0.5...0.5),
+        ]))
+        let events = CoreHarness.runParked(s, at: 0.3, seconds: 6)
+        var sweeps: [GameEvent] = []
+        for e in events {
+            if case .swept = e.event { sweeps.append(e.event) }
+        }
+        #expect(sweeps == [.swept(count: 3, bonus: 90), .swept(count: 4, bonus: 30)])
+        // 5 × (1, 1.25, 1.5, 1.75) rounded = 5 + 6 + 8 + 9, plus 90 + 30.
+        #expect(s.snapshot.score == 28 + 120)
+        #expect(s.stats.bestSweep == 4)
+        #expect(s.stats.sweeps == 1)
+    }
+
+    @Test func aScorchBreaksTheChain() {
+        let s = DawnSession(spec: CoreHarness.spec([
+            CoreHarness.group(.gloom(.murk), at: 0.5, u: 0.2...0.2),
+            CoreHarness.group(.firefly, at: 0.5, u: 0.7...0.7),
+        ]))
+        let events = CoreHarness.runParked(s, at: 0.3, seconds: 8)
+        var scorched: Int = 0
+        var broken: [Int] = []
+        for e in events {
+            if case .fireflyScorched = e.event { scorched += 1 }
+            if case .chainBroken(let was) = e.event { broken.append(was) }
+        }
+        #expect(scorched == 1)
+        #expect(broken == [1])
+        #expect(s.snapshot.fireflies.isEmpty)
+    }
+
+    @Test func aQuickSweepSparesAFirefly() {
+        let s = DawnSession(spec: CoreHarness.spec([CoreHarness.group(.firefly, at: 0.5)]))
+        var maxScorch: Double = 0
+        let events = CoreHarness.run(s, seconds: 7) { (t: Double, session: DawnSession) -> Double in
+            if let f = session.snapshot.fireflies.first { maxScorch = max(maxScorch, f.scorch) }
+            if t < 0.05 { return 0 }
+            if t < 5 { return -0.2 }
+            return min(-0.2 + (t - 5) * 1.6, 1)
+        }
+        #expect(CoreHarness.count(events, CoreHarness.isScorched) == 0)
+        #expect(maxScorch > 0.05)
+        #expect(maxScorch < 0.6)
+    }
+
+    @Test func fireflyEmergesAndGetsAHint() {
+        let s = DawnSession(spec: CoreHarness.spec([
+            CoreHarness.group(.firefly, at: 0.5),
+            CoreHarness.group(.firefly, at: 1.0),
+        ]))
+        let events = CoreHarness.runParked(s, at: 0.9, seconds: 2)
+        var emerged: Int = 0
+        var hints: Int = 0
+        for e in events {
+            if case .fireflyEmerged = e.event { emerged += 1 }
+            if e.event == .hint(.spareTheFireflies) { hints += 1 }
+        }
+        #expect(emerged == 2)
+        #expect(hints == 1)
+        #expect(s.snapshot.fireflies.count == 2)
+        if let f = s.snapshot.fireflies.first {
+            #expect(f.d > -Tuning.fireflyRadius && f.d < 0.2)
+            #expect(abs(f.u - 0.5) <= Tuning.fireflyWaveAmplitude + 1e-9)
+        }
+    }
+
+    @Test func aFireflyReplantsALostFlower() {
+        let s = DawnSession(spec: CoreHarness.spec([
+            CoreHarness.group(.gloom(.murk), at: 0.5, u: 0.5...0.5),
+            CoreHarness.group(.firefly, at: 0.5, u: 0.5...0.5),
+        ]))
+        let events = CoreHarness.runDark(s, seconds: 20)
+        var delivered: [GameEvent] = []
+        for e in events {
+            if case .fireflyDelivered = e.event { delivered.append(e.event) }
+        }
+        #expect(CoreHarness.count(events, CoreHarness.isEaten) == 1)
+        #expect(delivered.count == 1)
+        if let d = delivered.first, case .fireflyDelivered(_, let lane, let replanted, let points) = d {
+            #expect(lane == 2)
+            #expect(replanted)
+            #expect(points == 0)
+        }
+        #expect(s.snapshot.flowersLeft == 5)
+        #expect(s.stats.flowersReplanted == 1)
+    }
+
+    @Test func aFireflyBloomsWhenNothingIsLost() {
+        let s = DawnSession(spec: CoreHarness.spec([CoreHarness.group(.firefly, at: 0.5, u: 0.1...0.1)]))
+        let events = CoreHarness.runDark(s, seconds: 20)
+        var bloom: Bool = false
+        for e in events {
+            if case .fireflyDelivered(_, let lane, let replanted, let points) = e.event {
+                bloom = lane == 0 && !replanted && points == Tuning.fireflyBloomPoints
+            }
+        }
+        #expect(bloom)
+        #expect(s.snapshot.score == Tuning.fireflyBloomPoints)
+    }
+
+    // MARK: Hints, telemetry, sun
+
+    @Test func hintsFireOnceEach() {
+        let script: [SpawnGroup] = [
+            CoreHarness.group(.gloom(.murk), at: 0.2),
+            CoreHarness.group(.gloom(.brute), at: 0.3),
+            CoreHarness.group(.gloom(.brute), at: 0.4),
+            CoreHarness.group(.gloom(.splitter), at: 0.5, count: 2, formation: .line),
+            CoreHarness.group(.gloom(.hopper), at: 0.6, count: 2, formation: .line),
+            CoreHarness.group(.firefly, at: 0.7),
+            CoreHarness.group(.firefly, at: 0.8),
+        ]
+        func hints(_ number: Int) -> [HintID] {
+            let s = DawnSession(spec: CoreHarness.spec(script, number: number))
+            let events = CoreHarness.runParked(s, at: 0.95, seconds: 1)
+            var out: [HintID] = []
+            for e in events {
+                if case .hint(let h) = e.event { out.append(h) }
+            }
+            return out
+        }
+        #expect(hints(1) == [.lightTheShadows, .followTheBigOnes, .splitters, .hoppers, .spareTheFireflies])
+        #expect(hints(2) == [.followTheBigOnes, .splitters, .hoppers, .spareTheFireflies])
+    }
+
+    @Test func telemetryAndSun() {
+        let s = DawnSession(spec: CoreHarness.spec([CoreHarness.group(.gloom(.brute), at: 0.1)], duration: 40))
+        _ = CoreHarness.run(s, seconds: 20) { (_: Double, session: DawnSession) -> Double in
+            if let g = session.snapshot.glooms.first { return max(g.d, 0) }
+            return 0
+        }
+        // 20 s in: the brute may have popped (tracked), the sun is half up.
+        #expect(abs(s.snapshot.sun - 0.5) < 0.01)
+        #expect(abs(s.snapshot.time - 20) < 0.01)
+
+        let t = DawnSession(spec: CoreHarness.spec([CoreHarness.group(.gloom(.brute), at: 0.1)], duration: 40))
+        _ = CoreHarness.runParked(t, at: 0.05, seconds: 2)
+        let tel: Telemetry = t.snapshot.telemetry
+        #expect(tel.litCount == 1)
+        #expect(tel.burnRate > 0.5 && tel.burnRate <= 1 + 1e-9)
+        if let g = t.snapshot.glooms.first {
+            #expect(abs(tel.danger - max(g.d, 0)) < 1e-9)
+            #expect(g.lit > 0.5)
+            #expect(g.hp < g.maxHP)
+        }
+        #expect(abs(t.snapshot.band - 0.05) < 1e-12)
+    }
+
+    // MARK: Modes
+
+    @Test func endlessWavesComeAndTheSunNeverRises() {
+        let s = DawnSession(mode: .endless, seed: 5)
+        #expect(s.spec == nil)
+        let events = CoreHarness.play(s, skill: 1, pilotSeed: 3, cap: 65)
+        var waves: [Int] = []
+        for e in events {
+            if case .waveUp(let n) = e { waves.append(n) }
+            if case .sunrise = e { Issue.record("Long Night never rises") }
+        }
+        #expect(waves == [2, 3])
+        #expect(s.wave == 3)
+        #expect(!s.isFinished)
+        #expect(abs(s.snapshot.sun - s.snapshot.time / Tuning.endlessSunSeconds) < 1e-9)
+    }
+
+    @Test func dailyUsesTheDaySeedAndScoresWithoutStars() {
+        let a = DawnSession(mode: .daily(day: 300), seed: 1)
+        let b = DawnSession(mode: .daily(day: 300), seed: 999)
+        #expect(a.seed == DailySeed.seed(day: 300))
+        #expect(a.seed == b.seed)
+        #expect(a.queue == b.queue)
+        #expect(abs(a.duration - 90) < 1e-12)
+        let events = CoreHarness.play(a, skill: 1, pilotSeed: 8, cap: 120)
+        var stars: Int = -1
+        for e in events {
+            if case .sunrise(let st, _) = e { stars = st }
+        }
+        #expect(a.snapshot.phase == .won)
+        #expect(stars == 0)
+    }
+
+    @Test func sameSeedSameInputsSameEvents() {
+        func record(_ seed: UInt64) -> ([GameEvent], DawnSnapshot) {
+            let s = DawnSession(mode: .level(23), seed: seed)
+            let e: [GameEvent] = CoreHarness.play(s, skill: 0.7, pilotSeed: 11, cap: 40)
+            return (e, s.snapshot)
+        }
+        let a = record(77)
+        let b = record(77)
+        let c = record(78)
+        #expect(a.0 == b.0)
+        #expect(a.1 == b.1)
+        #expect(a.0.count > 50)
+        #expect(a.0 != c.0)
+    }
+
+    @Test func subStepsMatchFineSteps() {
+        let coarse = DawnSession(mode: .level(6), seed: 4)
+        _ = CoreHarness.run(coarse, seconds: 12, dt: 1.0 / 30.0) { (_: Double, _: DawnSession) -> Double in 0.25 }
+        let fine = DawnSession(mode: .level(6), seed: 4)
+        _ = CoreHarness.run(fine, seconds: 12, dt: 1.0 / 120.0) { (_: Double, _: DawnSession) -> Double in 0.25 }
+        #expect(abs(coarse.snapshot.time - fine.snapshot.time) < 1e-6)
+        #expect(abs(coarse.snapshot.pops - fine.snapshot.pops) <= 1)
+        #expect(abs(coarse.snapshot.glooms.count - fine.snapshot.glooms.count) <= 1)
+    }
+
+    // MARK: The pilot
+
+    @Test func pilotIsPureAndDeterministic() {
+        let shot = DawnSnapshot(mode: .level(5), phase: .playing, glooms: [
+            GloomState(id: 1, kind: .murk, u: 0.5, d: 0.4, radius: 0.05, hp: 0.5, maxHP: 0.55),
+            GloomState(id: 2, kind: .brute, u: 0.2, d: 0.2, radius: 0.085, hp: 3, maxHP: 3.6),
+        ])
+        var a = PilotBrain(skill: 0.4, seed: 5)
+        var b = PilotBrain(skill: 0.4, seed: 5)
+        var same: Bool = true
+        var i: Int = 0
+        while i < 300 {
+            let x: Double = a.band(for: shot, dt: 1.0 / 60.0)
+            let y: Double = b.band(for: shot, dt: 1.0 / 60.0)
+            if x != y { same = false }
+            i += 1
+        }
+        #expect(same)
+    }
+
+    @Test func pilotRespectsItsSpeedCap() {
+        let shot = DawnSnapshot(mode: .level(5), phase: .playing, glooms: [
+            GloomState(id: 1, kind: .murk, u: 0.5, d: 0.95, radius: 0.05, hp: 0.5, maxHP: 0.55),
+        ])
+        var p = PilotBrain(skill: 1, seed: 1)
+        var last: Double = p.position
+        var maxSpeed: Double = 0
+        var i: Int = 0
+        while i < 120 {
+            let b: Double = p.band(for: shot, dt: 1.0 / 120.0)
+            maxSpeed = max(maxSpeed, abs(b - last) * 120)
+            last = b
+            i += 1
+        }
+        #expect(maxSpeed <= 1.6 + 1e-6)
+        #expect(maxSpeed > 1.2)
+        #expect(abs(p.speedCap - 1.6) < 1e-12)
+        #expect(abs(PilotBrain(skill: 0, seed: 1).speedCap - 0.9) < 1e-12)
+        #expect(abs(PilotBrain(skill: 0, seed: 1).reaction - 0.35) < 1e-12)
+        #expect(abs(PilotBrain(skill: 1, seed: 1).reaction - 0.08) < 1e-12)
+    }
+
+    @Test func pilotTracksAndSparesFireflies() {
+        let chase = DawnSnapshot(mode: .level(5), phase: .playing, glooms: [
+            GloomState(id: 1, kind: .murk, u: 0.5, d: 0.4, radius: 0.05, hp: 0.5, maxHP: 0.55),
+        ])
+        var p = PilotBrain(skill: 1, seed: 2)
+        var i: Int = 0
+        while i < 240 {
+            _ = p.band(for: chase, dt: 1.0 / 120.0)
+            i += 1
+        }
+        #expect(abs(p.position - 0.4) < 0.04)
+        #expect(p.targetID == 1)
+
+        let guarded = DawnSnapshot(mode: .level(5), phase: .playing, glooms: [
+            GloomState(id: 1, kind: .murk, u: 0.5, d: 0.4, radius: 0.05, hp: 0.5, maxHP: 0.55),
+        ], fireflies: [FireflyState(id: 9, u: 0.5, d: 0.42)])
+        var q = PilotBrain(skill: 1, seed: 2)
+        i = 0
+        while i < 240 {
+            _ = q.band(for: guarded, dt: 1.0 / 120.0)
+            i += 1
+        }
+        #expect(abs(q.position - 0.42) >= q.fireflyMargin - 0.01)
+    }
+
+    @Test func pilotLetsTheLightIn() {
+        let s = DawnSession(mode: .level(1), seed: 1)
+        _ = CoreHarness.play(s, skill: 0.3, pilotSeed: 1, cap: 2)
+        #expect(s.snapshot.phase == .playing)
+    }
+
+    /// Every level is won by a strong pilot (skill 1, session seed 1, pilot seed 8: the JS mirror's first seed).
+    @Test func strongPilotWinsEveryLevel() {
+        var n: Int = 1
+        var lost: [Int] = []
+        while n <= LevelBook.count {
+            let s = DawnSession(mode: .level(n), seed: 1)
+            _ = CoreHarness.play(s, skill: 1, pilotSeed: 8, cap: 120)
+            if s.snapshot.phase != .won { lost.append(n) }
+            n += 1
+        }
+        #expect(lost.isEmpty, "strong pilot lost levels \(lost)")
+    }
+}
