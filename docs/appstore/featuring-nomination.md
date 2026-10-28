@@ -39,7 +39,7 @@ Shadow critters seep out of the crease towards five flowers. Light pops them in 
 
 ### Helpful Details
 ```
-Optimized for iPhone Duo: one half is a mirror, the other the play field, in laptop or book pose. Public iOS 27.1 hinge API: the angle maps continuously to where the light lands, from 80 to 145 degrees, so play is gentle and never flat, with no pause near 90 degrees. Closing is a real pause; the outer display shows it. A new hinge verb for us: reach, aimed by angle. Also from us: Squish, Brim, Swoop, Hush and Snapjaw.
+Optimized for iPhone Duo: one half is a mirror, the other the play field, in laptop or book pose. Public iOS 27.1 hinge API: the angle maps continuously to where the light lands, from 80 to 135 degrees, so play is gentle and never flat, with no pause near 90 degrees. Closing is a real pause; the outer display shows it. A new hinge verb for us: reach, aimed by angle. Also from us: Squish, Brim, Swoop, Hush and Snapjaw.
 ```
 
 **Why this copy:**

@@ -21,6 +21,8 @@ import Foundation
 //   `sweepWindow` of the previous; at 3 it scores 90 and each further pop +30.
 // - Sunrise at `duration`: every shadow left evaporates silently, +40 per flower, stars (daily: 0). All flowers gone:
 //   the night wins. Long Night never rises: a new wave every 30 s (`.waveUp(n)` from wave 2).
+// - R2: the crease shade (`d < Tuning.creaseShade`) gets no light: glooms and fireflies there are safe. Cloud shadows
+//   (`LevelSpec.clouds`, from world 2) slide across in u and multiply the light by `Tuning.cloudFactor`.
 
 /// Running totals (results, achievements, balance).
 struct DawnStats: Equatable {
@@ -35,6 +37,42 @@ struct DawnStats: Equatable {
     var firefliesDelivered: Int = 0
     var hops: Int = 0
     var splits: Int = 0
+    /// R2: pops of brutes (achievements), the final score, and pops and eaten flowers by gloom kind (lost-level tips).
+    var brutesPopped: Int = 0
+    var score: Int = 0
+    var popsBy: [GloomKind: Int] = [:]
+    var flowersEatenBy: [GloomKind: Int] = [:]
+    /// R2: light-seconds the band would have given glooms but a cloud's shadow (or the crease shade) took away.
+    var cloudBlockedSeconds: Double = 0
+    var creaseBlockedSeconds: Double = 0
+    /// R2: glooms a cloud kept mostly dark while the band was on them, and how many of those then ate a flower.
+    var cloudedGlooms: Int = 0
+    var eatenAfterCloud: Int = 0
+    /// R2: clouds that crossed the garden.
+    var clouds: Int = 0
+
+    /// Flowers eaten by `kind`.
+    func eaten(by kind: GloomKind) -> Int { return flowersEatenBy[kind] ?? 0 }
+
+    /// What ate the most flowers (nil if none; ties go to `GloomKind.allCases` order).
+    var worstKind: GloomKind? {
+        var best: GloomKind? = nil
+        var most: Int = 0
+        for k in GloomKind.allCases {
+            let n: Int = flowersEatenBy[k] ?? 0
+            if n > most {
+                most = n
+                best = k
+            }
+        }
+        return best
+    }
+}
+
+/// R2: a scheduled cloud (a `CloudSpec` with the session offset applied).
+struct PendingCloud: Equatable {
+    var spec: CloudSpec
+    var seq: Int
 }
 
 /// A scheduled arrival.
@@ -71,6 +109,8 @@ struct DawnGloom {
     /// Splitter wisps: seconds of fling left.
     var fling: Double
     var wasLit: Bool
+    /// R2: a cloud kept it mostly dark under the band at least once.
+    var clouded: Bool = false
 
     var state: GloomState {
         return GloomState(id: id, kind: kind, u: u, d: d, radius: radius, hp: max(hp, 0), maxHP: maxHP, lit: lit,
@@ -120,6 +160,11 @@ final class DawnSession {
     private(set) var glooms: [DawnGloom] = []
     private(set) var fireflies: [DawnFirefly] = []
     private var popped: [DawnGloom] = []
+    private(set) var cloudQueue: [PendingCloud] = []
+    private var cloudIndex: Int = 0
+    /// R2: the clouds on the band now, and each one's signed drift (u/s).
+    private(set) var shades: [ShadeState] = []
+    private var shadeDrift: [Double] = []
     private var nextID: Int = 1
     private var firstBand: Double? = nil
     private var band: Double = Tuning.bandMin
@@ -158,6 +203,7 @@ final class DawnSession {
         popped.reserveCapacity(8)
         if let script = resolved {
             expand(script.groups, offset: 0)
+            addClouds(script.clouds, offset: 0)
         }
     }
 
@@ -265,6 +311,61 @@ final class DawnSession {
         if wave > 1 { events.append(.waveUp(wave)) }
         let groups: [SpawnGroup] = LevelBook.endlessWave(wave, rng: &rng)
         expand(groups, offset: clock)
+        let clouds: [CloudSpec] = LevelBook.endlessClouds(wave, rng: &rng)
+        addClouds(clouds, offset: clock)
+    }
+
+    private func addClouds(_ clouds: [CloudSpec], offset: Double) {
+        if clouds.isEmpty { return }
+        for c in clouds {
+            var shifted: CloudSpec = c
+            shifted.time += offset
+            cloudQueue.append(PendingCloud(spec: shifted, seq: seqCounter))
+            seqCounter += 1
+        }
+        if cloudIndex > 0 {
+            cloudQueue.removeFirst(min(cloudIndex, cloudQueue.count))
+            cloudIndex = 0
+        }
+        cloudQueue.sort { (a: PendingCloud, b: PendingCloud) -> Bool in
+            if a.spec.time != b.spec.time { return a.spec.time < b.spec.time }
+            return a.seq < b.seq
+        }
+    }
+
+    /// Clouds arrive just off their edge and drift across; gone once fully past the far edge.
+    private func moveClouds(_ h: Double, now: Double) {
+        while cloudIndex < cloudQueue.count && cloudQueue[cloudIndex].spec.time <= now {
+            let c: CloudSpec = cloudQueue[cloudIndex].spec
+            cloudIndex += 1
+            let hw: Double = max(c.halfWidth, 0.01)
+            shades.append(ShadeState(id: nextID, u: c.fromLeft ? -hw : 1 + hw, halfWidth: hw,
+                                     strength: min(max(c.strength, 0), 1)))
+            shadeDrift.append(c.fromLeft ? abs(c.speed) : -abs(c.speed))
+            nextID += 1
+        }
+        if shades.isEmpty { return }
+        var w: Int = 0
+        var r: Int = 0
+        let count: Int = shades.count
+        while r < count {
+            var c: ShadeState = shades[r]
+            let v: Double = shadeDrift[r]
+            r += 1
+            c.u += v * h
+            let gone: Bool = v > 0 ? c.u - c.halfWidth > 1.02 : c.u + c.halfWidth < -0.02
+            if gone {
+                stats.clouds += 1
+                continue
+            }
+            shades[w] = c
+            shadeDrift[w] = v
+            w += 1
+        }
+        if w < shades.count {
+            shades.removeSubrange(w..<shades.count)
+            shadeDrift.removeSubrange(w..<shadeDrift.count)
+        }
     }
 
     private func spawnGloom(_ kind: GloomKind, u: Double, d: Double?, speedScale: Double, flung: Bool,
@@ -334,6 +435,8 @@ final class DawnSession {
                 spawnGloom(kind, u: e.u, d: nil, speedScale: e.speedScale, flung: false, events: &events)
             }
         }
+        moveClouds(h, now: now)
+        let clouded: Bool = !shades.isEmpty
 
         // Glooms: burn, move, pop or eat (compacted in place).
         var w: Int = 0
@@ -347,7 +450,21 @@ final class DawnSession {
                 w += 1
                 continue
             }
-            let lit: Double = lightOn ? Tuning.intensity(d: g.d, radius: g.radius, band: b) : 0
+            let raw: Double = lightOn ? Tuning.unshadedIntensity(d: g.d, radius: g.radius, band: b) : 0
+            let cf: Double = clouded ? Tuning.cloudFactor(u: g.u, shades: shades) : 1
+            let inCrease: Bool = Tuning.isShaded(d: g.d)
+            let lit: Double = inCrease ? 0 : raw * cf
+            if raw > 0 {
+                if inCrease {
+                    stats.creaseBlockedSeconds += raw * h
+                } else {
+                    stats.cloudBlockedSeconds += raw * (1 - cf) * h
+                    if cf < 0.5 && !g.clouded {
+                        g.clouded = true
+                        stats.cloudedGlooms += 1
+                    }
+                }
+            }
             g.lit = lit
             g.hp -= lit * h * Tuning.burnRate
             if g.kind == .hopper {
@@ -431,7 +548,8 @@ final class DawnSession {
         while r < fcount {
             var f: DawnFirefly = fireflies[r]
             r += 1
-            let lit: Double = lightOn ? Tuning.intensity(d: f.d, radius: Tuning.fireflyRadius, band: b) : 0
+            var lit: Double = lightOn ? Tuning.intensity(d: f.d, radius: Tuning.fireflyRadius, band: b) : 0
+            if clouded && lit > 0 { lit *= Tuning.cloudFactor(u: f.u, shades: shades) }
             f.lit = lit
             if lit > 0 {
                 f.scorchTime += lit * h
@@ -485,6 +603,8 @@ final class DawnSession {
         snapshot.pops += 1
         stats.pops += 1
         stats.longestChain = max(stats.longestChain, chain)
+        stats.popsBy[g.kind, default: 0] += 1
+        if g.kind == .brute { stats.brutesPopped += 1 }
         events.append(.popped(id: g.id, kind: g.kind, u: g.u, d: g.d, chain: chain, points: points))
         if sweepRun >= Tuning.sweepMinimum {
             let bonus: Int = sweepRun == Tuning.sweepMinimum
@@ -529,6 +649,8 @@ final class DawnSession {
         if lane < 0 { return }
         snapshot.flowers[lane] = false
         stats.flowersEaten += 1
+        stats.flowersEatenBy[g.kind, default: 0] += 1
+        if g.clouded { stats.eatenAfterCloud += 1 }
         let left: Int = flowersLeft
         events.append(.flowerEaten(lane: lane, flowersLeft: left, by: g.kind))
         breakChain(&events)
@@ -561,6 +683,8 @@ final class DawnSession {
         snapshot.score += bonus
         glooms.removeAll(keepingCapacity: true)
         fireflies.removeAll(keepingCapacity: true)
+        shades.removeAll(keepingCapacity: true)
+        shadeDrift.removeAll(keepingCapacity: true)
         snapshot.phase = left > 0 ? .won : .lost
         var stars: Int = DawnSession.stars(flowersLeft: left)
         if case .daily = mode { stars = 0 }
@@ -589,6 +713,8 @@ final class DawnSession {
             snapshot.fireflies.append(s)
             if f.lit > 0 { ffDanger = max(ffDanger, s.scorch) }
         }
+        if snapshot.shades != shades { snapshot.shades = shades }
+        stats.score = snapshot.score
         snapshot.band = band
         snapshot.creaseGlow = min(max(input.creaseGlow, 0), 1)
         snapshot.time = clock

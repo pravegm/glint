@@ -185,6 +185,117 @@ struct SceneTests {
         }
     }
 
+    // MARK: R2: light, shade, clouds
+
+    @Test func cloudShadesCutTheLightExactly() {
+        let shades = [ShadeState(id: 1, u: 0.4, halfWidth: 0.1, strength: 1),
+                      ShadeState(id: 2, u: 0.75, halfWidth: 0.08, strength: 0.5)]
+        #expect(GardenLightMath.factor(u: 0.4, shades: shades) < 0.0001)
+        #expect(abs(GardenLightMath.factor(u: 0.75, shades: shades) - 0.5) < 0.0001)
+        #expect(abs(GardenLightMath.factor(u: 0.6, shades: shades) - 1) < 0.0001)
+        #expect(GardenLightMath.factor(u: 0, shades: []) < 0.0001)
+        #expect(abs(GardenLightMath.factor(u: 0.03, shades: []) - 0.5) < 0.0001)
+        var pieces: [LightPiece] = []
+        GardenLightMath.pieces(shades: shades, into: &pieces)
+        #expect(pieces.count >= 9)
+        #expect(abs(pieces.first?.u0 ?? -1) < 0.0001)
+        #expect(abs((pieces.last?.u1 ?? 0) - 1) < 0.0001)
+        for i in 0...200 {
+            let u = Double(i) / 200
+            let want = CGFloat(GardenLightMath.factor(u: u, shades: shades))
+            #expect(abs(GardenLightMath.drawn(u: u, pieces: pieces) - want) < 0.001)
+        }
+        GardenLightMath.pieces(shades: [], into: &pieces)
+        #expect(pieces.count == 3)
+    }
+
+    @Test func shadesShowCloudsInTheMirrorAndCutTheBand() {
+        let scene = GardenScene(layout: SceneTests.layouts[0])
+        var s = SceneTests.playing(.level(14))
+        scene.render(s, events: [], dt: SceneTests.step)
+        let plain = scene.lightSpriteCount
+        #expect(plain > 0)
+        #expect(scene.mirrorShadeClouds == 0)
+        s.shades = [ShadeState(id: 1, u: 0.3, halfWidth: 0.12), ShadeState(id: 2, u: 0.7, halfWidth: 0.09)]
+        scene.render(s, events: [], dt: SceneTests.step)
+        #expect(scene.mirrorShadeClouds == 2)
+        #expect(scene.lightSpriteCount > plain)
+        s.band = -0.2
+        scene.render(s, events: [], dt: SceneTests.step)
+        #expect(scene.lightSpriteCount == 0)
+    }
+
+    @Test func theCreaseShadeRimSitsWhereTheLightStops() {
+        for layout in SceneTests.layouts {
+            let scene = GardenScene(layout: layout)
+            scene.render(SceneTests.playing(), events: [], dt: SceneTests.step)
+            let want = scene.scenePoint(u: 0.5, d: GardenMath.creaseShade)
+            #expect(SceneTests.near(scene.shadeRimCenter, want, 0.05))
+        }
+    }
+
+    @Test func gloomsInTheShadeSinkAndSurfaceWithARipple() {
+        let scene = GardenScene(layout: SceneTests.layouts[0])
+        var s = SceneTests.playing()
+        s.glooms = [SceneTests.gloom(1, .murk, u: 0.5, d: 0.02)]
+        scene.render(s, events: [], dt: SceneTests.step)
+        #expect(scene.gloomSubmerged(id: 1))
+        for _ in 0..<40 { scene.render(s, events: [], dt: SceneTests.step) }
+        let before = scene.fxActiveCount
+        s.glooms = [SceneTests.gloom(1, .murk, u: 0.5, d: GardenMath.creaseShade + 0.05)]
+        scene.render(s, events: [], dt: SceneTests.step)
+        #expect(!scene.gloomSubmerged(id: 1))
+        #expect(scene.fxActiveCount > before)
+        #expect(GardenMath.sink(d: 0) > 0.99)
+        #expect(GardenMath.sink(d: GardenMath.creaseShade + 0.02) < 0.01)
+    }
+
+    @Test func gloomsAreBiggerOnPhonesAndWatchTheBand() {
+        let phone = GardenScene(layout: SceneTests.layouts[0])
+        let duo = GardenScene(layout: SceneTests.layouts[2])
+        var s = SceneTests.playing()
+        s.band = 0.8
+        s.glooms = [SceneTests.gloom(1, .murk, u: 0.5, d: 0.4)]
+        phone.render(s, events: [], dt: SceneTests.step)
+        duo.render(s, events: [], dt: SceneTests.step)
+        let rp = phone.gloomRadius(id: 1) ?? 0
+        let rd = duo.gloomRadius(id: 1) ?? 0
+        #expect(abs(rp - 0.045 * SceneTests.layouts[0].gardenDepth * 1.15) < 0.01)
+        #expect(abs(rd - 0.045 * SceneTests.layouts[2].gardenDepth) < 0.01)
+        // The band is further out: they look towards the flowers (+d); then back towards the crease.
+        let f = phone.gardenFrame
+        if let l = phone.gloomLook(id: 1) { #expect(l.dx * f.dUnit.dx + l.dy * f.dUnit.dy > 0.9) }
+        s.band = 0.1
+        phone.render(s, events: [], dt: SceneTests.step)
+        if let l = phone.gloomLook(id: 1) { #expect(l.dx * f.dUnit.dx + l.dy * f.dUnit.dy < -0.9) }
+    }
+
+    @Test func juicePopsChainsSweepsAndBrutes() {
+        let scene = GardenScene(layout: SceneTests.layouts[0])
+        var s = SceneTests.playing()
+        s.glooms = [SceneTests.gloom(1, .brute, u: 0.5, d: 0.5, lit: 1)]
+        scene.render(s, events: [], dt: SceneTests.step)
+        s.glooms = []
+        scene.render(s, events: [.popped(id: 1, kind: .brute, u: 0.5, d: 0.5, chain: 5, points: 80),
+                                 .swept(count: 3, bonus: 90)], dt: SceneTests.step)
+        // The brute holds a white squash for a couple of frames over its burst.
+        #expect(scene.dyingGloomCount == 1)
+        #expect(scene.bandSwell > 0.9)
+        for _ in 0..<12 { scene.render(s, events: [], dt: SceneTests.step) }
+        #expect(scene.dyingGloomCount == 0)
+        #expect(scene.chainTextPeakScale > 1.2)
+        #expect(scene.floatingTexts.contains("×5"))
+        for _ in 0..<120 { scene.render(s, events: [], dt: SceneTests.step) }
+        #expect(scene.bandSwell < 0.05)
+    }
+
+    @Test func hudSafeRectsAreTheFlowers() {
+        for layout in SceneTests.layouts {
+            #expect(GardenScene.hudSafeRects(layout: layout) == GardenScene.flowerRects(layout: layout))
+            #expect(GardenScene.hudSafeRects(layout: layout).count == 5)
+        }
+    }
+
     // MARK: Textures and pooling
 
     @Test func aWarmFrameLoopBuildsNoTextures() {
@@ -388,22 +499,46 @@ struct SceneTests {
 
     // MARK: Mirror
 
-    @Test func theLeverFollowsTheBandTowardsTheCrease() {
-        let scene = GardenScene(layout: SceneTests.layouts[0])
+    /// R2 (REVIEW-1 P0-4): the phone's grip sits on the band's edge at d = band exactly, bandMin…1, and pulses until
+    /// the band first moves. Never in attract mode.
+    @Test func theLeverGripRidesTheBandOneToOne() {
+        let layout = SceneTests.layouts[0]
+        let scene = GardenScene(layout: layout)
         var s = SceneTests.playing()
         s.band = -0.2
         scene.render(s, events: [], dt: SceneTests.step)
         #expect(!scene.leverShowing)
         scene.showsLever = true
+        for b in [-0.2, 0.0, 0.37, 0.8, 1.0] {
+            s.band = b
+            scene.render(s, events: [], dt: SceneTests.step)
+            #expect(scene.leverShowing)
+            let f = layout.floorPoint(at: scene.swiftUIPoint(fromScene: scene.leverPoint))
+            #expect(abs(f.d - b) < 0.001)
+            #expect(f.u > 0.85 && f.u < 1)
+        }
+        #expect(!scene.gripPulsing)
+        let fresh = GardenScene(layout: layout)
+        fresh.showsLever = true
+        var w = SceneTests.playing()
+        w.band = -0.2
+        fresh.render(w, events: [], dt: SceneTests.step)
+        #expect(fresh.gripPulsing)
+        fresh.attract = true
+        fresh.render(w, events: [], dt: SceneTests.step)
+        #expect(!fresh.leverShowing)
+    }
+
+    /// R2: the sun's glint is a small cross flare (a fraction of the sun), and the glass has a hot spot at its crease
+    /// edge.
+    @Test func theSunGlintIsSmallAndTheGlassHasAHotSpot() {
+        let scene = GardenScene(layout: SceneTests.layouts[0])
+        var s = SceneTests.playing()
+        s.sun = 0.5
         scene.render(s, events: [], dt: SceneTests.step)
-        #expect(scene.leverShowing)
-        let p0 = scene.leverPoint
-        s.band = 1
-        scene.render(s, events: [], dt: SceneTests.step)
-        let p1 = scene.leverPoint
-        let crease = scene.scenePoint(u: 0.5, d: 0)
-        #expect(SceneTests.distance(p1, crease) + 20 < SceneTests.distance(p0, crease))
-        #expect(scene.mirrorGlass.contains(p0) && scene.mirrorGlass.contains(p1))
+        #expect(scene.sunGlintSize < scene.sunRadius * 1.3)
+        #expect(scene.sunGlintSize > 1)
+        #expect(abs(scene.mirrorHotSpot.y - scene.mirrorGlass.minY) < 0.5)
     }
 
     @Test func theSunRisesWithTheLevel() {
@@ -473,6 +608,7 @@ struct SceneTests {
                      dt: SceneTests.step)
         for _ in 0..<10 { scene.render(s, events: [], dt: SceneTests.step) }
         #expect(scene.drawnNodeCount <= 300)
-        #expect(scene.nodeCount <= 460)
+        // R2: the light layers keep 150 pooled piece sprites (hidden unless a cloud shade cuts the band).
+        #expect(scene.nodeCount <= 640)
     }
 }

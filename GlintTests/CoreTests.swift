@@ -5,6 +5,8 @@ import Testing
 
 // MARK: - Core rules (Round 1): tuning maths, the band profile, RNG, DailySeed, LevelBook, every DawnSession rule,
 // determinism, the pilot, and a 30-level smoke run with a strong pilot.
+// Round 2: the crease shade, cloud shadows, the 135° edge, DawnStats by kind and by shade, the human-hinge pilot,
+// achievements (each just below and at its threshold).
 
 /// Shared drivers for Core tests and BalanceTests.
 enum CoreHarness {
@@ -97,13 +99,18 @@ struct CoreTests {
 
     @Test func angleMapsToTheBand() {
         #expect(abs(Tuning.band(angle: 80) - 0) < 1e-12)
+        #expect(abs(Tuning.band(angle: 135) - 1) < 1e-12)
         #expect(abs(Tuning.band(angle: 145) - 1) < 1e-12)
-        #expect(abs(Tuning.band(angle: 112.5) - 0.5) < 1e-12)
+        #expect(abs(Tuning.band(angle: 107.5) - 0.5) < 1e-12)
+        #expect(abs(Tuning.band(angle: 129.5) - 0.9) < 1e-9)
         #expect(abs(Tuning.band(angle: 15) - Tuning.bandMin) < 1e-12)
         #expect(abs(Tuning.band(angle: 180) - 1) < 1e-12)
         #expect(abs(Tuning.band(angle: 67) - (-0.2)) < 1e-9)
         #expect(abs(Tuning.band(angle: Double.nan) - Tuning.bandMin) < 1e-12)
-        #expect(abs(Tuning.angle(forBand: 0.5) - 112.5) < 1e-9)
+        #expect(abs(Tuning.angle(forBand: 0.5) - 107.5) < 1e-9)
+        #expect(abs(Tuning.angle(forBand: 1) - 135) < 1e-9)
+        #expect(abs(Tuning.angle(forBand: 0) - 80) < 1e-9)
+        #expect(abs(Tuning.angle(forBand: 3) - 135) < 1e-9)
         #expect(abs(Tuning.band(angle: Tuning.angle(forBand: 0.37)) - 0.37) < 1e-9)
     }
 
@@ -174,7 +181,7 @@ struct CoreTests {
     @Test func tuningMatchesTheDesign() {
         #expect(abs(Tuning.shutAngle - 15) < 1e-12)
         #expect(abs(Tuning.creaseAngle - 80) < 1e-12)
-        #expect(abs(Tuning.edgeAngle - 145) < 1e-12)
+        #expect(abs(Tuning.edgeAngle - 135) < 1e-12)
         #expect(abs(Tuning.resumeAngle - 25) < 1e-12)
         #expect(abs(Tuning.shutDwell - 0.25) < 1e-12)
         #expect(abs(Tuning.bandCoreHalfWidth - 0.05) < 1e-12)
@@ -183,7 +190,8 @@ struct CoreTests {
         #expect(abs(Tuning.chainWindow - 1.6) < 1e-12)
         #expect(abs(Tuning.sweepWindow - 0.35) < 1e-12)
         #expect(abs(Tuning.maxMultiplier - 4) < 1e-12)
-        #expect(abs(Tuning.dragSpeedCap - 2.4) < 1e-12)
+        #expect(abs(Tuning.dragSpeedCap - 1.4) < 1e-12)
+        #expect(abs(Tuning.creaseShade - 0.12) < 1e-12)
         #expect(abs(Tuning.resumeGrace - 0.6) < 1e-12)
     }
 
@@ -351,17 +359,45 @@ struct CoreTests {
 
     @Test func worldsGetHarder() {
         var hp: [Double] = [0, 0, 0]
-        var speed: [Double] = [0, 0, 0]
+        var clouds: [Int] = [0, 0, 0]
+        var width: [Double] = [0, 0, 0]
         var w: Int = 1
         while w <= 3 {
             for k in LevelBook.levels(inWorld: w) {
-                hp[w - 1] += LevelBook.level(k).totalHP / 10
-                speed[w - 1] += LevelBook.recipes[k - 1].speed / 10
+                let l: LevelSpec = LevelBook.level(k)
+                hp[w - 1] += l.totalHP / 10
+                clouds[w - 1] += l.clouds.count
+                for c in l.clouds { width[w - 1] = max(width[w - 1], c.halfWidth) }
             }
             w += 1
         }
         #expect(hp[0] < hp[1] && hp[1] < hp[2])
-        #expect(speed[0] < speed[1] && speed[1] < speed[2])
+        // R2: no clouds in Meadow; Harbour has more and wider ones than Rooftops.
+        #expect(clouds[0] == 0)
+        #expect(clouds[1] > 0 && clouds[2] > clouds[1])
+        #expect(width[2] > width[1])
+    }
+
+    @Test func cloudsAreTelegraphedAndOnSchedule() {
+        for n in LevelBook.levels(inWorld: 2) {
+            let l: LevelSpec = LevelBook.level(n)
+            #expect(!l.clouds.isEmpty)
+            var last: Double = -1
+            for c in l.clouds {
+                #expect(c.time >= last - 1e-9)
+                #expect(c.time >= LevelBook.firstSpawn + LevelBook.cloudLead - 1e-9)
+                #expect(c.time <= l.duration - LevelBook.cloudTail + 1e-9)
+                #expect(c.halfWidth >= 0.05 && c.halfWidth <= 0.2)
+                #expect(c.speed >= 0.03 && c.speed <= 0.12)
+                #expect(c.strength > 0 && c.strength <= 1)
+                last = c.time
+            }
+        }
+        #expect(LevelBook.level(10).clouds.isEmpty)
+        #expect(!LevelBook.daily(day: 300).clouds.isEmpty)
+        #expect(LevelBook.endlessRecipe(3).clouds == 0)
+        #expect(LevelBook.endlessRecipe(4).clouds == 1)
+        #expect(LevelBook.endlessRecipe(9).clouds == 2)
     }
 
     @Test func levelsAreDeterministic() {
@@ -531,8 +567,10 @@ struct CoreTests {
             if let g = session.snapshot.glooms.first { return g.d + (g.tension < 0.02 ? 0.06 : 0.02) }
             return 0
         }
-        #expect(led < parked)
+        // R2: with the crease shade both start late; riding the hopper is still no slower than parking.
+        #expect(led <= parked + 0.05)
         #expect(led < 5)
+        #expect(parked < 20)
     }
 
     @Test func hoppersHopAndTheLightStartlesThem() {
@@ -820,7 +858,7 @@ struct CoreTests {
         #expect(abs(s.snapshot.time - 20) < 0.01)
 
         let t = DawnSession(spec: CoreHarness.spec([CoreHarness.group(.gloom(.brute), at: 0.1)], duration: 40))
-        _ = CoreHarness.runParked(t, at: 0.05, seconds: 2)
+        _ = CoreHarness.runParked(t, at: 0.25, seconds: 4)
         let tel: Telemetry = t.snapshot.telemetry
         #expect(tel.litCount == 1)
         #expect(tel.burnRate > 0.5 && tel.burnRate <= 1 + 1e-9)
@@ -829,7 +867,7 @@ struct CoreTests {
             #expect(g.lit > 0.5)
             #expect(g.hp < g.maxHP)
         }
-        #expect(abs(t.snapshot.band - 0.05) < 1e-12)
+        #expect(abs(t.snapshot.band - 0.25) < 1e-12)
     }
 
     // MARK: Modes
@@ -856,13 +894,24 @@ struct CoreTests {
         #expect(a.seed == b.seed)
         #expect(a.queue == b.queue)
         #expect(abs(a.duration - 90) < 1e-12)
-        let events = CoreHarness.play(a, skill: 1, pilotSeed: 8, cap: 120)
+        _ = CoreHarness.play(a, skill: 1, pilotSeed: 8, cap: 120)
+        #expect(a.isFinished)
+        // A daily sunrise always gives 0 stars (a tiny daily script, parked band).
+        let tiny = DawnSession(mode: .daily(day: 300),
+                               spec: CoreHarness.spec([CoreHarness.group(.gloom(.murk), at: 0.5)], duration: 10),
+                               seed: 1)
+        let events = CoreHarness.runParked(tiny, at: 0.3, seconds: 12)
         var stars: Int = -1
+        var bonus: Int = -1
         for e in events {
-            if case .sunrise(let st, _) = e { stars = st }
+            if case .sunrise(let st, let b) = e.event {
+                stars = st
+                bonus = b
+            }
         }
-        #expect(a.snapshot.phase == .won)
+        #expect(tiny.snapshot.phase == .won)
         #expect(stars == 0)
+        #expect(bonus == 200)
     }
 
     @Test func sameSeedSameInputsSameEvents() {
@@ -888,6 +937,267 @@ struct CoreTests {
         #expect(abs(coarse.snapshot.time - fine.snapshot.time) < 1e-6)
         #expect(abs(coarse.snapshot.pops - fine.snapshot.pops) <= 1)
         #expect(abs(coarse.snapshot.glooms.count - fine.snapshot.glooms.count) <= 1)
+    }
+
+    // MARK: R2: the crease shade and cloud shadows
+
+    /// A cloud covering u 0.05…0.95 over the band from ~2.7 s to ~7 s (slides in from the left at 0.2 u/s).
+    private static let wideCloud: [CloudSpec] = [
+        CloudSpec(time: 0.1, fromLeft: true, halfWidth: 0.45, speed: 0.2, strength: 1),
+    ]
+
+    @Test func theCreaseShadeGetsNoLight() {
+        #expect(Tuning.isShaded(d: 0.11))
+        #expect(!Tuning.isShaded(d: 0.12))
+        #expect(Tuning.isShaded(d: -0.05))
+        #expect(abs(Tuning.intensity(d: 0.1, band: 0.1)) < 1e-12)
+        #expect(abs(Tuning.intensity(d: 0.2, band: 0.2) - 1) < 1e-12)
+        #expect(abs(Tuning.intensity(d: 0.1, radius: 0.05, band: 0.1)) < 1e-12)
+        #expect(abs(Tuning.unshadedIntensity(d: 0.1, radius: 0.05, band: 0.1) - 1) < 1e-12)
+
+        // A band held in the shade can't pop a murk: it surfaces, crosses the band's edge too fast, and eats.
+        let s = DawnSession(spec: CoreHarness.spec([CoreHarness.group(.gloom(.murk), at: 0.5)]))
+        var litInShade: Bool = false
+        let events = CoreHarness.run(s, seconds: 15) { (_: Double, session: DawnSession) -> Double in
+            for g in session.snapshot.glooms where g.d < Tuning.creaseShade && g.lit > 0 { litInShade = true }
+            return 0.05
+        }
+        #expect(!litInShade)
+        #expect(CoreHarness.pops(events).isEmpty)
+        #expect(CoreHarness.count(events, CoreHarness.isEaten) == 1)
+        #expect(s.stats.creaseBlockedSeconds > 0.5)
+    }
+
+    @Test func cloudFactorMaths() {
+        let one: [ShadeState] = [ShadeState(id: 1, u: 0.5, halfWidth: 0.1, strength: 1)]
+        #expect(abs(Tuning.cloudFactor(u: 0.5, shades: one)) < 1e-12)
+        #expect(abs(Tuning.cloudFactor(u: 0.58, shades: one)) < 1e-12)
+        #expect(abs(Tuning.cloudFactor(u: 0.6, shades: one) - 0.5) < 1e-9)
+        #expect(abs(Tuning.cloudFactor(u: 0.6 + Tuning.cloudEdge / 2, shades: one) - 1) < 1e-9)
+        #expect(abs(Tuning.cloudFactor(u: 0.9, shades: one) - 1) < 1e-12)
+        #expect(abs(Tuning.cloudFactor(u: 0.5, shades: []) - 1) < 1e-12)
+        let half: [ShadeState] = [ShadeState(id: 1, u: 0.5, halfWidth: 0.1, strength: 0.5)]
+        #expect(abs(Tuning.cloudFactor(u: 0.5, shades: half) - 0.5) < 1e-12)
+        let two: [ShadeState] = [ShadeState(id: 1, u: 0.5, halfWidth: 0.1, strength: 0.5),
+                                 ShadeState(id: 2, u: 0.5, halfWidth: 0.2, strength: 0.5)]
+        #expect(abs(Tuning.cloudFactor(u: 0.5, shades: two) - 0.25) < 1e-12)
+    }
+
+    @Test func aCloudKeepsAGloomSafe() {
+        let s = DawnSession(spec: LevelSpec(number: 15, world: 2, title: "Test", duration: 60,
+                                            groups: [CoreHarness.group(.gloom(.murk), at: 0.5)],
+                                            clouds: CoreTests.wideCloud))
+        var shadeFrames: Int = 0
+        var drifted: Bool = true
+        var lastU: Double = -9
+        var shapeOK: Bool = true
+        let events = CoreHarness.run(s, seconds: 15) { (_: Double, session: DawnSession) -> Double in
+            if let c = session.snapshot.shades.first {
+                shadeFrames += 1
+                if c.u < lastU { drifted = false }
+                lastU = c.u
+                if abs(c.halfWidth - 0.45) > 1e-12 || abs(c.strength - 1) > 1e-12 { shapeOK = false }
+            }
+            return 0.3
+        }
+        #expect(shadeFrames > 900 && shadeFrames < 1300)
+        #expect(drifted)
+        #expect(shapeOK)
+        #expect(CoreHarness.pops(events).isEmpty)
+        #expect(CoreHarness.count(events, CoreHarness.isEaten) == 1)
+        #expect(s.stats.cloudBlockedSeconds > 0.5)
+        #expect(s.stats.cloudedGlooms == 1)
+        #expect(s.stats.eatenAfterCloud == 1)
+        #expect(s.stats.eaten(by: .murk) == 1)
+        #expect(s.stats.worstKind == .murk)
+        #expect(s.stats.clouds == 1)
+        #expect(s.snapshot.shades.isEmpty)
+    }
+
+    @Test func aCloudSparesAFirefly() {
+        let clear = DawnSession(spec: CoreHarness.spec([CoreHarness.group(.firefly, at: 0.5)]))
+        let a = CoreHarness.runParked(clear, at: 0.3, seconds: 8)
+        #expect(CoreHarness.count(a, CoreHarness.isScorched) == 1)
+        let cloudy = DawnSession(spec: LevelSpec(number: 15, world: 2, title: "Test", duration: 60,
+                                                 groups: [CoreHarness.group(.firefly, at: 0.5)],
+                                                 clouds: CoreTests.wideCloud))
+        let b = CoreHarness.runParked(cloudy, at: 0.3, seconds: 8)
+        #expect(CoreHarness.count(b, CoreHarness.isScorched) == 0)
+    }
+
+    @Test func statsCountByKind() {
+        let s = DawnSession(spec: CoreHarness.spec([
+            CoreHarness.group(.gloom(.murk), at: 0.5, u: 0.1...0.1),
+            CoreHarness.group(.gloom(.wisp), at: 0.5, count: 2, u: 0.9...0.9),
+        ]))
+        _ = CoreHarness.runDark(s, seconds: 15)
+        #expect(s.stats.eaten(by: .murk) == 1)
+        #expect(s.stats.eaten(by: .wisp) == 2)
+        #expect(s.stats.eaten(by: .brute) == 0)
+        #expect(s.stats.worstKind == .wisp)
+        #expect(s.stats.flowersEaten == 3)
+
+        let p = DawnSession(spec: CoreHarness.spec([CoreHarness.group(.gloom(.brute), at: 0.5)]))
+        _ = CoreHarness.run(p, seconds: 25) { (_: Double, session: DawnSession) -> Double in
+            if let g = session.snapshot.glooms.first { return max(g.d, PilotBrain.minAim) }
+            return PilotBrain.minAim
+        }
+        #expect(p.stats.brutesPopped == 1)
+        #expect(p.stats.popsBy[.brute] == 1)
+        #expect(p.stats.score == p.snapshot.score)
+        #expect(p.stats.worstKind == nil)
+    }
+
+    @Test func levelsFromRooftopsBringClouds() {
+        let s = DawnSession(mode: .level(12), seed: 3)
+        var seen: Bool = false
+        _ = CoreHarness.run(s, seconds: 60, dt: 1.0 / 60.0) { (_: Double, session: DawnSession) -> Double in
+            if !session.snapshot.shades.isEmpty { seen = true }
+            return 0.9
+        }
+        #expect(seen)
+        #expect(s.cloudQueue.count == LevelBook.level(12).clouds.count)
+    }
+
+    // MARK: R2: the human-hinge pilot
+
+    @Test func theHumanHingeWobblesALowSkillHand() {
+        let shot = DawnSnapshot(mode: .level(5), phase: .playing, glooms: [
+            GloomState(id: 1, kind: .murk, u: 0.5, d: 0.4, radius: 0.05, hp: 0.5, maxHP: 0.55),
+        ])
+        func spread(_ skill: Double) -> Double {
+            var p = PilotBrain(skill: skill, seed: 3)
+            var lo: Double = 9
+            var hi: Double = -9
+            var i: Int = 0
+            while i < 480 {
+                let b: Double = p.band(for: shot, dt: 1.0 / 120.0)
+                if i >= 240 {
+                    lo = min(lo, b)
+                    hi = max(hi, b)
+                }
+                i += 1
+            }
+            return hi - lo
+        }
+        #expect(spread(0) > 0.02)
+        #expect(spread(1) < 0.015)
+        #expect(abs(PilotBrain(skill: 0, seed: 1).hingeLag - 0.35) < 1e-12)
+        #expect(abs(PilotBrain(skill: 1, seed: 1).hingeLag - 0.1) < 1e-12)
+        #expect(abs(PilotBrain(skill: 0, seed: 1).jitterAmplitude - 0.05) < 1e-12)
+        #expect(abs(PilotBrain(skill: 1, seed: 1).jitterAmplitude) < 1e-12)
+        #expect(abs(PilotBrain(skill: 1, seed: 1).overshootChance) < 1e-12)
+    }
+
+    @Test func thePilotWaitsOutTheShades() {
+        // Never aims into the crease shade.
+        let low = DawnSnapshot(mode: .level(5), phase: .playing, glooms: [
+            GloomState(id: 1, kind: .murk, u: 0.5, d: 0.02, radius: 0.05, hp: 0.55, maxHP: 0.55),
+        ])
+        var p = PilotBrain(skill: 1, seed: 4)
+        var i: Int = 0
+        while i < 240 {
+            _ = p.band(for: low, dt: 1.0 / 120.0)
+            i += 1
+        }
+        #expect(p.position > PilotBrain.minAim - 0.02)
+        // A gloom under a cloud is less urgent than its twin in the clear.
+        let shaded = GloomState(id: 1, kind: .murk, u: 0.2, d: 0.5, radius: 0.05, hp: 0.55, maxHP: 0.55)
+        let clear = GloomState(id: 2, kind: .murk, u: 0.8, d: 0.5, radius: 0.05, hp: 0.55, maxHP: 0.55)
+        let shades: [ShadeState] = [ShadeState(id: 9, u: 0.2, halfWidth: 0.1, strength: 1)]
+        let q = PilotBrain(skill: 1, seed: 4)
+        #expect(q.urgency(clear, in: [shaded, clear], shades: shades)
+                > q.urgency(shaded, in: [shaded, clear], shades: shades) + 1)
+    }
+
+    // MARK: R2: achievements
+
+    private func earned(_ stats: DawnStats = DawnStats(), mode: PlayMode = .level(5), outcome: SessionPhase = .lost,
+                        stars: Int = 0, won: Set<Int> = []) -> Set<String> {
+        return Set(Achievements.earned(stats: stats, mode: mode, outcome: outcome, progressStars: stars,
+                                       levelsWon: won))
+    }
+
+    @Test func achievementTable() {
+        #expect(Achievements.all.count == 10)
+        let keys: [String] = Achievements.all.map { (a: AchievementDef) -> String in a.key }
+        #expect(keys == ["firstlight", "sweep", "brute", "firefly", "chain4", "rooftops", "harbour", "allstars",
+                         "daily", "longnight"])
+        var points: Int = 0
+        var ids: Set<String> = []
+        for a in Achievements.all {
+            #expect(a.id == "glint.ach." + a.key)
+            #expect(!a.title.isEmpty && a.title.count <= 30)
+            #expect(!a.blurb.isEmpty && a.detail == a.blurb)
+            #expect(a.points > 0 && a.points <= 100)
+            #expect(Achievements.earnedBlurbs[a.key] != nil)
+            points += a.points
+            ids.insert(a.id)
+        }
+        #expect(points == 435)
+        #expect(ids.count == 10)
+        #expect(Achievements.chain4Chain == 13)
+        #expect(Achievements.allStarsTotal == 90)
+        #expect(Achievements.find("brute")?.title == "The Bigger They Come")
+        #expect(earned().isEmpty)
+    }
+
+    @Test func achievementThresholds() {
+        let first: String = Achievements.firstLight.id
+        #expect(earned(mode: .level(3), outcome: .won).contains(first))
+        #expect(!earned(mode: .level(3), outcome: .lost).contains(first))
+        #expect(!earned(mode: .daily(day: 300), outcome: .won).contains(first))
+
+        var st = DawnStats()
+        st.bestSweep = 2
+        #expect(!earned(st).contains(Achievements.sweep.id))
+        st.bestSweep = 3
+        #expect(earned(st).contains(Achievements.sweep.id))
+
+        st = DawnStats()
+        #expect(!earned(st).contains(Achievements.brute.id))
+        st.brutesPopped = 1
+        #expect(earned(st).contains(Achievements.brute.id))
+
+        st = DawnStats()
+        #expect(!earned(st).contains(Achievements.firefly.id))
+        st.flowersReplanted = 1
+        #expect(earned(st).contains(Achievements.firefly.id))
+
+        st = DawnStats()
+        st.longestChain = 12
+        #expect(!earned(st).contains(Achievements.chain4.id))
+        st.longestChain = 13
+        #expect(earned(st).contains(Achievements.chain4.id))
+
+        #expect(!earned(won: Set(11...19)).contains(Achievements.rooftops.id))
+        #expect(earned(won: Set(11...20)).contains(Achievements.rooftops.id))
+        #expect(!earned(won: Set(21...29)).contains(Achievements.harbour.id))
+        #expect(earned(won: Set(21...30)).contains(Achievements.harbour.id))
+        #expect(!earned(stars: 89).contains(Achievements.allStars.id))
+        #expect(earned(stars: 90).contains(Achievements.allStars.id))
+
+        #expect(!earned(mode: .daily(day: 300), outcome: .playing).contains(Achievements.daily.id))
+        #expect(earned(mode: .daily(day: 300), outcome: .lost).contains(Achievements.daily.id))
+        #expect(earned(mode: .daily(day: 300), outcome: .won).contains(Achievements.daily.id))
+        #expect(!earned(mode: .level(2), outcome: .won).contains(Achievements.daily.id))
+
+        st = DawnStats()
+        st.score = Achievements.nightWatchScore - 1
+        #expect(!earned(st, mode: .endless, outcome: .lost).contains(Achievements.longNight.id))
+        st.score = Achievements.nightWatchScore
+        #expect(earned(st, mode: .endless, outcome: .lost).contains(Achievements.longNight.id))
+        st.score = 50_000
+        #expect(!earned(st, mode: .level(30), outcome: .won).contains(Achievements.longNight.id))
+    }
+
+    @Test func aRealSweepEarnsCleanSweep() {
+        let s = DawnSession(spec: CoreHarness.spec([CoreHarness.group(.gloom(.wisp), at: 0.5, count: 4, u: 0.5...0.5)]))
+        _ = CoreHarness.runParked(s, at: 0.3, seconds: 6)
+        let ids: [String] = Achievements.earned(stats: s.stats, mode: s.mode, outcome: s.snapshot.phase,
+                                                progressStars: 0, levelsWon: [])
+        #expect(ids.contains(Achievements.sweep.id))
+        #expect(!ids.contains(Achievements.brute.id))
     }
 
     // MARK: The pilot

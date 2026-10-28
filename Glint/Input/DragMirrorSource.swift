@@ -8,7 +8,7 @@ import Foundation
 ///   one garden depth of drag is the full sweep (`Tuning.bandMin`…1). The target is clamped to that range at every
 ///   step, so pushing past an end and coming back moves the light at once.
 /// - **Eased with a soft speed cap**: the band follows the target at `v = cap · tanh(error / (cap · easeTime))`, with
-///   `cap = Tuning.dragSpeedCap` (2.4 d/s). A small move follows in ~60 ms; a flick is limited to the cap, so it
+///   `cap = Tuning.dragSpeedCap` (R2: 1.4 d/s, was 2.4). A small move follows in ~60 ms; a flick is limited to the cap, so it
 ///   plays like the hinge (which can't teleport either).
 /// - `creaseGlow` grows from 0 at `Tuning.bandMin` to 1 as the band reaches the crease (d = 0), like opening the phone.
 /// - Never shut.

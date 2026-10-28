@@ -63,7 +63,8 @@ enum GardenPalette {
     static let eyeShade = GardenInk(hex: 0xDCD5F2)
     static let pupil = GardenInk(hex: 0x150E26)
     static let night = GardenInk(hex: 0x050A1E)
-    static let firefly = GardenInk(hex: 0xD8FF6A)
+    /// R2: lime, unmistakable (REVIEW-1 P1-8).
+    static let firefly = GardenInk(hex: 0xC8FF6A)
     static let fireflyHot = GardenInk(hex: 0xFF4A32)
     static let petals: [GardenInk] = [GardenInk(hex: 0xFF8FB0), GardenInk(hex: 0xFFC46A), GardenInk(hex: 0xC6A6FF),
                                       GardenInk(hex: 0xFFE6A0), GardenInk(hex: 0xFFB3A0)]
@@ -120,6 +121,20 @@ enum GardenMath {
     /// Flowers per row (`Tuning.flowerCount`); the scene follows `snapshot.flowers.count` when it differs.
     static let flowerCount: Int = 5
 
+    /// R2: the mirror shades the strip by the crease: light does nothing for d below this (Core's rule).
+    static var creaseShade: Double { Tuning.creaseShade }
+    static func isShaded(d: Double) -> Bool { Tuning.isShaded(d: d) }
+
+    /// How sunk a gloom at `d` is drawn: 1 deep in the shade's seam, 0 out in the garden, smooth across the edge.
+    static func sink(d: Double) -> CGFloat {
+        let s = CGFloat(creaseShade)
+        let x: CGFloat = d.isFinite ? CGFloat(d) : 1
+        return 1 - smooth(s - 0.025, s + 0.01, x)
+    }
+
+    /// R2: glooms are drawn 15 % bigger on phones (the 0.58 garden split) so their faces read on the small screen.
+    static func gloomArtScale(layout: GardenLayout) -> CGFloat { layout.gardenFraction > 0.54 ? 1.15 : 1 }
+
     static func clamp(_ v: CGFloat, _ lo: CGFloat, _ hi: CGFloat) -> CGFloat { min(max(v, lo), hi) }
     static func clamp(_ v: Double, _ lo: Double, _ hi: Double) -> Double { min(max(v, lo), hi) }
 
@@ -159,29 +174,51 @@ enum GardenMath {
         return 1 - t * t * (3 - 2 * t)
     }
 
-    /// The world a mode is drawn in (1 Meadow, 2 Rooftops, 3 Harbour). Levels 1–10, 11–20, 21–30 (GAME-DESIGN §6);
-    /// Long Night plays by the harbour; Today's Dawn in the meadow.
+    /// The world a mode is drawn in (1 Meadow, 2 Rooftops, 3 Harbour): levels by `LevelBook.world(of:)`; R2b: Long
+    /// Night is the moonlit meadow, Today's Dawn the meadow at golden hour.
     static func world(for mode: PlayMode) -> Int {
         switch mode {
         case .level(let n):
-            return min(max((n - 1) / 10 + 1, 1), 3)
-        case .endless:
-            return 3
-        case .daily(_):
+            return min(max(LevelBook.world(of: n), 1), 3)
+        case .endless, .daily(_):
             return 1
         }
     }
 
-    /// How far the dawn has come for the art, 0…1. Levels and the daily: `snapshot.sun`. Long Night: `sun` is the
-    /// night's depth, so the sun hangs low and sinks as the night deepens.
+    /// How far the dawn has come for the art, 0…1. Levels: `snapshot.sun`. Today's Dawn: golden hour from the start
+    /// (0.55 → 1). Long Night: `sun` is the night's depth, so the art stays at night (the mirror shows the moon).
     static func dawn(_ s: DawnSnapshot) -> CGFloat {
         let v = CGFloat(clamp(s.sun.isFinite ? s.sun : 0, 0, 1))
         switch s.mode {
         case .endless:
             return 0.3 * (1 - v)
-        case .level(_), .daily(_):
+        case .daily(_):
+            return 0.55 + 0.45 * v
+        case .level(_):
             return v
         }
+    }
+
+    /// R2b: the night's depth for Long Night's moon (0…1; 0 for the other modes).
+    static func nightDepth(_ s: DawnSnapshot) -> CGFloat {
+        guard case .endless = s.mode else { return 0 }
+        return CGFloat(clamp(s.sun.isFinite ? s.sun : 0, 0, 1))
+    }
+
+    /// R2b: the harbour's puddles (floor u, d and radius in points) for a garden, seeded, so the boardwalk texture and
+    /// the band's glints agree.
+    static func puddles(depth: CGFloat, span: CGFloat) -> [(u: Double, d: Double, r: CGFloat)] {
+        var rng = GardenRNG(seed: 0x9D_D1E5)
+        let n = span > 600 ? 9 : 6
+        var out: [(u: Double, d: Double, r: CGFloat)] = []
+        for i in 0..<n {
+            // Spread along u in slots so they never pile up.
+            let slot = (CGFloat(i) + rng.range(0.15, 0.85)) / CGFloat(n)
+            let d = rng.range(0.22, 0.78)
+            let r = min(max(depth, span) * rng.range(0.022, 0.04), 30)
+            out.append((u: Double(slot), d: Double(d), r: max(r, 9)))
+        }
+        return out
     }
 
     /// The flowers' radius (points) for a garden.
@@ -616,6 +653,85 @@ enum GardenArt {
         }
     }
 
+    /// R2: the reflected light's layers, white (tint them). Every profile runs across x (the band's d axis) and is
+    /// uniform along y, so the scene can cut the light into pieces along u (cloud shades) exactly: a flat piece plus a
+    /// `ramp` piece (the same profile × a linear 0 → 1 ramp up y).
+    enum LightProfile: String {
+        /// Core's intensity profile across ±edge (the warm pool, the trail).
+        case pool
+        /// A brighter, narrower core with faint lips at ±core (the burn zone).
+        case core
+        /// A wide faint glow (±1).
+        case halo
+        /// The beam from the crease (x 0) to the band (x 1): faint, brightening towards the band.
+        case beam
+    }
+
+    static func lightValue(_ p: LightProfile, _ f: CGFloat) -> CGFloat {
+        switch p {
+        case .pool:
+            return CGFloat(GardenMath.intensity(d: Double(f * 2 - 1) * GardenMath.bandEdge, band: 0))
+        case .core:
+            let v = CGFloat(GardenMath.intensity(d: Double(f * 2 - 1) * GardenMath.bandEdge, band: 0))
+            return v * v
+        case .halo:
+            let x = f * 2 - 1
+            return exp(-3.2 * x * x) * (1 - x * x)
+        case .beam:
+            return 0.35 + 0.65 * pow(f, 1.5)
+        }
+    }
+
+    static func light(_ p: LightProfile, ramp: Bool) -> SKTexture {
+        let size = ramp ? CGSize(width: 256, height: 32) : CGSize(width: 256, height: 4)
+        return make("light-\(p.rawValue)-\(ramp ? 1 : 0)", size: size, scale: 1) { ctx, s in
+            var colors: [GardenInk] = []
+            var locs: [CGFloat] = []
+            let n = 32
+            for i in 0...n {
+                let f = CGFloat(i) / CGFloat(n)
+                colors.append(w(lightValue(p, f)))
+                locs.append(f)
+            }
+            GardenPainter.linear(ctx, colors, locs, from: CGPoint(x: 0, y: 0), to: CGPoint(x: s.width, y: 0))
+            if p == .core {
+                let core = CGFloat(GardenMath.bandCore / GardenMath.bandEdge)
+                ctx.setFillColor(w(0.3).cg)
+                ctx.fill(CGRect(x: s.width * (0.5 - core / 2) - 1, y: 0, width: 2, height: s.height))
+                ctx.fill(CGRect(x: s.width * (0.5 + core / 2) - 1, y: 0, width: 2, height: s.height))
+            }
+            if ramp {
+                ctx.setBlendMode(.destinationIn)
+                GardenPainter.linear(ctx, [w(0), w(1)], [0, 1], from: CGPoint(x: 0, y: 0), to: CGPoint(x: 0, y: s.height))
+                ctx.setBlendMode(.normal)
+            }
+        }
+    }
+
+    /// R2: a cloud shade's cool tint (white; tint it): solid across, soft over the outer 12 % at each end of y, and
+    /// fading out over the last 15 % of x (just past the band).
+    static var shadeTint: SKTexture {
+        make("shade-tint", size: CGSize(width: 64, height: 64), scale: 1) { ctx, s in
+            GardenPainter.linear(ctx, [w(0), w(1), w(1), w(0)], [0, 0.12, 0.88, 1], from: CGPoint(x: 0, y: 0),
+                                 to: CGPoint(x: 0, y: s.height))
+            ctx.setBlendMode(.destinationIn)
+            GardenPainter.linear(ctx, [w(1), w(1), w(0)], [0, 0.85, 1], from: CGPoint(x: 0, y: 0),
+                                 to: CGPoint(x: s.width, y: 0))
+            ctx.setBlendMode(.normal)
+        }
+    }
+
+    /// R2: where the shade ends along the crease-shade texture's width.
+    static let shadeEnd: CGFloat = 0.82
+
+    /// R2: the crease shade (white; tint it dark): solid from the crease, easing to `shadeEnd`, then soft to 0.
+    static var creaseShade: SKTexture {
+        make("crease-shade", size: CGSize(width: 256, height: 4), scale: 1) { ctx, s in
+            GardenPainter.linear(ctx, [w(1), w(0.86), w(0.66), w(0.2), w(0)], [0, 0.4, 0.78, 0.88, 1],
+                                 from: CGPoint(x: 0, y: 2), to: CGPoint(x: s.width, y: 2))
+        }
+    }
+
     /// Night rolling in: opaque, then a soft leading edge at x = width.
     static var nightRoll: SKTexture {
         make("night-roll", size: CGSize(width: 256, height: 4), scale: 1) { ctx, s in
@@ -626,21 +742,30 @@ enum GardenArt {
 
     // MARK: The lawn (canonical: x = d from the crease, y = u)
 
-    static func groundKey(depth: CGFloat, span: CGFloat, warm: Bool) -> String {
+    static func groundKey(depth: CGFloat, span: CGFloat, warm: Bool, style: GroundStyle = .meadow) -> String {
         let w = Int((max(depth, 8) / 4).rounded() * 4)
         let h = Int((max(span, 8) / 4).rounded() * 4)
-        return "ground-\(w)x\(h)-\(warm ? 1 : 0)"
+        return "ground-\(style.rawValue)-\(w)x\(h)-\(warm ? 1 : 0)"
     }
 
-    /// The whole lawn for a garden of `depth` × `span` points (cached per size). `warm`: the sunrise palette.
-    static func ground(depth: CGFloat, span: CGFloat, warm: Bool) -> SKTexture {
+    /// The whole ground for a garden of `depth` × `span` points in `style` (cached per style and size, built on first
+    /// use, never per frame). `warm`: the sunrise palette.
+    static func ground(depth: CGFloat, span: CGFloat, warm: Bool, style: GroundStyle = .meadow) -> SKTexture {
         let w = (max(depth, 8) / 4).rounded() * 4
         let h = (max(span, 8) / 4).rounded() * 4
         let scale: CGFloat = min(1.5, 1800 / max(w, h))
-        let pal = warm ? GroundPalette.dawn : GroundPalette.night
-        return make(groundKey(depth: depth, span: span, warm: warm), size: CGSize(width: w, height: h), scale: scale) {
-            ctx, s in
-            drawGround(ctx, s, pal)
+        let key = groundKey(depth: depth, span: span, warm: warm, style: style)
+        return make(key, size: CGSize(width: w, height: h), scale: scale) { ctx, s in
+            switch style {
+            case .meadow:
+                drawGround(ctx, s, warm ? GroundPalette.dawn : GroundPalette.night)
+            case .moonlit:
+                drawGround(ctx, s, warm ? GroundPalette.moonSilver : GroundPalette.moon)
+            case .rooftops:
+                GroundWorlds.drawRooftops(ctx, s, warm: warm)
+            case .harbour:
+                GroundWorlds.drawHarbour(ctx, s, warm: warm)
+            }
         }
     }
 
@@ -711,38 +836,16 @@ enum GardenArt {
         GardenPainter.stroke(ctx, tuftDark, p.tuftDark.with(alpha: 0.5), width: 1.1)
         GardenPainter.stroke(ctx, tuftLight, p.tuft.with(alpha: 0.32), width: 0.9)
 
-        // Tiny wildflowers (away from the crease).
-        let blooms = Int(min(70, area / 9000))
-        let bloomPath = CGMutablePath()
-        let heartPath = CGMutablePath()
-        for _ in 0..<blooms {
-            let c = CGPoint(x: rng.range(w * 0.22, w * 0.84), y: rng.range(4, h - 4))
-            let pr = rng.range(0.9, 1.4)
-            for k in 0..<5 {
-                let a = CGFloat(k) * 1.2566
-                bloomPath.addEllipse(in: CGRect(x: c.x + cos(a) * pr * 1.3 - pr, y: c.y + sin(a) * pr * 1.3 - pr,
-                                                width: pr * 2, height: pr * 2))
-            }
-            heartPath.addEllipse(in: CGRect(x: c.x - pr * 0.7, y: c.y - pr * 0.7, width: pr * 1.4, height: pr * 1.4))
-        }
-        GardenPainter.fill(ctx, bloomPath, p.bloom.with(alpha: 0.7))
-        GardenPainter.fill(ctx, heartPath, p.bloomHeart.with(alpha: 0.9))
-
-        // Dew: hundreds of tiny drops (the band makes some of them glint).
-        let dews = Int(min(520, area / 900))
+        // R2 (REVIEW-1: white sprinkles read as fireflies): no wildflower or white dew dots. Dew is only a faint
+        // sheen on the blades, the grass's own colour; the band's glints do the sparkling.
+        let dews = Int(min(360, area / 1300))
         let dewPath = CGMutablePath()
-        let dewBig = CGMutablePath()
-        for i in 0..<dews {
+        for _ in 0..<dews {
             let c = CGPoint(x: rng.range(w * 0.05, w * 0.86), y: rng.range(0, h))
-            let r = rng.range(0.55, 1.25)
-            if i % 7 == 0 {
-                dewBig.addEllipse(in: CGRect(x: c.x - r * 1.5, y: c.y - r * 1.5, width: r * 3, height: r * 3))
-            } else {
-                dewPath.addEllipse(in: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
-            }
+            let r = rng.range(0.5, 1.0)
+            dewPath.addEllipse(in: CGRect(x: c.x - r * 1.6, y: c.y - r, width: r * 3.2, height: r * 2))
         }
-        GardenPainter.fill(ctx, dewPath, p.dew.with(alpha: 0.4))
-        GardenPainter.fill(ctx, dewBig, p.dew.with(alpha: 0.6))
+        GardenPainter.fill(ctx, dewPath, p.dew.with(alpha: 0.18))
 
         // Ink stains reaching out of the crease.
         GardenPainter.linear(ctx, [p.ink.with(alpha: 0.85), p.ink.with(alpha: 0.35), p.ink.with(alpha: 0)],
@@ -846,7 +949,7 @@ struct GroundPalette {
         crease: GardenInk(hex: 0x040E17), low: GardenInk(hex: 0x0A2B37), mid: GardenInk(hex: 0x114452),
         edge: GardenInk(hex: 0x175258), light: GardenInk(hex: 0x2F7C7C), dark: GardenInk(hex: 0x06212B),
         tuft: GardenInk(hex: 0x56A89E), tuftDark: GardenInk(hex: 0x09323E), clover: GardenInk(hex: 0x0E4A48),
-        dew: GardenInk(hex: 0xC8F6FF), bloom: GardenInk(hex: 0xBFD9FF), bloomHeart: GardenInk(hex: 0xFFE9A8),
+        dew: GardenInk(hex: 0x7CC4BC), bloom: GardenInk(hex: 0xBFD9FF), bloomHeart: GardenInk(hex: 0xFFE9A8),
         soil: GardenInk(hex: 0x261C31), soilDark: GardenInk(hex: 0x140E1C), stone: GardenInk(hex: 0x4E496A),
         ink: GardenInk(hex: 0x0A0614))
 
@@ -854,7 +957,48 @@ struct GroundPalette {
         crease: GardenInk(hex: 0x1F1A12), low: GardenInk(hex: 0x465B28), mid: GardenInk(hex: 0x748B38),
         edge: GardenInk(hex: 0x8A9C44), light: GardenInk(hex: 0xC6C268), dark: GardenInk(hex: 0x3B5121),
         tuft: GardenInk(hex: 0xE0DA88), tuftDark: GardenInk(hex: 0x405822), clover: GardenInk(hex: 0x4B772C),
-        dew: GardenInk(hex: 0xFFF7D6), bloom: GardenInk(hex: 0xFFFFFF), bloomHeart: GardenInk(hex: 0xFFC94A),
+        dew: GardenInk(hex: 0xD8D68C), bloom: GardenInk(hex: 0xFFFFFF), bloomHeart: GardenInk(hex: 0xFFC94A),
         soil: GardenInk(hex: 0x5E3B24), soilDark: GardenInk(hex: 0x3A2416), stone: GardenInk(hex: 0xB49A72),
         ink: GardenInk(hex: 0x1A1020))
+
+    /// R2b: Long Night's moonlit meadow: deep blue, silvered where it's "warm".
+    static let moon = GroundPalette(
+        crease: GardenInk(hex: 0x030716), low: GardenInk(hex: 0x081A36), mid: GardenInk(hex: 0x0F2C52),
+        edge: GardenInk(hex: 0x15365E), light: GardenInk(hex: 0x2C5A8A), dark: GardenInk(hex: 0x05132B),
+        tuft: GardenInk(hex: 0x5C88B8), tuftDark: GardenInk(hex: 0x071A36), clover: GardenInk(hex: 0x0E2E56),
+        dew: GardenInk(hex: 0x6E9CCC), bloom: GardenInk(hex: 0xBFD9FF), bloomHeart: GardenInk(hex: 0xFFE9A8),
+        soil: GardenInk(hex: 0x1A1A34), soilDark: GardenInk(hex: 0x0D0D20), stone: GardenInk(hex: 0x4A5478),
+        ink: GardenInk(hex: 0x05061A))
+
+    static let moonSilver = GroundPalette(
+        crease: GardenInk(hex: 0x060C1E), low: GardenInk(hex: 0x14284A), mid: GardenInk(hex: 0x264A70),
+        edge: GardenInk(hex: 0x30567C), light: GardenInk(hex: 0x6A8EB4), dark: GardenInk(hex: 0x0C1E3C),
+        tuft: GardenInk(hex: 0x9CB8D6), tuftDark: GardenInk(hex: 0x10264A), clover: GardenInk(hex: 0x1C3E66),
+        dew: GardenInk(hex: 0xA8C4E2), bloom: GardenInk(hex: 0xFFFFFF), bloomHeart: GardenInk(hex: 0xFFE9A8),
+        soil: GardenInk(hex: 0x2A2A44), soilDark: GardenInk(hex: 0x16162C), stone: GardenInk(hex: 0x7A86A8),
+        ink: GardenInk(hex: 0x070A1E))
+}
+
+/// R2b: which ground a mode is drawn on. Meadow (world 1 and Today's Dawn), Rooftops (2), Harbour (3), and Long Night's
+/// moonlit meadow. Every ground keeps the crease's ink, the flower row and the light the same.
+enum GroundStyle: String, CaseIterable {
+    case meadow, rooftops, harbour, moonlit
+
+    static func of(_ mode: PlayMode) -> GroundStyle {
+        switch mode {
+        case .endless:
+            return .moonlit
+        case .daily(_):
+            return .meadow
+        case .level(_):
+            switch GardenMath.world(for: mode) {
+            case 2: return .rooftops
+            case 3: return .harbour
+            default: return .meadow
+            }
+        }
+    }
+
+    /// The mirror shows the moon instead of the sun.
+    var isMoonlit: Bool { self == .moonlit }
 }

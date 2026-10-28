@@ -149,10 +149,12 @@ final class GardenRingPool {
     private var from: [CGFloat] = []
     private var to: [CGFloat] = []
     private var peak: [CGFloat] = []
+    private var flat: [CGFloat] = []
     private var cursor = 0
 
     init(capacity: Int) {
         for _ in 0..<max(capacity, 1) {
+            flat.append(1)
             let s = SKSpriteNode(texture: GardenArt.ring, size: CGSize(width: 2, height: 2))
             s.blendMode = .add
             s.colorBlendFactor = 1
@@ -187,8 +189,9 @@ final class GardenRingPool {
     }
 
     /// A ring (or a flash with `texture: GardenArt.glow`) growing from `fromRadius` to `toRadius`.
+    /// `squash` < 1 flattens it vertically (a ripple on the seam's surface).
     func spawn(at p: CGPoint, fromRadius: CGFloat, toRadius: CGFloat, life l: CGFloat, color: UIColor,
-               alpha: CGFloat = 1, texture: SKTexture? = nil) {
+               alpha: CGFloat = 1, texture: SKTexture? = nil, squash: CGFloat = 1) {
         let n = sprites.count
         var slot = -1
         for k in 0..<n {
@@ -211,7 +214,9 @@ final class GardenRingPool {
         from[slot] = max(fromRadius, 0.5)
         to[slot] = max(toRadius, 0.5)
         peak[slot] = alpha
-        s.setScale(from[slot])
+        flat[slot] = min(max(squash, 0.05), 1)
+        s.xScale = from[slot]
+        s.yScale = from[slot] * flat[slot]
         s.alpha = alpha
         s.isHidden = false
     }
@@ -227,7 +232,9 @@ final class GardenRingPool {
             }
             let t = 1 - life[i] / maxLife[i]
             let e = GardenMath.easeOut(t)
-            s.setScale(from[i] + (to[i] - from[i]) * e)
+            let k = from[i] + (to[i] - from[i]) * e
+            s.xScale = k
+            s.yScale = k * flat[i]
             s.alpha = peak[i] * (1 - t) * (1 - t)
         }
     }
@@ -242,10 +249,14 @@ final class GardenLabels {
     private var maxLife: [CGFloat] = []
     private var rise: [CGFloat] = []
     private var base: [CGPoint] = []
+    private var bounce: [Bool] = []
     private var cursor = 0
+    /// The largest scale any bouncing label reached (tests: the chain text overshoots).
+    private(set) var peakBounceScale: CGFloat = 0
 
     init(capacity: Int) {
         for _ in 0..<max(capacity, 1) {
+            bounce.append(false)
             let l = SKLabelNode()
             l.horizontalAlignmentMode = .center
             l.verticalAlignmentMode = .center
@@ -307,7 +318,7 @@ final class GardenLabels {
     /// Shows `text` at `p` (scene points); returns its slot.
     @discardableResult
     func show(_ text: String, at p: CGPoint, size: CGFloat, color: GardenInk, rise r: CGFloat = 46,
-              life l: CGFloat = 1.0) -> Int {
+              life l: CGFloat = 1.0, bouncy: Bool = false) -> Int {
         let n = labels.count
         var slot = -1
         for k in 0..<n {
@@ -325,6 +336,7 @@ final class GardenLabels {
         maxLife[slot] = max(l, 0.05)
         rise[slot] = r
         base[slot] = p
+        bounce[slot] = bouncy
         label.position = p
         label.setScale(0.4)
         label.alpha = 1
@@ -350,8 +362,18 @@ final class GardenLabels {
                 continue
             }
             let t = 1 - life[i] / maxLife[i]
-            let pop: CGFloat = t < 0.18 ? GardenMath.easeOutBack(t / 0.18) : 1
-            l.setScale(0.4 + 0.6 * pop)
+            if bounce[i] {
+                // A springy pop: in fast, overshoot to ~1.45, settle.
+                let age = maxLife[i] - life[i]
+                let inK = min(1, age / 0.03)
+                let spring: CGFloat = 1 + 0.6 * exp(-age * 9) * cos(age * 16)
+                let sc = (0.3 + 0.7 * inK) * spring
+                l.setScale(sc)
+                peakBounceScale = max(peakBounceScale, sc)
+            } else {
+                let pop: CGFloat = t < 0.18 ? GardenMath.easeOutBack(t / 0.18) : 1
+                l.setScale(0.4 + 0.6 * pop)
+            }
             l.position = CGPoint(x: base[i].x, y: base[i].y + rise[i] * GardenMath.easeOut(t))
             l.alpha = t < 0.7 ? 1 : max(0, 1 - (t - 0.7) / 0.3)
         }
@@ -415,11 +437,14 @@ final class GardenFX {
     /// A gloom popping: a flash, a shock ring, gold sparks, petals, a few flecks of ink.
     func pop(at p: CGPoint, radius r: CGFloat, big: Bool, chain: Int) {
         let warm = GardenPalette.goldHot.ui
-        rings.spawn(at: p, fromRadius: r * 0.6, toRadius: r * (big ? 3.6 : 2.8), life: 0.42, color: warm, alpha: 0.9)
-        rings.spawn(at: p, fromRadius: r * 1.2, toRadius: r * 2.6, life: 0.2, color: warm, alpha: 0.85,
+        // R2 juice: a short white flash, a warm glow, a brighter ring; 10–16 sparks, 3–5 petals.
+        rings.spawn(at: p, fromRadius: r * 1.0, toRadius: r * 2.2, life: 0.11, color: UIColor.white, alpha: 1,
                     texture: GardenArt.glow)
-        let sparks = glow.scaled((big ? 18 : 11) + min(chain, 8))
-        let speed = r * 6 + 90
+        rings.spawn(at: p, fromRadius: r * 1.3, toRadius: r * (big ? 3.4 : 2.9), life: 0.24, color: warm, alpha: 0.9,
+                    texture: GardenArt.glow)
+        rings.spawn(at: p, fromRadius: r * 0.7, toRadius: r * (big ? 4.0 : 3.2), life: 0.45, color: warm, alpha: 1)
+        let sparks = glow.scaled(min(max(10 + max(chain - 1, 0) + (big ? 4 : 0), 10), 16))
+        let speed = r * 6.5 + 100
         for _ in 0..<sparks {
             let a = rng.range(0, 2 * CGFloat.pi)
             let v = rng.range(0.35, 1) * speed
@@ -431,9 +456,9 @@ final class GardenFX {
             q.gravity = -30
             q.spin = rng.range(-6, 6)
             let c = GardenFX.sparkColors[Int(rng.unit() * 4) % 4]
-            glow.spawn(q, size: rng.range(10, 22) * (big ? 1.2 : 1), color: c.ui, texture: GardenArt.sparkle)
+            glow.spawn(q, size: rng.range(12, 24) * (big ? 1.2 : 1), color: c.ui, texture: GardenArt.sparkle)
         }
-        let petals = soft.scaled(big ? 10 : 6)
+        let petals = soft.scaled(big ? 5 : 3 + min(max(chain - 2, 0), 1))
         for i in 0..<petals {
             let a = rng.range(0, 2 * CGFloat.pi)
             let v = rng.range(0.4, 1) * (r * 4 + 60)
@@ -529,6 +554,25 @@ final class GardenFX {
             q.shrink = false
             q.alphaScale = 0.45
             soft.spawn(q, size: r * 0.6 + 6, color: color.ui, texture: GardenArt.soft)
+        }
+    }
+
+    /// R2: a gloom surfacing out of the crease shade: two flat cool rings on the seam and a few ink drops.
+    func ripple(at p: CGPoint, radius r: CGFloat) {
+        let cool = GardenInk(hex: 0x9CCBFF).ui
+        rings.spawn(at: p, fromRadius: r * 0.5, toRadius: r * 2.0, life: 0.5, color: cool, alpha: 0.7, squash: 0.38)
+        rings.spawn(at: p, fromRadius: r * 0.3, toRadius: r * 1.3, life: 0.36, color: cool, alpha: 0.5, squash: 0.38)
+        for _ in 0..<soft.scaled(3) {
+            let a = rng.range(0.3, CGFloat.pi - 0.3)
+            var q = GardenParticle()
+            q.position = p
+            q.velocity = CGVector(dx: cos(a) * rng.range(30, 60), dy: sin(a) * rng.range(30, 70))
+            q.life = rng.range(0.25, 0.4)
+            q.drag = 2
+            q.gravity = 260
+            q.alphaScale = 0.85
+            soft.spawn(q, size: rng.range(3, 6), color: GardenPalette.inkDeep.ui, texture: GardenArt.inkDrop,
+                       rotation: a)
         }
     }
 

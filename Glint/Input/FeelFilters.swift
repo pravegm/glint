@@ -30,20 +30,34 @@ enum FeelMath {
 
 /// One-Euro filter (Casiez et al., CHI 2012): heavy smoothing while the input is slow, low lag while it moves fast.
 /// Squish's tuning for the Duo hinge: minCutoff 2.0, β 0.12, dCutoff 1.5; dt clamped to 1/240…0.2 s.
+///
+/// R2 (Glint, hinge precision): two optional terms for noisy, irregular reports, both off by default (R1 behaviour):
+/// - `speedFloor`: the speed term is `β · max(|derivative| − speedFloor, 0)`, so a still hand's noise-driven derivative
+///   (±1.5° at 30 Hz reads tens of °/s) doesn't open the cutoff.
+/// - `residualStart` / `residualGain`: a sample more than `residualStart` away from the filtered value (beyond the
+///   noise) adds `residualGain` Hz per unit of excess, so a real move is followed at once.
+///   `cutoff = minCutoff + β·max(|ẋ| − speedFloor, 0) + residualGain·max(|x − x̂| − residualStart, 0)`.
 struct OneEuroSmoother {
     var minCutoff: Double
     var beta: Double
     var dCutoff: Double
+    var speedFloor: Double
+    var residualStart: Double
+    var residualGain: Double
 
     private(set) var value: Double?
     /// Filtered derivative of the input (units per second).
     private(set) var derivative: Double = 0
     private var lastTime: Double?
 
-    init(minCutoff: Double = 2.0, beta: Double = 0.12, dCutoff: Double = 1.5) {
+    init(minCutoff: Double = 2.0, beta: Double = 0.12, dCutoff: Double = 1.5, speedFloor: Double = 0,
+         residualStart: Double = 0, residualGain: Double = 0) {
         self.minCutoff = minCutoff
         self.beta = beta
         self.dCutoff = dCutoff
+        self.speedFloor = max(speedFloor, 0)
+        self.residualStart = max(residualStart, 0)
+        self.residualGain = max(residualGain, 0)
     }
 
     mutating func reset() {
@@ -63,7 +77,10 @@ struct OneEuroSmoother {
         let dt = min(max(time - previousTime, 1.0 / 240.0), 0.2)
         let rawDerivative = (x - previous) / dt
         derivative += (rawDerivative - derivative) * Self.alpha(cutoff: dCutoff, dt: dt)
-        let cutoff = minCutoff + beta * abs(derivative)
+        var cutoff = minCutoff + beta * max(abs(derivative) - speedFloor, 0)
+        if residualGain > 0 {
+            cutoff += residualGain * max(abs(x - previous) - residualStart, 0)
+        }
         let filtered = previous + (x - previous) * Self.alpha(cutoff: cutoff, dt: dt)
         value = filtered
         lastTime = time
@@ -112,8 +129,11 @@ struct HingePredictor {
         offset = 0
     }
 
-    mutating func sample(_ angle: Double, at time: Double) {
-        lastReading = angle
+    /// One report. `rest` (R2): the reading to glide onto once reports stop (default: `angle`). Glint feeds the
+    /// predictor pre-smoothed reports but rests on the raw one, so a hand that stops (the Duo then sends nothing) is
+    /// never left a smoothing-lag short of where the phone really is.
+    mutating func sample(_ angle: Double, at time: Double, rest: Double? = nil) {
+        lastReading = rest ?? angle
         guard estimate != nil else {
             estimate = angle
             velocity = 0

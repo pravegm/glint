@@ -55,10 +55,11 @@ on:
         default: ""
 
 env:
-  # Glint's green store.yml run to upload from. store.yml is not ported to Glint yet (screenshots.md asks the CI
-  # engineer for it); after the first clean store run (all three MANIFESTs "flagged 0 missing 0") put its ID here, and
-  # again after the final store run at code freeze (Mon 7 Dec). Empty = the screenshots are a gap (validate and plan
-  # say so), never an error.
+  # Glint's store.yml run to upload from. store.yml is MANUAL ONLY (Actions > App Store screenshots > Run workflow).
+  # Put a run's ID here only when all three of its MANIFESTs (store-69, store-63, store-duo) end "summary: ok 10
+  # flagged 0 missing 0" AND the founder has eyeballed the frames (docs/appstore/screenshots.md, "Running it"); again
+  # after the final store run at code freeze (Mon 7 Dec). Or pass the ID as store_run for one run. Empty = the
+  # screenshots are a gap (validate and plan say so), never an error.
   DEFAULT_STORE_RUN: ""
 
 concurrency:

@@ -47,7 +47,7 @@ struct RootView: View {
         .onChange(of: systemReduceMotion) { _, on in
             controller.setSystemReduceMotion(on)
         }
-        .onChange(of: settings.reduceMotion) { _, _ in
+        .onChange(of: settings.reduceMotionChoice) { _, _ in
             controller.refreshMotion()
         }
         .onChange(of: settings.swapHalves) { _, _ in
@@ -67,7 +67,7 @@ struct RootView: View {
 
     @ViewBuilder
     private func content(size: CGSize, insets: EdgeInsets, cover: Bool) -> some View {
-        let canvas = AppCanvas(size: size, insets: insets, layout: controller.layout)
+        let canvas = AppCanvas(size: size, insets: insets, layout: controller.layout, isDuo: controller.isDuo)
         ZStack {
             GlintTheme.night
             gameLayer(size)
@@ -75,7 +75,7 @@ struct RootView: View {
                 screens(canvas)
             }
             if cover {
-                CoverView(controller: controller, hud: controller.hud, size: size)
+                CoverView(controller: controller, hud: controller.hud, store: store, size: size)
                     .transition(.opacity)
             }
             if let toast = controller.toast {
@@ -86,6 +86,9 @@ struct RootView: View {
             }
             if controller.showsIcon {
                 iconLayer(size)
+            }
+            if controller.showsBadges {
+                BadgeGallery(ids: GameCenterManager.achievementIDs, size: size)
             }
         }
         .frame(width: size.width, height: size.height)

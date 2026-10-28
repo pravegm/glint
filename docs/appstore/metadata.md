@@ -153,7 +153,7 @@ Copy rules this text keeps:
 - **Mirror first, reach second, pop third.** "The wider you open it, the further the light reaches" is in the first two lines: that's the difference from every other Duo game (and from Hush, which is about how *slowly* you open).
 - **Duo first, then "plays on other iPhone models too"** (not "every iPhone": the deployment target is iOS 18). The drag control is described plainly in one sentence, after the fold. The store page may talk about the Duo; the *app* never shows a Duo line on a non-Duo iPhone.
 - **No pose demand** (founder rule 2): "however you like, as a laptop or as a book". Never "hold it like a book" alone, never "lay it flat", never "close it fully" except the honest "every sunrise starts with the phone shut", which is the game's own rule 1.
-- **Kind to the hinge** (rule 3): "between about a right angle and well open" is GAME-DESIGN §2's 80°–145°; "you never lay the phone flat or rush the hinge". No "fast", "quick snap" or "slam". "Quick" appears about the wisps and the pops, never about moving the phone.
+- **Kind to the hinge** (rule 3): "between about a right angle and well open" is GAME-DESIGN §2's 80°–135°; "you never lay the phone flat or rush the hinge". No "fast", "quick snap" or "slam". "Quick" appears about the wisps and the pops, never about moving the phone.
 - **Nothing is hurt.** Shadows "pop" into sparks and petals; flowers are "eaten" and come back as a firefly "replants" them; the level is lost with "the night wins". Never kill, die, burn or zap (keeps the 4+ honest, §8).
 - **"iPhone Duo" is used only referentially**, never in the name, subtitle or keywords, and "iPhone" keeps its exact form even in a capitalised heading (Apple trademark guidelines).
 - **Numbers are the design's, and only the design's** (to be ticked against `Glint/Core/Tuning.swift` and `LevelBook`): 5 flowers, 5 shadow kinds, chain to ×4, a Sweep at 3+, 30 levels in 3 worlds, about a minute per sunrise (45–95 s), 10 achievements, 3 leaderboards. If Core moves one, this text moves with it.
@@ -264,8 +264,8 @@ Why each risky item is None:
 
 | Claim (where) | Source in the code (expected) | Code | RC |
 |---|---|---|---|
-| The angle is the light: shut = dark; crease glow from about 15°; the band lifts out at about 80° and reaches the flower edge at about 145°; continuous both ways, no steps (description, promo, review notes, site) | `Tuning.band(angle:)`, `creaseGlow(angle:)`, `shutAngle`; `HingeMirrorSource` (predictor + One-Euro) | [ ] | [ ] |
-| "Between about a right angle and well open"; never flat; opening further than ~145° changes nothing | GAME-DESIGN §3 table; `Tuning.band(angle:)` clamps at 1 | [ ] | [ ] |
+| The angle is the light: shut = dark; crease glow from about 15°; the band lifts out at about 80° and reaches the flower edge at about 135°; continuous both ways, no steps (description, promo, review notes, site) | `Tuning.band(angle:)`, `creaseGlow(angle:)`, `shutAngle`; `HingeMirrorSource` (predictor + One-Euro) | [ ] | [ ] |
+| "Between about a right angle and well open"; never flat; opening further than ~135° changes nothing | GAME-DESIGN §3 table; `Tuning.band(angle:)` clamps at 1 | [ ] | [ ] |
 | Every sunrise starts shut: "Close the phone to start", then "Open the phone to let the light in" (Duo only) | `GameController` level flow (ROUND-1 App 3) | [ ] exact labels | [ ] |
 | Shutting mid-level pauses (≤ 15° for 0.25 s); the cover display shows "Paused · open the phone to carry on" and the score; resume at ≥ 25° with 0.6 s grace | `Tuning.shutDwell`, `CoverView`, pause rules (GAME-DESIGN §8) | [ ] | [ ] |
 | No pause or warning near 90° | GAME-DESIGN §8; no hint keyed to an angle in 60°–120° | [ ] | [ ] |
@@ -297,7 +297,7 @@ Why each risky item is None:
 | 4 | App | Exact labels the copy quotes: "Long Night", "Today's Dawn", "Meadow", "Rooftops", "Harbour", "Close the phone to start", "Open the phone to let the light in", "Light the shadows", "Follow the big ones", "Spare the fireflies", "Drag down to let the light in", "Drag to aim the light", "Sweep!", "The night won", "Paused · open the phone to carry on", "Open the phone to play", Settings "Sound", "Music", "Haptics", "Swap halves", "Reduce motion". If a label changes, tell the launch lead | The review notes, runbook and support page quote them |
 | 5 | App | Game Center banners queue until the Results card, never mid-level | A banner over the garden hides shadows |
 | 6 | App | The demo key `screen=badges`: render the 10 achievement badges (`achievements.md` "Images") into `Documents/badges/<id>.png`, 1024 × 1024, opaque, and log `GLINT-T badges done 10`; plus a `badges` line in `ci/scenarios.txt` | The App Store Connect tool uploads them; without them Game Center can't be saved |
-| 7 | CI | Port the App Store screenshots pipeline (Snapjaw's `store.yml`, `ci/store-*.sh`, `ci/store-frame.swift`) with Glint's **portrait** sets and a **laptop-pose** hero composite (`screenshots.md`) | The tool's `screenshots` step needs a store run |
+| 7 | CI | **Done (28 Oct):** the App Store screenshots pipeline is ported (`store.yml`, manual only; portrait iPhone sets, a book-pose Duo set, frame 1 the book composite drawn at the angle matching its light: `screenshots.md`) | The tool's `screenshots` step needs a clean store run |
 | 8 | Design (founder) | Reduce motion should default to the iOS setting (`UIAccessibility.isReduceMotionEnabled`) | So the Reduced Motion label is honest without a visit to Settings (`accessibility.md`) |
 
 ## 12. Launch date

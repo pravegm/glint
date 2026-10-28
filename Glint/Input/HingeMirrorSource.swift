@@ -7,9 +7,16 @@ import QuartzCore
 ///
 /// Pipeline (the pattern of Hush's `HingeLidSource`): the raw reports (25–30 Hz while moving, none while still, about
 /// ±5° accurate) feed a `HingePredictor` (alpha-beta, predicts between reports), sampled every frame and smoothed by a
-/// One-Euro filter (minCutoff 2.0, β 0.12). Continuous between reports, so the band never steps. The filtered angle maps
-/// through Core's `Tuning.band(angle:)` and `Tuning.creaseGlow(angle:)`. `bandSpeed` is the filtered band's change over
-/// the last 0.1 s of frames (`FeelVelocityWindow`): feedback only.
+/// One-Euro filter. Continuous between reports, so the band never steps. The filtered angle maps through Core's
+/// `Tuning.band(angle:)` and `Tuning.creaseGlow(angle:)`. `bandSpeed` is the filtered band's change over the last 0.1 s
+/// of frames (`FeelVelocityWindow`): feedback only.
+///
+/// R2 (hinge precision; with 55° of travel 1° ≈ 0.018 d and the band's full-light core is ±0.05 d): every report first
+/// goes through a **steady filter** (`steadyFilter`: a One-Euro at 0.2 Hz with a 25°/s speed floor and a residual boost
+/// past 2°), so a still hand's report noise never reaches the predictor (whose velocity estimate amplified it: R1 showed
+/// 0.037 d of jitter for ±1.5° noise; R2 0.005 d). The predictor rests on the *raw* last report, and the display
+/// One-Euro is lighter (6 Hz, β 0.5). Node port numbers (design/notes/feel-R2.md): ±1.5° still hand → band jitter
+/// ≤ 0.0056 d over 8 seeds; a 60°/s move lags 12 ms in steady motion (R1 9 ms); overshoot at a human stop 2.4° (R1 3.2°).
 ///
 /// - `isShut`: the filtered angle at or under `Tuning.shutAngle` (15°) held for `Tuning.shutDwell` (0.25 s), released
 ///   above 18° (`FeelShutGate`). It matures on the clock even when no frame or report arrives.
@@ -26,8 +33,20 @@ final class HingeMirrorSource: MirrorSource {
     /// cover display, menus); frames take over at once when they resume.
     nonisolated static let framesLiveWindow: Double = 0.1
 
+    /// R2: the per-report steady filter (see the type comment).
+    nonisolated static func steadyFilter() -> OneEuroSmoother {
+        OneEuroSmoother(minCutoff: 0.2, beta: 0.15, dCutoff: 3.0, speedFloor: 25, residualStart: 2.0, residualGain: 10)
+    }
+
+    /// R2: the display-rate smoother after the predictor (R1: 2.0 / 0.12 / 1.5).
+    nonisolated static func displaySmoother() -> OneEuroSmoother {
+        OneEuroSmoother(minCutoff: 6.0, beta: 0.5, dCutoff: 2.0)
+    }
+
+    private var steady = OneEuroSmoother(minCutoff: 0.2, beta: 0.15, dCutoff: 3.0, speedFloor: 25, residualStart: 2.0,
+                                         residualGain: 10) // = `steadyFilter()`
     private var predictor = HingePredictor()
-    private var smoother = OneEuroSmoother(minCutoff: 2.0, beta: 0.12, dCutoff: 1.5)
+    private var smoother = OneEuroSmoother(minCutoff: 6.0, beta: 0.5, dCutoff: 2.0) // = `displaySmoother()`
     private var gate = FeelShutGate()
     private var velocity = FeelVelocityWindow(window: 0.1) // = `speedWindow` (a literal: a plain default value)
     private var trace = FeelHingeTrace()
@@ -85,7 +104,8 @@ final class HingeMirrorSource: MirrorSource {
         reportCount += 1
         lastRawAngle = raw
         lastSampleTime = stamp
-        predictor.sample(raw, at: stamp)
+        let steadied = steady.filter(raw, at: stamp)
+        predictor.sample(steadied, at: stamp, rest: raw)
         // Keep `angle` (and the shut gate) fresh while no frame asks: the pause card, the cover display, menus.
         let framesLive = stamp - (lastQuery ?? -Double.infinity) <= Self.framesLiveWindow
         if angle == nil || !framesLive {
@@ -119,6 +139,7 @@ final class HingeMirrorSource: MirrorSource {
     /// Forget the motion history (keeps `hasHinge`, the last reading and the shut latch). Call it when a paused level
     /// resumes and when the app becomes active, so a stale glide can't leak into the first frames.
     func reset() {
+        steady.reset()
         predictor.reset()
         smoother.reset()
         velocity.reset()
@@ -126,7 +147,8 @@ final class HingeMirrorSource: MirrorSource {
         lastMirror = MirrorInput(band: lastMirror.band, creaseGlow: lastMirror.creaseGlow, isShut: lastMirror.isShut,
                                  bandSpeed: 0)
         if let raw = lastRawAngle, let stamp = lastSampleTime {
-            predictor.sample(raw, at: stamp)
+            let seeded = steady.filter(raw, at: stamp)
+            predictor.sample(seeded, at: stamp, rest: raw)
         }
     }
 

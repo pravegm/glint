@@ -42,6 +42,61 @@ enum MirrorArt {
         }
     }
 
+    /// R2b: Long Night's moon: a pale silver disc with soft maria and craters (coloured; not tinted).
+    static var moonDisc: SKTexture {
+        GardenArt.make("moon-disc", size: CGSize(width: 128, height: 128)) { ctx, s in
+            let c = CGPoint(x: s.width / 2, y: s.height / 2)
+            let r = s.width * 0.47
+            let disc = GardenPainter.circle(c, r)
+            GardenPainter.clipped(ctx, disc) {
+                GardenPainter.radial(ctx, [GardenInk(hex: 0xFFFDF2), GardenInk(hex: 0xEDEAF6), GardenInk(hex: 0xC6CBE4)],
+                                     [0, 0.6, 1], center: CGPoint(x: c.x - r * 0.25, y: c.y + r * 0.25), radius: r * 1.4)
+                let maria: [(CGFloat, CGFloat, CGFloat)] = [(-0.25, 0.2, 0.32), (0.22, 0.05, 0.24), (0.05, -0.35, 0.2),
+                                                             (0.35, 0.42, 0.12)]
+                for (mx, my, mr) in maria {
+                    GardenPainter.fill(ctx, GardenPainter.ellipse(CGPoint(x: c.x + mx * r, y: c.y + my * r), mr * r * 1.2,
+                                                                  mr * r), GardenInk(hex: 0xA8AECB, alpha: 0.45))
+                }
+                let craters: [(CGFloat, CGFloat, CGFloat)] = [(-0.5, -0.3, 0.08), (0.48, -0.2, 0.06), (-0.1, 0.55, 0.05),
+                                                               (0.15, -0.6, 0.07)]
+                for (cx, cy, cr) in craters {
+                    let p = CGPoint(x: c.x + cx * r, y: c.y + cy * r)
+                    GardenPainter.fill(ctx, GardenPainter.circle(p, cr * r), GardenInk(hex: 0x9EA4C2, alpha: 0.5))
+                    GardenPainter.stroke(ctx, GardenPainter.circle(CGPoint(x: p.x - 0.8, y: p.y + 0.8), cr * r),
+                                         GardenInk(1, 1, 1, 0.35), width: 1)
+                }
+            }
+            GardenPainter.stroke(ctx, disc, GardenInk(1, 1, 1, 0.5), width: 1.5)
+        }
+    }
+
+    /// R2: the sun's lens glint: a soft, thin cross flare (two tapering streaks and a small core), white. Replaces R1's
+    /// four-point star, which read as a sticker on the sun.
+    static var crossFlare: SKTexture {
+        GardenArt.make("cross-flare", size: CGSize(width: 128, height: 128)) { ctx, s in
+            let c = CGPoint(x: s.width / 2, y: s.height / 2)
+            let clear = GardenInk(1, 1, 1, 0)
+            let streaks: [(CGFloat, CGFloat, CGFloat)] = [(0, 2.2, 0.75), (CGFloat.pi / 2, 1.6, 0.55)]
+            for (angle, half, a) in streaks {
+                ctx.saveGState()
+                ctx.translateBy(x: c.x, y: c.y)
+                ctx.rotate(by: angle)
+                let p = CGMutablePath()
+                p.move(to: CGPoint(x: -s.width / 2, y: 0))
+                p.addQuadCurve(to: CGPoint(x: s.width / 2, y: 0), control: CGPoint(x: 0, y: half * 2))
+                p.addQuadCurve(to: CGPoint(x: -s.width / 2, y: 0), control: CGPoint(x: 0, y: -half * 2))
+                p.closeSubpath()
+                GardenPainter.clipped(ctx, p) {
+                    GardenPainter.linear(ctx, [clear, GardenInk(1, 1, 1, a), clear], [0, 0.5, 1],
+                                         from: CGPoint(x: -s.width / 2, y: 0), to: CGPoint(x: s.width / 2, y: 0))
+                }
+                ctx.restoreGState()
+            }
+            GardenPainter.radial(ctx, [GardenInk(1, 1, 1, 0.9), GardenInk(1, 1, 1, 0.25), clear], [0, 0.35, 1],
+                                 center: c, radius: s.width * 0.12)
+        }
+    }
+
     // MARK: Clouds (near-white; tinted by the time of day)
 
     static func cloud(_ i: Int) -> SKTexture {
@@ -390,6 +445,28 @@ enum MirrorArt {
         }
     }
 
+    /// R2: the phone's grip on the band's edge: a gold pill (44 × 20 pt) with three ridges.
+    static var grip: SKTexture {
+        GardenArt.make("grip", size: CGSize(width: 48, height: 24), scale: 3) { ctx, s in
+            let r = CGRect(x: 2, y: 2, width: s.width - 4, height: s.height - 4)
+            let pill = GardenPainter.roundRect(r, r.height / 2)
+            GardenPainter.stroke(ctx, pill, GardenInk(hex: 0x3A2408), width: 2.2)
+            GardenPainter.clipped(ctx, pill) {
+                GardenPainter.linear(ctx, [GardenInk(hex: 0x8A5A18), GardenInk(hex: 0xE8B552), GardenInk(hex: 0xFFF2C0)],
+                                     [0, 0.55, 1], from: CGPoint(x: 0, y: r.minY), to: CGPoint(x: 0, y: r.maxY))
+            }
+            let ridges = CGMutablePath()
+            for k in -1...1 {
+                let x = s.width / 2 + CGFloat(k) * 6
+                ridges.move(to: CGPoint(x: x, y: r.minY + 5))
+                ridges.addLine(to: CGPoint(x: x, y: r.maxY - 5))
+            }
+            GardenPainter.stroke(ctx, ridges, GardenInk(hex: 0x7A5214, alpha: 0.7), width: 1.6)
+            GardenPainter.fill(ctx, GardenPainter.ellipse(CGPoint(x: s.width * 0.34, y: r.maxY - 4.5), 7, 2),
+                               GardenInk(1, 1, 1, 0.6))
+        }
+    }
+
     /// Builds every mirror texture now.
     static func warm() {
         for i in 0..<3 { _ = sky(i); _ = cloud(i) }
@@ -398,11 +475,14 @@ enum MirrorArt {
             _ = hills(world: w, near: true)
         }
         _ = sunDisc
+        _ = moonDisc
+        _ = crossFlare
         _ = frameEdge
         _ = frameCorner
         _ = sheen
         _ = shaft
         _ = leverTrack
         _ = leverKnob
+        _ = grip
     }
 }

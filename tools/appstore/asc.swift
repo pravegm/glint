@@ -5,10 +5,10 @@
 // the review-submission attach step, the featuring nomination and --inherit-from (personal fields read from another
 // app's record at run time, never written to a file). Glint changes: the identity below; the achievement IDs are
 // resolved through `Achievements.all` in Glint/Core/Achievements.swift (each `def("<key>", …)` is "glint.ach.<key>":
-// docs/appstore/achievements.md asks Core for exactly that shape); the `check` size probe uses Glint's PORTRAIT sets
-// (iPhone 1320x2868 / 1206x2622, Duo inner 2007x2853, the laptop pose); everything else still comes from the metadata
-// file. store.yml's artifact layout and MANIFEST, the NSURLErrorDomain retries and the 20-minute image wait are kept
-// as they shipped (store.yml itself is not ported to Glint yet: until it is, the screenshots are a gap).
+// docs/appstore/achievements.md asks Core for exactly that shape); the `check` size probe uses Glint's sets (iPhone
+// PORTRAIT 1320x2868 / 1206x2622, Duo inner 2853x2007 in book pose); everything else still comes from the metadata
+// file. store.yml's artifact layout and MANIFEST (ported with it), the NSURLErrorDomain retries and the 20-minute image
+// wait are kept as they shipped.
 //
 //   xcrun swift tools/appstore/asc.swift <command> [options]
 //
@@ -2722,9 +2722,9 @@ struct RefCatalog {
         case "APP_IPHONE_61": preferred = ["IPHONE_DYNAMIC_ISLAND_MEDIUM_DISPLAY", "IPHONE_FACE_ID_MEDIUM_DISPLAY"]
         default: preferred = ["IPHONE_DUO"]
         }
-        // Glint's sets are PORTRAIT (1320x2868, 1206x2622, Duo inner 2007x2853: the laptop pose, mirror on top), like
-        // the earlier portrait sister apps, whose sets went up through this code; Snapjaw's and the book-pose sister's
-        // landscape sets did too. A group fits if a spec takes the size as is, or else rotated; the exact orientation
+        // Glint's iPhone sets are PORTRAIT (1320x2868, 1206x2622), like the earlier portrait sister apps, whose sets
+        // went up through this code; its Duo set is landscape (2853x2007, book pose), like Snapjaw's and the book-pose
+        // sister's, which did too. A group fits if a spec takes the size as is, or else rotated; the exact orientation
         // wins.
         func fits(_ g: String, _ w: Int, _ h: Int) -> Bool {
             (screenshotGroups[g] ?? []).contains { id in
@@ -3045,8 +3045,8 @@ func runCheck() async -> Int32 {
             if let cat = try? await RefCatalog.load(api) {
                 let duo = cat.screenshotGroups.keys.filter { cat.groups[$0] == "IPHONE_DUO" }.sorted()
                 out("screenshot groups: \(cat.screenshotGroups.count); iPhone Duo: \(duo.isEmpty ? "none offered" : duo.joined(separator: ", "))")
-                // Glint's portrait sets: 6.9" store-69, 6.3" store-63 (both 6.3" sizes), Duo inner store-duo (laptop pose).
-                for (key, size) in [("APP_IPHONE_67", (1320, 2868)), ("APP_IPHONE_61", (1206, 2622)), ("APP_IPHONE_61", (1179, 2556)), ("duoInner", (2007, 2853))] {
+                // Glint's sets: 6.9" store-69 and 6.3" store-63 (both 6.3" sizes) portrait, Duo inner store-duo (book pose).
+                for (key, size) in [("APP_IPHONE_67", (1320, 2868)), ("APP_IPHONE_61", (1206, 2622)), ("APP_IPHONE_61", (1179, 2556)), ("duoInner", (2853, 2007))] {
                     out("  \(key) \(size.0)x\(size.1) → \(cat.group(for: key, width: size.0, height: size.1) ?? "no group (skipped)")")
                 }
                 for (spec, size) in zip(placementSpecs, [(3840, 1646), (3840, 2560)]) {

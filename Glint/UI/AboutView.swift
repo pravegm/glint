@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// About: credits, the privacy line, the version. Holding the version for 2 s copies a diagnostics log (including the
-/// hinge trace) to the clipboard; nothing leaves the phone unless the player pastes it somewhere.
+/// hinge trace) to the clipboard; nothing leaves the phone unless the player pastes it somewhere. R2: on a Duo the art
+/// and title sit on the mirror half, the text and the version on the garden half (nothing tappable on the crease).
 struct AboutView: View {
     @ObservedObject var controller: GameController
     let canvas: AppCanvas
@@ -10,7 +11,7 @@ struct AboutView: View {
         let c = canvas.compact
         ZStack {
             MenuScrim()
-            ScrollView(.vertical) {
+            SplitMenu(canvas: canvas) {
                 VStack(spacing: c ? 14 : 18) {
                     MenuHeader(title: "About", compact: c) {
                         controller.back()
@@ -27,7 +28,9 @@ struct AboutView: View {
                     Text("Catch the sun. Pop the shadows.")
                         .font(GlintType.headline(c))
                         .foregroundStyle(GlintTheme.mist)
-
+                }
+            } bottom: {
+                VStack(spacing: c ? 14 : 18) {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Made for iPhone Duo")
                             .font(GlintType.headline(c))
@@ -37,10 +40,13 @@ struct AboutView: View {
                             .font(GlintType.body(c))
                             .foregroundStyle(GlintTheme.mist)
                             .fixedSize(horizontal: false, vertical: true)
-                        Text("Designed and built by Praveg, with Claude. Every picture and every sound is made in code.")
+                        Text(Self.credit)
                             .font(GlintType.body(c))
                             .foregroundStyle(GlintTheme.mist)
                             .fixedSize(horizontal: false, vertical: true)
+                        Text(Self.copyright)
+                            .font(GlintType.caption(c))
+                            .foregroundStyle(GlintTheme.haze)
                     }
                     .padding(18)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -77,19 +83,14 @@ struct AboutView: View {
                         }
                         .accessibilityHint("Hold for two seconds to copy a diagnostics log")
                 }
-                .frame(maxWidth: 560)
-                .padding(.horizontal, 20)
-                .padding(.top, canvas.insets.top + 12)
-                .padding(.bottom, canvas.insets.bottom + 20)
-                .padding(.leading, canvas.insets.leading)
-                .padding(.trailing, canvas.insets.trailing)
-                .frame(maxWidth: .infinity)
             }
-            .scrollIndicators(.hidden)
-            .scrollBounceBehavior(.basedOnSize)
         }
         .frame(width: canvas.size.width, height: canvas.size.height)
     }
+
+    /// No personal names in the binary (founder, R2).
+    static let credit = "Designed and built with Claude. Every picture and every sound is made in code."
+    static let copyright = "© 2026 pravegm"
 
     static var versionLine: String {
         let info = Bundle.main.infoDictionary ?? [:]

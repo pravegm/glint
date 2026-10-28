@@ -13,6 +13,9 @@ import UIKit
 //              the light in the crease so the night wins), recorded into the demo progress, then Results.
 //     cover    force the cover-display view (with `t=` / `mode=` / `level=`: over a paused level, with its score).
 //     icon     render UI/AppIconArt.swift to Documents/AppIcon-1024.png (opaque RGB) and print `GLINT-ICON <path>`.
+//              R2: `GLINT-T icon stats lum=<l> colours=<n>`, and `GLINT-T icon dark …` when the mean luminance < 0.08.
+//     badges   (R2) render the ten Game Center badges (UI/AchievementArt.swift) to Documents/badges/<id>.png (1024²,
+//              opaque RGB), print `GLINT-T badges done 10`, and show them on screen.
 // - `progress=fresh|mid|done`   seeded in-memory progress (DemoPresets). Demo runs never write UserDefaults.
 // - `level=<1…30>`, `mode=level|endless|daily`
 // - `t=<s>`        fast-forward the session with the pilot to t s of play at fixed 1/120 s steps (the last 0.5 s live,
@@ -35,7 +38,7 @@ import UIKit
 
 struct DemoMode: Equatable, Sendable {
     enum Screen: String, Equatable, CaseIterable, Sendable {
-        case home, levels, play, results, settings, about, cover, icon
+        case home, levels, play, results, settings, about, cover, icon, badges
     }
     enum Preset: String, Equatable, CaseIterable, Sendable { case fresh, mid, done }
     enum ModeKey: String, Equatable, CaseIterable, Sendable { case level, endless, daily }
@@ -108,7 +111,8 @@ struct DemoMode: Equatable, Sendable {
     var forcesPilot: Bool { playTo != nil || skill != nil }
 
     /// The pilot drives the light only while no real hinge has reported (freezeOn= / freezeAfter= alone).
-    var wantsFallbackPilot: Bool { !forcesPilot && (stopOn != nil || holdAfter != nil) }
+    /// R2 addendum: `fold=1` on a phone simulator has no hinge either, so the pilot drives the band there too.
+    var wantsFallbackPilot: Bool { !forcesPilot && (stopOn != nil || holdAfter != nil || fold) }
 
     var pilotSkill: Double { skill ?? Self.defaultSkill }
 
@@ -239,19 +243,37 @@ enum IconExport {
     static let side: CGFloat = 1024
     static let fileName = "AppIcon-1024.png"
 
-    /// Renders `AppIconArt` at 1024 × 1024 px, opaque, as an RGB PNG with NO alpha (ITMS-90717; `OpaquePNG`), to
-    /// Documents/AppIcon-1024.png, and prints `GLINT-ICON <path>` (ci.yml copies it).
+    /// Renders `AppIconArt` at 1024 × 1024 px through SwiftUI's `ImageRenderer` (no SpriteKit), opaque, as an RGB PNG
+    /// with NO alpha (ITMS-90717; `OpaquePNG`), to Documents/AppIcon-1024.png, and prints `GLINT-ICON <path>` (ci.yml
+    /// copies it). R2: if the renderer comes back dark (R1's solid-black icon) the CoreGraphics painter's own image is
+    /// used; a final image whose mean luminance is under 0.08 logs `GLINT-T icon dark`.
     static func render() {
         let renderer = ImageRenderer(content: AppIconArt(side: side))
         renderer.proposedSize = ProposedViewSize(width: side, height: side)
         renderer.scale = 1
         renderer.isOpaque = true
-        guard let image = renderer.cgImage else {
+        var picked: CGImage? = renderer.cgImage
+        if let rendered = picked, IconPainter.stats(rendered).luminance < IconPainter.darkLuminance {
+            #if DEBUG
+            AppTrace.demo("GLINT-T icon renderer came back black; using the CoreGraphics painter")
+            #endif
+            picked = nil
+        }
+        if picked == nil { picked = IconPainter.image(side: side) }
+        guard let image = picked else {
             #if DEBUG
             AppTrace.demo("GLINT-T icon failed: no image")
             #endif
             return
         }
+        let stats = IconPainter.stats(image)
+        AppTrace.note("icon lum=\(AppTrace.fixed(stats.luminance, 3)) colours=\(stats.colours)")
+        #if DEBUG
+        if stats.luminance < IconPainter.darkLuminance {
+            AppTrace.demo("GLINT-T icon dark lum=\(AppTrace.fixed(stats.luminance, 3)) colours=\(stats.colours)")
+        }
+        AppTrace.demo("GLINT-T icon stats lum=\(AppTrace.fixed(stats.luminance, 3)) colours=\(stats.colours)")
+        #endif
         guard let data = OpaquePNG.encode(image),
               let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
             #if DEBUG

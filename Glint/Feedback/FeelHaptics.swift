@@ -108,6 +108,23 @@ enum FeelHapticBook {
         sizzleSharpnessLow + (sizzleSharpnessHigh - sizzleSharpnessLow) * Float(FeelMath.clamp01(heat))
     }
 
+    /// R2 (cloud shadows): the lowest sharpness a muffled sizzle reaches (a dull, rounded fizz).
+    static let sizzleSharpnessFloor: Float = 0.15
+    /// R2: the sharpness with the shade's muffle: down by up to 0.25, never under `sizzleSharpnessFloor`.
+    static func sizzleSharpness(heat: Double, muffle: Double) -> Float {
+        max(sizzleSharpness(heat: heat) - 0.25 * Float(FeelMath.clamp01(muffle)), sizzleSharpnessFloor)
+    }
+
+    /// R2: a muffled sizzle is felt softer (× 0.65 at full muffle).
+    static func muffledIntensity(_ muffle: Double) -> Float {
+        1 - 0.35 * Float(FeelMath.clamp01(muffle))
+    }
+
+    /// R2: a cloud's shadow slides onto the band: a faint, slow, dull swell (the "cool hush").
+    static let coolHush = FeelHapticCue(notes: [.buzz(0.2, 0.15, duration: 0.45)],
+                                        curve: [FeelHapticPoint(time: 0, value: 0), FeelHapticPoint(time: 0.2, value: 1),
+                                                FeelHapticPoint(time: 0.45, value: 0)])
+
     /// ± jitter on every send while sizzling (intensity as a fraction, sharpness absolute): the crackle you feel.
     static let sizzleIntensityJitter: Float = 0.3
     static let sizzleSharpnessJitter: Float = 0.08
@@ -433,8 +450,9 @@ final class FeelHaptics {
         var alarm: Float = 0
         if enabled {
             sizzle = FeelHapticBook.sizzleLevel(burn.level, profile: profile)
+                * FeelHapticBook.muffledIntensity(burn.muffle)
             alarm = FeelHapticBook.alarmLevel(burn.danger, profile: profile)
-            if sizzle > 0 { sharpness = FeelHapticBook.sizzleSharpness(heat: burn.heat) }
+            if sizzle > 0 { sharpness = FeelHapticBook.sizzleSharpness(heat: burn.heat, muffle: burn.muffle) }
         }
         setContinuous(sizzle: sizzle, sharpness: sharpness, alarm: alarm, now: now, force: false)
     }
@@ -457,7 +475,7 @@ final class FeelHaptics {
         if sizzle > 0 {
             intensity = min(max(sizzle * (1 + FeelHapticBook.sizzleIntensityJitter * Float(dice.range(-1, 1))), 0), 1)
             keen = min(max(sharpness + FeelHapticBook.sizzleSharpnessJitter * Float(dice.range(-1, 1)),
-                           FeelHapticBook.sizzleSharpnessLow), FeelHapticBook.sizzleSharpnessHigh)
+                           FeelHapticBook.sizzleSharpnessFloor), FeelHapticBook.sizzleSharpnessHigh)
         }
         // The alarm flutters: every other send dips, so a scorching firefly feels like a trembling wing.
         var flutter = alarm

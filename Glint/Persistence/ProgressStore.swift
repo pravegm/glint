@@ -64,6 +64,10 @@ struct ProgressData: Codable, Equatable {
     var hingeSeen: Bool = false
     /// Levels and runs started.
     var plays: Int = 0
+    /// R2: Today's Dawn days finished (ascending, the last 400 kept): the day streak.
+    var dailyPlayed: [Int] = []
+    /// R2: Game Center achievement ids earned (`glint.ach.<key>`), in the order earned.
+    var achievements: [String] = []
 
     init() {
         levelStars = Array(repeating: 0, count: LevelBook.count)
@@ -72,7 +76,7 @@ struct ProgressData: Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case version, levelStars, levelBest, endlessBest, dailyBests, bestDailyEver, lastLevel, firstLaunch, seenHints
-        case hingeSeen, plays
+        case hingeSeen, plays, dailyPlayed, achievements
     }
 
     init(from decoder: Decoder) throws {
@@ -96,6 +100,9 @@ struct ProgressData: Codable, Equatable {
         seenHints = (try? c.decodeIfPresent([String].self, forKey: .seenHints)) ?? []
         hingeSeen = (try? c.decodeIfPresent(Bool.self, forKey: .hingeSeen)) ?? false
         plays = ProgressRules.clampScore((try? c.decodeIfPresent(Int.self, forKey: .plays)) ?? 0)
+        let days: [Int] = (try? c.decodeIfPresent([Int].self, forKey: .dailyPlayed)) ?? []
+        dailyPlayed = ProgressRules.cleanDays(days)
+        achievements = (try? c.decodeIfPresent([String].self, forKey: .achievements)) ?? []
     }
 }
 
@@ -209,6 +216,40 @@ enum ProgressRules {
         d.dailyBests[String(day)] ?? 0
     }
 
+    /// `ids` not already in `earned`, without repeats, in order. Pure; tested.
+    static func newAchievements(_ ids: [String], earned: [String]) -> [String] {
+        var seen = Set(earned)
+        var out: [String] = []
+        for id in ids where !seen.contains(id) {
+            seen.insert(id)
+            out.append(id)
+        }
+        return out
+    }
+
+    /// Sorted, unique, the last 400.
+    static func cleanDays(_ days: [Int]) -> [Int] {
+        Array(Array(Set(days)).sorted().suffix(400))
+    }
+
+    /// Today's Dawn was finished today.
+    static func playedDaily(_ d: ProgressData, day: Int) -> Bool {
+        d.dailyPlayed.contains(day)
+    }
+
+    /// The day streak: consecutive days finished, ending today (or yesterday, so the streak still shows before
+    /// today's run). 0 when the last finished day is older.
+    static func dailyStreak(_ d: ProgressData, today: Int) -> Int {
+        let played = Set(d.dailyPlayed)
+        var day = played.contains(today) ? today : today - 1
+        var streak = 0
+        while played.contains(day) {
+            streak += 1
+            day -= 1
+        }
+        return streak
+    }
+
     /// Everything open right now, in a stable order.
     static func unlockSet(_ d: ProgressData, now: Date) -> [UnlockNote] {
         var out: [UnlockNote] = []
@@ -249,6 +290,7 @@ enum ProgressRules {
             out.previousBest = d.dailyBests[key] ?? 0
             let best = max(out.previousBest, value)
             d.dailyBests[key] = best
+            d.dailyPlayed = cleanDays(d.dailyPlayed + [day])
             d.bestDailyEver = max(d.bestDailyEver, best)
             out.best = best
             // Keep the file small: the last 60 days.
@@ -311,6 +353,17 @@ final class ProgressStore: ObservableObject {
         if case let .level(n) = mode { copy.lastLevel = min(max(n, 1), max(LevelBook.count, 1)) }
         data = copy
         save()
+    }
+
+    /// Files achievement ids; returns the ones that are new (in the given order).
+    func addAchievements(_ ids: [String]) -> [String] {
+        let fresh = ProgressRules.newAchievements(ids, earned: data.achievements)
+        guard !fresh.isEmpty else { return [] }
+        var copy = data
+        copy.achievements.append(contentsOf: fresh)
+        data = copy
+        save()
+        return fresh
     }
 
     func hasSeen(_ hint: HintID) -> Bool { data.seenHints.contains(hint.rawValue) }

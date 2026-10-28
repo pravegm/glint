@@ -59,7 +59,7 @@ public enum HintID: String, Codable, Sendable {
 
 /// The light, as the input side sees it at one frame. Produced by a `MirrorSource`.
 public struct MirrorInput: Equatable, Sendable {
-    /// Band centre in floor `d` units. < 0: the band is still hidden in the crease (θ < 85°); clamped ≤ 1.
+    /// Band centre in floor `d` units. < 0: the band is still hidden in the crease (θ < 80°); clamped ≤ 1.
     public var band: Double
     /// 0…1: how bright the light pooled in the crease is (θ 15°…85°; 1 once the band is out). Cosmetic.
     public var creaseGlow: Double
@@ -120,6 +120,22 @@ public struct FireflyState: Equatable, Sendable {
     }
 }
 
+/// R2 (REVIEW-1 P0-3): a cloud's shadow drifting across the band (from world 2). Light inside it is multiplied by
+/// `1 − strength` (strength 1 = no light at all), with a soft edge of 0.03 in `u`.
+public struct ShadeState: Equatable, Sendable {
+    public var id: Int
+    /// Centre across the garden, 0…1 (it drifts; may run past either edge while entering/leaving).
+    public var u: Double
+    /// Half its width in `u` units.
+    public var halfWidth: Double
+    /// 0…1.
+    public var strength: Double
+
+    public init(id: Int, u: Double, halfWidth: Double, strength: Double = 1) {
+        self.id = id; self.u = u; self.halfWidth = halfWidth; self.strength = strength
+    }
+}
+
 /// Per-frame numbers for Feedback and the HUD.
 public struct Telemetry: Equatable, Sendable {
     /// Total HP burned per second this frame, over every lit gloom (0 = nothing burning).
@@ -141,6 +157,8 @@ public struct DawnSnapshot: Equatable, Sendable {
     public var phase: SessionPhase
     public var glooms: [GloomState]
     public var fireflies: [FireflyState]
+    /// R2: cloud shadows on the band (empty before world 2).
+    public var shades: [ShadeState]
     /// One per lane (`Tuning.flowerCount`, left → right in `u`): true = still standing.
     public var flowers: [Bool]
     /// The band centre (d) and the crease glow used this frame (copied from the input).
@@ -161,10 +179,10 @@ public struct DawnSnapshot: Equatable, Sendable {
     public var flowersLeft: Int { flowers.filter { $0 }.count }
 
     public init(mode: PlayMode, phase: SessionPhase = .waiting, glooms: [GloomState] = [], fireflies: [FireflyState] = [],
-                flowers: [Bool] = Array(repeating: true, count: 5), band: Double = -0.2, creaseGlow: Double = 0,
+                shades: [ShadeState] = [], flowers: [Bool] = Array(repeating: true, count: 5), band: Double = -0.2, creaseGlow: Double = 0,
                 score: Int = 0, chain: Int = 0, multiplier: Double = 1, sun: Double = 0, time: Double = 0, pops: Int = 0,
                 telemetry: Telemetry = Telemetry()) {
-        self.mode = mode; self.phase = phase; self.glooms = glooms; self.fireflies = fireflies; self.flowers = flowers
+        self.mode = mode; self.phase = phase; self.glooms = glooms; self.fireflies = fireflies; self.shades = shades; self.flowers = flowers
         self.band = band; self.creaseGlow = creaseGlow; self.score = score; self.chain = chain
         self.multiplier = multiplier; self.sun = sun; self.time = time; self.pops = pops; self.telemetry = telemetry
     }

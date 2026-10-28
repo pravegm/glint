@@ -1,0 +1,23 @@
+# App Store screenshot scenarios, iPhone Duo inner display (2853x2007, BOOK pose: the Duo simulator boots in book pose
+# and can't be turned to a laptop in CI): docs/appstore/screenshots.md §B. Captured by ci/store-capture.sh duo →
+# ci/duo-store.sh, framed by ci/store-set.sh + ci/store-frame.swift. THIS FILE IS THE SOURCE OF TRUTH for names and
+# captions (tools/appstore/build-metadata.js checks the names against docs/appstore/asc-metadata.json).
+# name|demo args (-glintDemo)|wait s|caption|expect|frame|hinge
+#  - hinge: the angle ci/duo-store.sh holds the phone at (open, in the play range, at most 130°) so the inner display is up and the
+#    layout is folded. The light is the pilot's (t= / skill=: DemoMode.forcesPilot). The book composite of D01 is drawn
+#    at the angle that puts the band where the capture shows it (ci/store-set.sh: 80 + 55 × band, 100–135), never this column.
+#  - fold=1 keeps the Duo split layout even before a hinge sample arrives. Mirror on the left, garden on the right
+#    (the default); every frame must log "GLINT-T canvas <W>x<H> fold=1".
+#  - No "|" inside a field.
+D01-hero|screen=play;level=6;t=18;skill=0.8;progress=mid;fold=1|28|Your phone is a *mirror* / Open it to catch the sun.|GLINT-T freeze|book|125
+D02-sweep|screen=play;level=3;skill=0.9;freezeOn=sweep;progress=mid;fold=1|60|Sweep the light. *Pop!* / Every pop climbs a rising scale.|GLINT-T freeze sweep|flat|125
+D03-reach|screen=play;level=2;t=20;skill=0.8;progress=mid;fold=1|30|Open wider, light goes *further* / The phone's angle is the aim.|GLINT-T freeze|flat|125
+D04-fireflies|screen=play;level=4;t=12;skill=0.6;hint=spareTheFireflies;progress=mid;fold=1|22|Spare the *fireflies* / They replant lost flowers.|GLINT-T freeze|flat|125
+D05-brute|screen=play;level=6;t=25;skill=0.8;progress=mid;fold=1|35|Follow the *big ones* / Keep the light on a brute as it creeps.|GLINT-T freeze|flat|125
+D06-worlds|screen=levels;progress=mid;fold=1|8|30 *sunrises*, 3 worlds / Meadow, Rooftops and Harbour.|GLINT-T screen levels|flat|125
+D07-rooftops|screen=play;level=15;t=30;skill=0.8;progress=mid;fold=1|40|Shadows that *split* and hop / New tricks on the Rooftops.|GLINT-T freeze|flat|125
+D08-harbour|screen=play;level=27;t=40;skill=0.7;progress=mid;fold=1|50|Hard by the *Harbour* / World 3 will cost you petals.|GLINT-T freeze|flat|125
+D09-long-night|screen=play;mode=endless;t=60;skill=0.8;progress=mid;fold=1|70|Then the *Long Night* / Endless waves. One best score.|GLINT-T freeze|flat|125
+D10-todays-dawn|screen=play;mode=daily;t=20;skill=0.8;progress=mid;fold=1|30|A new *dawn* every day / Today's Dawn: one sunrise for everyone.|GLINT-T freeze|flat|125
+# Reserves (duo_filter '^R'): Swap halves (garden on the left, so store-set.sh lights the left page).
+R1-swap|screen=play;level=8;t=20;skill=0.8;progress=mid;fold=1;swap=1|30|Any way *round* / Swap the halves in Settings.|GLINT-T freeze|flat|125

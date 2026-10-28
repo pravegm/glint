@@ -118,6 +118,8 @@ final class FeedbackDirector {
     private var emergeThrottle = FeelThrottle(gap: 0.15)
     private var hopThrottle = FeelThrottle(gap: 0.1)
     private var fireflyThrottle = FeelThrottle(gap: 0.3)
+    /// R2: clouds that have slid onto the band (the cool hush).
+    private var shadeWatcher = FeelShadeWatcher()
     /// The pad brightness of the last game bed (a pause keeps it).
     private var lastPadBright: Float = 0.06
     /// Glooms on the last frame (sunrise evaporates them silently: the ripple counts them).
@@ -279,6 +281,13 @@ final class FeedbackDirector {
         }
         let burn = live ? FeelSoundBook.burn(of: snapshot) : FeelBurn.zero
         haptics.update(burn: burn, now: now)
+        // R2: a cloud's shadow slides onto the band: the cool hush (once per cloud, only while live).
+        let hush = shadeWatcher.update(shades: snapshot.shades, phase: snapshot.phase, live: live,
+                                       sessionTime: snapshot.time, now: now)
+        if hush {
+            playSound(FeelSoundBook.coolHush(dice: &dice))
+            playHaptic(FeelHapticBook.coolHush)
+        }
         lastGloomCount = snapshot.glooms.count
         scheduleWatchdog()
     }

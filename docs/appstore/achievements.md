@@ -44,7 +44,7 @@
 | 7 | `glint.ach.harbour` | Harbour Lights | Win all 10 Harbour sunrises. | The whole harbour, lit at last. | 100 | No | `ProgressStore` has ≥ 1 star on each of levels 21–30 |
 | 8 | `glint.ach.allstars` | Ninety Suns | Earn all 90 stars. | Every sunrise, every flower. | 100 | No | total stars == 90 (`LevelBook.count` × 3) |
 | 9 | `glint.ach.daily` | Early Riser | Finish a Today's Dawn. | Up with the sun, with everyone else. | 15 | No | a finished `.daily(day:)` session (won or lost) |
-| 10 | `glint.ach.longnight` | Night Watch | Score 10,000 in one Long Night. | Ten thousand points before dawn. | 50 | No | a `.endless` session whose final `snapshot.score >= 10000` (check with `BalanceTests`, below) |
+| 10 | `glint.ach.longnight` | Night Watch | Score 20,000 in one Long Night. | Twenty thousand points before dawn. | 50 | No | a `.endless` session whose final `snapshot.score >= 20000` (check with `BalanceTests`, below) |
 | | | | | | **435** | | |
 
 Points: 10 + 10 + 25 + 25 + 50 + 50 + 100 + 100 + 15 + 50 = **435**. **565 points stay in reserve** for later updates (a fourth world, new shadows, events), well under the 1,000 cap.
@@ -82,7 +82,7 @@ Rough reach from GAME-DESIGN §6 (to be confirmed by `BalanceTests`' `GLINT-BAL`
 - **The long tail:** Harbour Lights (world 3 is properly hard), Night Watch, Ninety Suns (every level with all five flowers).
 
 **Checks before the tool creates them** (descriptions and triggers can still change then; ids never):
-- `Night Watch`: 10,000 in Long Night should be above the 0.6 pilot's median and at or below the 0.9 pilot's. If not, change the number in both descriptions and the trigger together (the title stays).
+- `Night Watch`: 20,000 in Long Night (raised from 10,000 in R2: the 0.6 pilot median is ~17,400) should be above the 0.6 pilot's median and at or below the 0.9 pilot's. If not, change the number in both descriptions and the trigger together (the title stays).
 - `Four Times Bright`: the 0.6 pilot should reach chain 13 in some levels of world 2; if the chain window makes 13 near-impossible, lower it to the ×3 point (chain 9) and retitle "Three Times Bright" before creation.
 - `Ninety Suns`: three stars on every Harbour level must be possible for the 0.9 pilot on most seeds; otherwise it's a grind, not a goal.
 - Every trigger is reachable with drag only.

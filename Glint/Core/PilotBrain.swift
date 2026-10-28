@@ -5,19 +5,23 @@ import Foundation
 // It plays like a person holding the phone:
 // - Every `reaction` seconds (0.35 s at skill 0 → 0.08 s at skill 1) it picks the most urgent gloom: the least slack,
 //   where slack = seconds until it reaches the flowers − the light it still needs − the trip to it. Crowds count as
-//   more urgent (one sweep pops them all), splitters as further along (their wisps fly 0.25 out), and a gloom that can
-//   no longer be saved is let go. A lit target is kept (tracked) until it pops, unless something is clearly worse.
-// - It aims at the target plus a lead (a resting hopper: on it or just ahead; a hopping one: where it lands), steps
-//   the aim off any
-//   firefly (to the nearest spot that leaves every firefly dark) unless the target is past d = 0.6, and moves there
-//   with a soft lag and a speed cap (0.9 → 1.6 d/s).
-// - Lower skill: wider aim error, more slips (picking the wrong gloom), and hesitations (freezing for a moment).
+//   more urgent (one sweep pops them all), splitters as further along (their wisps fly 0.25 out), a gloom under a
+//   cloud's shadow as less urgent (R2: wait for the cloud, take someone else), and a gloom that can no longer be saved
+//   is let go. A lit target is kept (tracked) until it pops, unless something is clearly worse.
+// - It aims at the target plus a lead (a resting hopper: on it or just ahead; a hopping one: where it lands), never
+//   inside the crease shade (R2: no light there), steps the aim off any firefly near the open garden (to the nearest
+//   spot that leaves every firefly dark) unless the target is past d = 0.6, and moves its hand there with a soft lag
+//   and a speed cap (0.9 → 1.6 d/s).
+// - Lower skill: wider aim error, more slips (picking the wrong gloom) and hesitations (freezing for a moment).
+// - R2, the human hinge, all scaled by (1 − skill): the band follows the hand through a 0.1 + 0.25 × (1 − skill) s lag
+//   (a hinge's filtered angle trails the hand), plus a smooth ±0.05 jitter (hinge noise, redrawn every 0.12 s), and
+//   on a big move (> 0.15 d) to a new target it sometimes overshoots by 0.04…0.12 d, settling over ~0.2 s.
 
 struct PilotBrain {
     let skill: Double
     /// Seconds between decisions.
     let reaction: Double
-    /// d units per second.
+    /// d units per second (the hand).
     let speedCap: Double
     /// The aim error's half-range (d).
     let aimNoise: Double
@@ -29,36 +33,57 @@ struct PilotBrain {
     let switchMargin: Double
     /// How far (d) it keeps the band centre from a firefly.
     let fireflyMargin: Double
+    /// R2 human hinge: the jitter's half-range (d), the hinge lag (s) and the overshoot chance per big move.
+    let jitterAmplitude: Double
+    let hingeLag: Double
+    let overshootChance: Double
 
-    /// Where it rests the band with nothing to chase (just out of the crease, where shadows appear).
-    static let idleAim: Double = 0.06
+    /// Where it rests the band with nothing to chase (just past the crease shade, where shadows surface).
+    static let idleAim: Double = Tuning.creaseShade + 0.08
+    /// It never aims closer to the crease than this (light does nothing in the shade).
+    static let minAim: Double = Tuning.creaseShade + 0.05
     /// Past this d a target matters more than a firefly.
     static let carelessD: Double = 0.6
-    /// The band closes the gap to its goal at gap / this per second (then capped).
+    /// The hand closes the gap to its goal at gap / this per second (then capped).
     static let gainDistance: Double = 0.06
+    /// Below this cloud factor a gloom counts as shaded (less urgent).
+    static let shadedFactor: Double = 0.6
+    /// Seconds of slack a fully shaded gloom gets added.
+    static let shadePenalty: Double = 2.5
 
     private var rng: SeededRandom
-    /// The band it is holding now.
+    /// The band it shows now (what the session sees).
     private(set) var position: Double = Tuning.bandMin
     /// The gloom it is chasing (−1: none).
     private(set) var targetID: Int = -1
-    private var goal: Double = PilotBrain.idleAim
+    /// The hand (before the hinge lag and jitter).
+    private(set) var hand: Double = Tuning.bandMin
+    private var lagged: Double = Tuning.bandMin
+    private var goal: Double = 0.2
     private var decideIn: Double = 0
     private var freeze: Double = 0
     private var aimError: Double = 0
     private var errorIn: Double = 0
+    private var jitter: Double = 0
+    private var jitterTarget: Double = 0
+    private var jitterIn: Double = 0
+    private var overshoot: Double = 0
 
     /// skill 0…1 (1 = near-perfect).
     init(skill: Double, seed: UInt64) {
         let s: Double = skill.isFinite ? min(max(skill, 0), 1) : 0.5
+        let w: Double = 1 - s
         self.skill = s
         self.reaction = 0.35 - 0.27 * s
         self.speedCap = 0.9 + 0.7 * s
-        self.aimNoise = 0.005 + 0.15 * (1 - s)
-        self.slip = 0.6 * (1 - s)
-        self.hesitation = 0.5 * (1 - s)
+        self.aimNoise = 0.005 + 0.08 * w
+        self.slip = 0.4 * w
+        self.hesitation = 0.5 * w
         self.switchMargin = 0.8 - 0.5 * s
         self.fireflyMargin = 0.097 + 0.035 * s
+        self.jitterAmplitude = 0.05 * w
+        self.hingeLag = 0.1 + 0.25 * w
+        self.overshootChance = 0.6 * w
         self.rng = SeededRandom(seed: seed)
     }
 
@@ -72,16 +97,24 @@ struct PilotBrain {
             errorIn = 0.3 + 0.5 * rng.unit()
             aimError = aimNoise * (2 * rng.unit() - 1)
         }
+        jitterIn -= dt
+        if jitterIn <= 0 {
+            jitterIn = 0.12
+            jitterTarget = jitterAmplitude * (2 * rng.unit() - 1)
+        }
+        jitter += (jitterTarget - jitter) * min(1, dt / 0.06)
+        overshoot *= exp(-dt / 0.2)
         if freeze > 0 {
             freeze -= dt
-            return position
+            return output(dt)
         }
         if rng.unit() < hesitation * dt {
             freeze = 0.2 + 0.6 * (1 - s) * rng.unit()
-            return position
+            return output(dt)
         }
 
         let gl: [GloomState] = snapshot.glooms
+        let sh: [ShadeState] = snapshot.shades
         var tgIndex: Int = -1
         if targetID >= 0 {
             var i: Int = 0
@@ -101,7 +134,7 @@ struct PilotBrain {
             var bestUrgency: Double = -1e9
             var i: Int = 0
             while i < gl.count {
-                let u: Double = urgency(gl[i], in: gl)
+                let u: Double = urgency(gl[i], in: gl, shades: sh)
                 if u > bestUrgency {
                     bestUrgency = u
                     best = i
@@ -112,9 +145,20 @@ struct PilotBrain {
                 best = rng.int(0...(gl.count - 1))
             }
             if best >= 0 && tgIndex >= 0 && gl[tgIndex].lit > 0.3 && gl[best].id != gl[tgIndex].id {
-                if urgency(gl[best], in: gl) < urgency(gl[tgIndex], in: gl) + switchMargin { best = tgIndex }
+                if urgency(gl[best], in: gl, shades: sh) < urgency(gl[tgIndex], in: gl, shades: sh) + switchMargin {
+                    best = tgIndex
+                }
             }
-            targetID = best >= 0 ? gl[best].id : -1
+            let newID: Int = best >= 0 ? gl[best].id : -1
+            if best >= 0 && newID != targetID {
+                let jump: Double = max(gl[best].d, Tuning.creaseShade) - hand
+                let roll: Double = rng.unit()
+                if abs(jump) > 0.15 && roll < overshootChance {
+                    let size: Double = (0.04 + 0.08 * rng.unit()) * (1 - s)
+                    overshoot = jump > 0 ? size : -size
+                }
+            }
+            targetID = newID
             tgIndex = best
         }
 
@@ -127,13 +171,15 @@ struct PilotBrain {
             } else {
                 aim = tg.d + PilotBrain.speed(of: tg) * (reaction + 0.05) * s
             }
+            aim = max(aim, PilotBrain.minAim)
             careless = tg.d > PilotBrain.carelessD
         }
-        aim += aimError
+        aim += aimError + overshoot
 
         let ff: [FireflyState] = snapshot.fireflies
         if !careless && !ff.isEmpty {
             let m: Double = fireflyMargin
+            let watchFrom: Double = Tuning.creaseShade - 0.1
             var bestAim: Double = aim
             var bestCost: Double = 1e9
             var c: Int = -1
@@ -144,7 +190,7 @@ struct PilotBrain {
                     cand = ff[c / 2].d + side * 1.0001
                 }
                 var ok: Bool = true
-                for q in ff where abs(cand - q.d) < m {
+                for q in ff where q.d > watchFrom && abs(cand - q.d) < m {
                     ok = false
                     break
                 }
@@ -162,9 +208,16 @@ struct PilotBrain {
 
         aim = min(max(aim, Tuning.bandMin), 1)
         goal += (aim - goal) * min(1, dt / (0.5 * reaction))
-        var v: Double = (goal - position) / PilotBrain.gainDistance
+        var v: Double = (goal - hand) / PilotBrain.gainDistance
         v = min(max(v, -speedCap), speedCap)
-        position = min(max(position + v * dt, Tuning.bandMin), 1)
+        hand = min(max(hand + v * dt, Tuning.bandMin), 1)
+        return output(dt)
+    }
+
+    /// The hinge: the band follows the hand through the lag, plus the jitter.
+    private mutating func output(_ dt: Double) -> Double {
+        lagged += (hand - lagged) * min(1, dt / hingeLag)
+        position = min(max(lagged + jitter, Tuning.bandMin), 1)
         return position
     }
 
@@ -177,11 +230,11 @@ struct PilotBrain {
     }
 
     /// −(seconds of slack): bigger is more urgent.
-    func urgency(_ g: GloomState, in glooms: [GloomState]) -> Double {
+    func urgency(_ g: GloomState, in glooms: [GloomState], shades: [ShadeState] = []) -> Double {
         let sp: Double = max(PilotBrain.speed(of: g), 0.02)
         let ahead: Double = g.kind == .splitter ? 0.25 : 0
         let arrive: Double = (1 - g.d - ahead) / sp
-        let trip: Double = abs(position - g.d) / speedCap
+        let trip: Double = abs(lagged - max(g.d, Tuning.creaseShade)) / speedCap
         let raw: Double = arrive - g.hp - trip
         var slack: Double = raw
         var near: Int = 0
@@ -189,6 +242,10 @@ struct PilotBrain {
             near += 1
         }
         slack -= 0.25 * Double(min(near, 4))
+        if !shades.isEmpty {
+            let cf: Double = Tuning.cloudFactor(u: g.u, shades: shades)
+            if cf < PilotBrain.shadedFactor { slack += PilotBrain.shadePenalty * (1 - cf) }
+        }
         if raw < -0.3 { slack += 8 }
         return -slack
     }

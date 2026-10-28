@@ -22,6 +22,8 @@ final class GardenMirror {
     private let sun = SKSpriteNode()
     private let glint = SKSpriteNode()
     private let shaft = SKSpriteNode()
+    /// R2: the warm spot on the glass where the light leaves for the garden.
+    private let hotSpot = SKSpriteNode()
     private let vignette = SKSpriteNode()
     private let sheen = SKSpriteNode()
     private let shine = SKSpriteNode()
@@ -33,6 +35,8 @@ final class GardenMirror {
     private var starSpots: [CGPoint] = []
     private var starPhase: [CGFloat] = []
     private var clouds: [SKSpriteNode] = []
+    /// R2: the clouds that cast the band's shades (one per `ShadeState`, placed by the scene).
+    private var shadeClouds: [SKSpriteNode] = []
     private var cloudX: [CGFloat] = []
     private var cloudY: [CGFloat] = []
     private var cloudSpeed: [CGFloat] = []
@@ -55,6 +59,9 @@ final class GardenMirror {
     /// The sun's centre as drawn (scene points) and its radius.
     private(set) var sunPoint: CGPoint = .zero
     private(set) var sunRadius: CGFloat = 20
+    /// R2: the sun's glint as drawn (its side, points) and the glass's hot spot (scene points).
+    var glintSize: CGFloat { glint.size.width }
+    private(set) var hotSpotPoint: CGPoint = .zero
     /// The lever's knob as drawn (scene points).
     private(set) var leverPoint: CGPoint = .zero
     private var leverFar: CGPoint = .zero
@@ -113,6 +120,15 @@ final class GardenMirror {
             cloudSpeed.append(rng.range(0.006, 0.014))
             cloudScale.append(rng.range(0.7, 1.15))
         }
+        for i in 0..<3 {
+            let c = SKSpriteNode(texture: MirrorArt.cloud(i + 1))
+            c.colorBlendFactor = 0.62
+            c.color = GardenInk(hex: 0x6A76A6).ui
+            c.zPosition = 0.7 + CGFloat(i) * 0.01
+            c.isHidden = true
+            content.addChild(c)
+            shadeClouds.append(c)
+        }
         for i in 0..<GardenMirror.tiles {
             let f = SKSpriteNode()
             f.anchorPoint = .zero
@@ -149,7 +165,7 @@ final class GardenMirror {
             content.addChild(fl)
             flares.append(fl)
         }
-        glint.texture = GardenArt.sparkle
+        glint.texture = MirrorArt.crossFlare
         glint.blendMode = .add
         glint.colorBlendFactor = 1
         glint.color = GardenInk(hex: 0xFFFBE8).ui
@@ -173,7 +189,13 @@ final class GardenMirror {
         veil.color = GardenPalette.night.ui
         veil.alpha = 0
         veil.zPosition = 2.2
-        for n in [vignette, sheen, shine, veil] { crop.addChild(n) }
+        hotSpot.texture = GardenArt.glow
+        hotSpot.blendMode = .add
+        hotSpot.colorBlendFactor = 1
+        hotSpot.color = GardenInk(hex: 0xFFD98A).ui
+        hotSpot.alpha = 0
+        hotSpot.zPosition = 2.12
+        for n in [vignette, sheen, shine, hotSpot, veil] { crop.addChild(n) }
 
         // The frame (over the glass).
         for i in 0..<4 {
@@ -206,6 +228,25 @@ final class GardenMirror {
         }
         setWorld(1)
     }
+
+    /// R2: places the shade-casting clouds: `centers` in scene points (on the sun's path, at the shade's u), each
+    /// `widths[i]` wide, `strengths[i]` 0…1 (how dark). Extra clouds hide.
+    func placeShadeClouds(centers: [CGPoint], widths: [CGFloat], strengths: [CGFloat]) {
+        for (i, c) in shadeClouds.enumerated() {
+            guard i < centers.count, i < widths.count, i < strengths.count else {
+                c.isHidden = true
+                continue
+            }
+            let w = GardenMath.clamp(widths[i], 70, max(inner.width * 0.95, 70))
+            c.isHidden = false
+            c.size = CGSize(width: w, height: w * 110 / 240)
+            c.position = CGPoint(x: centers[i].x - content.position.x, y: centers[i].y - content.position.y)
+            c.alpha = 0.55 + 0.45 * GardenMath.clamp(strengths[i], 0, 1)
+        }
+    }
+
+    /// The shade clouds on screen now.
+    var shadeCloudCount: Int { shadeClouds.filter { !$0.isHidden }.count }
 
     /// The world's horizon (1 Meadow, 2 Rooftops, 3 Harbour).
     func setWorld(_ w: Int) {
@@ -375,12 +416,13 @@ final class GardenMirror {
         sunRays.color = GardenInk(hex: 0xFFC27A).mixed(GardenInk(hex: 0xFFF2C8), d).ui
         sunRays.alpha = 0.18 + 0.32 * d
         sunRays.zRotation = time * 0.05 * motion
-        let gp: CGFloat = 0.5 + 0.5 * sin(time * 1.9)
-        glint.position = CGPoint(x: sunPoint.x - r * 0.35, y: sunPoint.y + r * 0.35)
-        let gs = r * (1.8 + 0.6 * gp * motion)
+        // R2: a small soft cross flare on the sun's upper-left rim, slowly twinkling (not a star over the sun).
+        let gp: CGFloat = motion > 0.5 ? 0.5 + 0.5 * sin(time * 1.3) : 0.5
+        glint.position = CGPoint(x: sunPoint.x - r * 0.42, y: sunPoint.y + r * 0.42)
+        let gs = r * (1.0 + 0.14 * gp)
         glint.size = CGSize(width: gs, height: gs)
-        glint.alpha = (0.45 + 0.4 * gp) * (0.5 + 0.5 * light)
-        glint.zRotation = time * 0.3 * motion
+        glint.alpha = (0.32 + 0.22 * gp) * (0.6 + 0.4 * light)
+        glint.zRotation = 0.2 + sin(time * 0.4) * 0.12 * motion
 
         // Lens flares along the line from the sun through the glass's centre.
         let cx = inner.midX - sunPoint.x
@@ -391,7 +433,7 @@ final class GardenMirror {
             let fs = r * (i == 0 ? 1.3 : 0.8)
             fl.size = CGSize(width: fs, height: fs)
             fl.color = GardenInk(hex: 0xFFD9A0).ui
-            fl.alpha = 0.14 * light * (0.4 + 0.6 * d)
+            fl.alpha = (i == 0 ? 0.06 : 0.09) * light * (0.4 + 0.6 * d)
         }
 
         // A shaft of light from the sun to the crease (brighter as the phone opens).
@@ -405,6 +447,14 @@ final class GardenMirror {
         shaft.size = CGSize(width: r * 3.2, height: len)
         shaft.color = GardenInk(hex: 0xFFD27A).ui
         shaft.alpha = 0.24 * light
+
+        // R2: a hot spot on the glass where the light leaves the mirror for the garden.
+        hotSpotPoint = target
+        hotSpot.position = target
+        hotSpot.size = CGSize(width: max(r * 5.5, 40), height: max(r * 1.4, 12))
+        hotSpot.zRotation = atan2(toward.dx, -toward.dy)
+        let breathe: CGFloat = motion > 0.5 ? 0.9 + 0.1 * sin(time * 1.7) : 1
+        hotSpot.alpha = 0.42 * light * breathe
 
         // Stars fade as the sun climbs; they twinkle.
         let starK = 1 - GardenMath.smooth(0.0, 0.45, d)

@@ -29,13 +29,13 @@ You don't need an iPhone Duo. The whole game plays on any iPhone (iOS 18 or late
 2. HOW THE HINGE IS USED (iPhone Duo)
 Glint reads the hinge angle only through the public iOS 27.1 API (SwiftUI onHingeChange), behind an availability check. No private API. The angle is used only while playing; it is never stored or sent.
 a) One half of the inner display is the mirror, the other the garden; the fold is the crease. Any pose works, like a laptop (mirror on top) or like a book. Settings > Swap halves flips the halves.
-b) The opening angle is the aim. Shut is dark. As the phone opens, light pools in the crease; from about 80 degrees the band lifts out and moves across the garden, reaching the far edge at about 145 degrees. Opening further changes nothing, so the phone never needs to lie flat.
+b) The opening angle is the aim. Shut is dark. As the phone opens, light pools in the crease; from about 80 degrees the band lifts out and moves across the garden, reaching the far edge at about 135 degrees. Opening further changes nothing, so the phone never needs to lie flat.
 c) Every level starts with the phone shut: if it is open, the game says "Close the phone to start", then "Open the phone to let the light in".
 d) Closing the phone (below about 15 degrees for a quarter of a second) pauses the level, and the outer display shows "Paused" with the score. Opening it again resumes after a short grace.
 e) There is no pause, warning or penalty anywhere near 90 degrees.
 
 3. KIND TO THE DEVICE (Guidelines 2.4.2 and 1.4.5)
-- Play is small, smooth movements between about 80 and 145 degrees, inside the range where the hinge holds its position. Glint never asks the user to lay the phone flat, slam it or move it fast.
+- Play is small, smooth movements between about 80 and 135 degrees, inside the range where the hinge holds its position. Glint never asks the user to lay the phone flat, slam it or move it fast.
 - The only full close is the one at the start of a level (and to pause), at the player's own pace.
 - No score, achievement or leaderboard rewards hinge speed or the number of folds.
 
@@ -72,7 +72,7 @@ Optional, never required. 3 leaderboards (Long Night, Today's Dawn, Total Stars)
 | Fireflies fizzle when held in light; delivered ones replant | `DawnSession` firefly rules | [ ] | [ ] |
 | "The night won" and Retry | `UI/ResultsView.swift` | [ ] exact wording | [ ] |
 | Public `onHingeChange` only, behind `#available(iOS 27.1, *)`; the angle is never stored or sent | `Input/HingeReader.swift`; `Persistence/` has no angle (grep) | [ ] grep | [ ] |
-| Band lifts out at about 80°, reaches the edge at about 145°; nothing changes beyond | `Tuning.band(angle:)` | [ ] update if tuning moves them | [ ] |
+| Band lifts out at about 80°, reaches the edge at about 135°; nothing changes beyond | `Tuning.band(angle:)` | [ ] update if tuning moves them | [ ] |
 | "Close the phone to start" / "Open the phone to let the light in" | `GameController` level flow | [ ] exact wording | [ ] |
 | Pause below 15° for 0.25 s; cover display shows "Paused" and the score; resume with grace | `Tuning.shutAngle` / `shutDwell`, `CoverView` | [ ] | [ ] |
 | No pause or warning near 90° | GAME-DESIGN §8 | [ ] | [ ] |
@@ -96,7 +96,7 @@ Point to §1: the full game plays without a Duo, by dragging. Offer the phone vi
 
 ## If rejected under 2.4.2 (hardware) or 1.4.5 (physical harm)
 
-> "Glint never asks users to lay the phone flat, slam it or move it fast. The light follows the phone's opening angle smoothly between about 80 and 145 degrees, inside the range where the iPhone Duo's hinge holds its position, so play is small, slow movements, like adjusting a laptop screen. Opening beyond 145 degrees changes nothing. The only full close is at the start of a level and to pause, at the player's own pace. No score, achievement or leaderboard rewards hinge speed or the number of folds. Any iPhone without a hinge plays the full game by dragging on the screen."
+> "Glint never asks users to lay the phone flat, slam it or move it fast. The light follows the phone's opening angle smoothly between about 80 and 135 degrees, inside the range where the iPhone Duo's hinge holds its position, so play is small, slow movements, like adjusting a laptop screen. Opening beyond 135 degrees changes nothing. The only full close is at the start of a level and to pause, at the player's own pace. No score, achievement or leaderboard rewards hinge speed or the number of folds. Any iPhone without a hinge plays the full game by dragging on the screen."
 
 ## If rejected under 4.2 or 2.3 (minimum functionality / accurate metadata)
 

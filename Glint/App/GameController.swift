@@ -22,6 +22,8 @@ final class HUDModel: ObservableObject {
     @Published private(set) var state = HUDState()
     /// A short banner on the mirror half ("Wave 3").
     @Published private(set) var banner: String?
+    /// R2 addendum: what the hint line points at (SwiftUI coordinates), nil when gone.
+    @Published private(set) var hintTarget: CGPoint?
 
     func update(_ s: HUDState) {
         if s != state { state = s }
@@ -29,6 +31,16 @@ final class HUDModel: ObservableObject {
 
     func setBanner(_ text: String?) {
         if text != banner { banner = text }
+    }
+
+    func setHintTarget(_ p: CGPoint?) {
+        guard let p else {
+            if hintTarget != nil { hintTarget = nil }
+            return
+        }
+        // Rounded to whole points so a still target doesn't republish.
+        let q = CGPoint(x: p.x.rounded(), y: p.y.rounded())
+        if q != hintTarget { hintTarget = q }
     }
 }
 
@@ -42,6 +54,12 @@ struct ResultSummary: Equatable {
     var flowersLeft: Int
     var pops: Int
     var outcome: RecordOutcome
+    /// R2: the flowers at the end (eaten ones greyed under the stars).
+    var flowers: [Bool] = []
+    /// R2 addendum: a lost level's one tip (from what ate the flowers).
+    var tip: String?
+    /// R2: achievement ids earned by this run (named on the card; banners held until now).
+    var newAchievements: [String] = []
 }
 
 // MARK: - The controller
@@ -66,6 +84,8 @@ final class GameController: ObservableObject, GardenDriver {
     @Published private(set) var scene: GardenScene?
     @Published private(set) var hingeRefresh = 0
     @Published private(set) var showsIcon = false
+    /// Demo `screen=badges`: the ten Game Center badges on screen (while they are written to Documents/badges).
+    @Published private(set) var showsBadges = false
     @Published private(set) var forcedCover = false
     @Published var coverDismissed = false
     @Published private(set) var playMode: PlayMode = .level(1)
@@ -187,6 +207,7 @@ final class GameController: ObservableObject, GardenDriver {
             #endif
             applyDemo(demo)
         } else {
+            GameCenterManager.shared.syncProgress(achievements: store.data.achievements, totalStars: store.totalStars)
             GameCenterManager.shared.authenticate()
             logScreen()
         }
@@ -217,7 +238,7 @@ final class GameController: ObservableObject, GardenDriver {
         } else {
             makeScene(fresh)
         }
-        scene?.showsLever = !hinge.hasHinge
+        refreshLever()
         scene?.reduceMotion = reduceMotion
         if changed {
             AppTrace.note("canvas \(Int(canvas.width.rounded()))x\(Int(canvas.height.rounded())) fold=\(duo ? 1 : 0)")
@@ -231,7 +252,7 @@ final class GameController: ObservableObject, GardenDriver {
         let s = GardenScene(layout: layout)
         s.driver = self
         s.attract = !route.showsSession
-        s.showsLever = !hinge.hasHinge
+        s.showsLever = AppRules.showsLever(route: route, hasHinge: hinge.hasHinge, isDuo: isDuo)
         s.reduceMotion = reduceMotion
         scene = s
     }
@@ -242,7 +263,7 @@ final class GameController: ObservableObject, GardenDriver {
     }
 
     func refreshMotion() {
-        let on = settings.reduceMotion || systemReduceMotion
+        let on = settings.reduceMotion(system: systemReduceMotion)
         if on != reduceMotion { reduceMotion = on }
         scene?.reduceMotion = on
     }
@@ -259,7 +280,7 @@ final class GameController: ObservableObject, GardenDriver {
             AppTrace.note("hinge seen \(AppTrace.fixed(angle, 1))")
             refreshLayout()
         }
-        if scene?.showsLever == true { scene?.showsLever = false }
+        refreshLever()
         checkGates()
     }
 
@@ -314,10 +335,19 @@ final class GameController: ObservableObject, GardenDriver {
 
     func go(_ next: AppRoute) {
         if route != next { route = next }
+        refreshLever()
         scene?.attract = !next.showsSession
         // On a Duo nobody touches the screen in play: keep it awake there.
         UIApplication.shared.isIdleTimerDisabled = next == .play
+        // R2: achievement banners wait while a level is on screen (they land with the Results card).
+        GameCenterManager.shared.setHoldBanners(next == .play)
         logScreen()
+    }
+
+    /// The phone lever: play only, drag only, never on a Duo split layout (R2 addendum).
+    private func refreshLever() {
+        let on = AppRules.showsLever(route: route, hasHinge: hinge.hasHinge, isDuo: isDuo)
+        if scene?.showsLever != on { scene?.showsLever = on }
     }
 
     private func logScreen() {
@@ -473,6 +503,8 @@ final class GameController: ObservableObject, GardenDriver {
         guard let s = session, !s.isFinished, !playMode.isLevel, s.snapshot.score > 0 else { return }
         let outcome = store.record(mode: playMode, won: false, stars: 0, score: s.snapshot.score, now: Date())
         reportGameCenter(mode: playMode, score: s.snapshot.score, outcome: outcome)
+        // A Long Night left early still counts for Night Watch (Core reads the score from the stats).
+        _ = recordAchievements(stats: s.stats, phase: s.snapshot.phase)
     }
 
     private func leavePlay() {
@@ -638,7 +670,7 @@ final class GameController: ObservableObject, GardenDriver {
             // The light the hinge really makes (shut = dark): never more.
             placeholder.band = input.band
             placeholder.creaseGlow = input.creaseGlow
-            logBand(input: input, phase: nil, now: now)
+            logBand(input: input, drawn: input.band, phase: nil, now: now)
             refreshPrompt()
             return (placeholder, [])
         }
@@ -668,7 +700,7 @@ final class GameController: ObservableObject, GardenDriver {
         publishHUD(snap, now: now, force: false)
         tickHint(now: now)
         refreshPrompt()
-        logBand(input: input, phase: snap.phase, now: now)
+        logBand(input: input, drawn: snap.band, phase: snap.phase, now: now)
         if let at = finishAt, now >= at, !demoFrozen, route == .play {
             finishAt = nil
             showResults()
@@ -801,14 +833,14 @@ final class GameController: ObservableObject, GardenDriver {
     }
 
     /// `GLINT-T band <b> angle <θ> phase <p> shut <0|1>` at 2 Hz while the play screen is up (DEBUG demo only).
-    private func logBand(input: MirrorInput, phase: SessionPhase?, now: TimeInterval) {
+    private func logBand(input: MirrorInput, drawn: Double, phase: SessionPhase?, now: TimeInterval) {
         #if DEBUG
         guard AppTrace.demoEnabled, route == .play else { return }
         guard now - lastBandLog >= 0.5 || lastBandLog < 0 || now < lastBandLog else { return }
         lastBandLog = now
         let angleText: String = hinge.hasHinge ? AppTrace.fixed(hinge.angle ?? -1, 1) : "-1"
         let shut: Bool = hinge.hasHinge ? hinge.isShut : input.isShut
-        AppTrace.demo("GLINT-T band \(AppTrace.fixed(input.band, 3)) angle \(angleText) phase "
+        AppTrace.demo("GLINT-T band \(AppTrace.fixed(drawn, 3)) angle \(angleText) phase "
                       + "\(AppRules.phaseName(phase)) shut \(shut ? 1 : 0)")
         #endif
     }
@@ -844,6 +876,11 @@ final class GameController: ObservableObject, GardenDriver {
         s.sun = snap.sun
         s.phase = snap.phase
         hud.update(s)
+        if let h = hint, let subject = AppRules.hintSubject(h, snapshot: snap) {
+            hud.setHintTarget(layout.point(u: subject.u, d: max(subject.d, 0)))
+        } else {
+            hud.setHintTarget(nil)
+        }
     }
 
     // MARK: - Results
@@ -857,8 +894,13 @@ final class GameController: ObservableObject, GardenDriver {
             stars = sunriseStars ?? DawnSession.stars(flowersLeft: snap.flowersLeft)
         }
         let outcome = store.record(mode: playMode, won: won, stars: stars, score: snap.score, now: Date())
-        summary = ResultSummary(mode: playMode, title: AppRules.modeTitle(playMode), won: won, stars: stars,
-                                score: snap.score, flowersLeft: snap.flowersLeft, pops: snap.pops, outcome: outcome)
+        let fresh = recordAchievements(stats: s.stats, phase: snap.phase)
+        var result = ResultSummary(mode: playMode, title: AppRules.modeTitle(playMode), won: won, stars: stars,
+                                   score: snap.score, flowersLeft: snap.flowersLeft, pops: snap.pops, outcome: outcome)
+        result.flowers = snap.flowers
+        result.tip = playMode.isLevel ? TipRules.tip(won: won, stats: s.stats) : nil
+        result.newAchievements = fresh
+        summary = result
         reportGameCenter(mode: playMode, score: snap.score, outcome: outcome)
         hint = nil
         if prompt != nil {
@@ -872,6 +914,28 @@ final class GameController: ObservableObject, GardenDriver {
                       + "score=\(snap.score) flowers=\(snap.flowersLeft) pops=\(snap.pops)")
         #endif
         go(.results)
+    }
+
+    /// R2: Core's `Achievements.earned` for this finished session and the saved progress; files the new ones and
+    /// reports them (Game Center shows their banners now: the Results card is up). Never in demo runs' Game Center.
+    private func recordAchievements(stats: DawnStats, phase: SessionPhase) -> [String] {
+        let d = store.data
+        var won = Set<Int>()
+        for n in 0..<d.levelStars.count where d.levelStars[n] >= 1 { won.insert(n + 1) }
+        let ids = Achievements.earned(stats: stats, mode: playMode, outcome: phase,
+                                      progressStars: ProgressRules.totalStars(d), levelsWon: won)
+        let fresh = store.addAchievements(ids)
+        if !fresh.isEmpty {
+            AppTrace.note("achievements \(fresh.joined(separator: ","))")
+            #if DEBUG
+            AppTrace.demo("GLINT-T achievements \(fresh.joined(separator: ","))")
+            #endif
+        }
+        if demo == nil {
+            GameCenterManager.shared.syncProgress(achievements: store.data.achievements, totalStars: store.totalStars)
+            GameCenterManager.shared.unlock(fresh)
+        }
+        return fresh
     }
 
     private func reportGameCenter(mode: PlayMode, score: Int, outcome: RecordOutcome) {
@@ -942,7 +1006,8 @@ final class GameController: ObservableObject, GardenDriver {
                      + "\(AppRules.modeName(playMode)) phase \(AppRules.phaseName(session?.snapshot.phase))")
         let s = settings.snapshot
         lines.append("settings sound=\(s.soundOn ? 1 : 0) music=\(s.musicOn ? 1 : 0) haptics=\(s.hapticsOn ? 1 : 0) "
-                     + "swap=\(s.swapHalves ? 1 : 0) reduceMotion=\(s.reduceMotion ? 1 : 0)")
+                     + "swap=\(s.swapHalves ? 1 : 0) reduceMotion=\(reduceMotion ? 1 : 0) chosen="
+                     + "\(s.reduceMotionChoice.map { $0 ? "1" : "0" } ?? "-")")
         lines.append("progress stars=\(ProgressRules.totalStars(d))/\(ProgressRules.maxTotalStars()) next="
                      + "\(ProgressRules.nextLevel(d)) endlessBest=\(d.endlessBest) dailyBest=\(d.bestDailyEver) "
                      + "plays=\(d.plays)")
@@ -994,6 +1059,12 @@ final class GameController: ObservableObject, GardenDriver {
             } else {
                 go(.home)
             }
+        case .badges:
+            showsBadges = true
+            #if DEBUG
+            AppTrace.demo("GLINT-T screen badges")
+            #endif
+            BadgeExport.renderAll(ids: GameCenterManager.achievementIDs)
         case .icon:
             showsIcon = true
             #if DEBUG
@@ -1005,12 +1076,12 @@ final class GameController: ObservableObject, GardenDriver {
 
     private func startDemoPlay(_ demo: DemoMode, mode: PlayMode) {
         let seed = demo.seed ?? DemoMode.defaultSeed
-        if demo.forcesPilot || demo.wantsFallbackPilot {
-            playPilot = PilotSource(skill: demo.pilotSkill, seed: seed)
-            pilotIsFallback = demo.wantsFallbackPilot
-        } else if demo.prompt == .open || demo.prompt == .drag {
+        if demo.prompt == .open || demo.prompt == .drag {
             fixedSource = FixedBandSource(band: Tuning.bandMin)
             fixedIsFallback = false
+        } else if demo.forcesPilot || (demo.wantsFallbackPilot && demo.pinBand == nil) {
+            playPilot = PilotSource(skill: demo.pilotSkill, seed: seed)
+            pilotIsFallback = demo.wantsFallbackPilot
         } else if let b = demo.pinBand {
             fixedSource = FixedBandSource(band: b)
             fixedIsFallback = true

@@ -72,7 +72,7 @@ Put these in one public folder (a GitHub Release named `press-kit` on the public
 | File | Spec | Source |
 |---|---|---|
 | `glint-icon-1024.png` | 1024 × 1024 | CI `screenshots` artifact → `AppIcon-1024.png` (`screen=icon`) |
-| `glint-duo-01…10.png` | 2007 × 2853, **no captions** | the `raw-duo` artifact of the final App Store screenshots run (`screenshots.md` §B) |
+| `glint-duo-01…10.png` | 2853 × 2007, **no captions** | the `raw-duo` artifact of the final App Store screenshots run (`screenshots.md` §B) |
 | `glint-iphone-01…10.png` | 1320 × 2868, no captions | the 6.9" raw frames (`raw-69`) |
 | `glint-teaser-15s.mp4` | 1080 × 1920, with sound | the founder's real-hands clip (`social-launch.md` §3A) |
 | `glint-sweep-loop.gif` | ≤ 8 MB, 600 px wide | a Sweep through a wisp flock, looped |
@@ -99,7 +99,7 @@ Plain text, under 150 words, clip link in the first two lines, never attach vide
 > Glint: Sun Mirror is out today on the App Store: APP STORE LINK. The top half of the iPhone Duo is a mirror. Open the phone and it throws a band of sunlight across the garden on the other half; the wider you open it, the further the light reaches. Shadows creep out of the crease; light pops them. Spare the fireflies.
 >
 > - 30 sunrises in 3 worlds, an endless Long Night and a daily Today's Dawn, Game Center.
-> - The hinge angle is the aim, continuously, between about 80° and 145°: never flat.
+> - The hinge angle is the aim, continuously, between about 80° and 135°: never flat.
 > - Plays on other iPhones too (drag to aim, iOS 18 or later); £1.99/$1.99, no ads, no IAP, no data collected, 4+.
 >
 > TestFlight, more clips or a promo code on request. No embargo.
@@ -115,7 +115,7 @@ Plain text, under 150 words, clip link in the first two lines, never attach vide
 >
 > Could you add Glint to your iPhone Duo games list? One half of the Duo is a mirror; opening the phone throws sunlight across the other half, and the opening angle is exactly where the light lands.
 >
-> - Reads the hinge angle continuously (public iOS 27.1 API), both ways; play lives between about 80° and 145°, never flat, no pause near 90°.
+> - Reads the hinge angle continuously (public iOS 27.1 API), both ways; play lives between about 80° and 135°, never flat, no pause near 90°.
 > - Every level starts shut; shutting the phone pauses, with a card on the outer display.
 > - 30 handmade levels, five shadow kinds, fireflies to spare, an endless mode and a daily, Game Center. £1.99/$1.99, no ads, no IAP.
 > - Out now: APP STORE LINK · Clip: CLIP LINK · Screenshots and icon: PRESS FOLDER

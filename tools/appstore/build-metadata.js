@@ -96,16 +96,15 @@ for (const r of rbRows) {
 }
 if (rbRows.length !== achievements.length) problems.push(`runbook has ${rbRows.length} achievements, achievements.md ${achievements.length}`);
 
-// Store frames (screenshots.md). Glint plays PORTRAIT on phones and the Duo set is the laptop pose (portrait inner
-// display), so every set is portrait. The store pipeline (store.yml, ci/store-scenarios.txt, ci/duo-store-scenarios.txt)
-// isn't ported yet: until it is, the frame names come from screenshots.md alone and the scenario check is a note.
+// Store frames (screenshots.md). Glint plays PORTRAIT on phones; the Duo set is the inner display in BOOK pose
+// (2853x2007: the Duo simulator boots in book pose). The scenario files are the source of truth (store.yml).
 const PFRAMES = ['01-hero', '02-sweep', '03-reach', '04-fireflies', '05-brute', '06-worlds', '07-rooftops', '08-harbour', '09-long-night', '10-todays-dawn'];
 const DFRAMES = ['01-hero', '02-sweep', '03-reach', '04-fireflies', '05-brute', '06-worlds', '07-rooftops', '08-harbour', '09-long-night', '10-todays-dawn'];
 const ssDoc = rd('docs/appstore/screenshots.md');
 for (const n of PFRAMES) need(ssDoc, '`P' + n + '`', 'screenshots.md');
 for (const n of DFRAMES) need(ssDoc, '`D' + n + '`', 'screenshots.md');
 for (const [file, prefix, frames] of [['ci/store-scenarios.txt', 'P', PFRAMES], ['ci/duo-store-scenarios.txt', 'D', DFRAMES]]) {
-  if (!exists(file)) { notes.push(`${file} not ported yet (screenshots.md asks the CI engineer): frame names checked against screenshots.md only`); continue; }
+  if (!exists(file)) { notes.push(`${file} missing (the store pipeline reads it): frame names checked against screenshots.md only`); continue; }
   const lines = rd(file).split('\n').filter(l => new RegExp('^' + prefix + '\\d\\d-').test(l));
   const names = lines.map(l => l.split('|')[0]);
   const want = frames.map(n => prefix + n);
@@ -119,7 +118,7 @@ for (const [file, prefix, frames] of [['ci/store-scenarios.txt', 'P', PFRAMES], 
   }
 }
 const screenshots = {
-  _comment: 'store.yml (to be ported from Snapjaw, screenshots.md) artifacts store-69 (6.9", 1320x2868), store-63 (6.3", 1206x2622: the required "Dynamic Island, medium" slot, the APP_IPHONE_61 class) and store-duo (inner 2007x2853, the laptop pose), all PORTRAIT. Frames P01-P10 / D01-D10 in screenshots.md order (frame 1 of every set is the laptop-pose composite of D01). Until a store run is given (store_run, or DEFAULT_STORE_RUN in asc.yml), validate reports them as gaps and push skips them.',
+  _comment: 'store.yml (manual only) artifacts store-69 (6.9", 1320x2868 portrait), store-63 (6.3", 1206x2622 portrait: the "Dynamic Island, medium" slot, the APP_IPHONE_61 class) and store-duo (inner display 2853x2007, book pose). Frames P01-P10 / D01-D10 in ci/store-scenarios.txt / ci/duo-store-scenarios.txt order (frame 1 of every set is the book composite of D01, drawn at the angle that matches its light). Until a store run is given (store_run, or DEFAULT_STORE_RUN in asc.yml), validate reports them as gaps and push skips them.',
   APP_IPHONE_67: PFRAMES.map(n => `store-69/P${n}.png`),
   APP_IPHONE_61: PFRAMES.map(n => `store-63/P${n}.png`),
   duoInner: DFRAMES.map(n => `store-duo/D${n}.png`)

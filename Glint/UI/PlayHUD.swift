@@ -1,47 +1,62 @@
 import SwiftUI
 
-/// The play overlay. Score and chain sit in the garden half's flower-edge corner (u = 0), the pause button in the
-/// other flower-edge corner (u = 1): both follow `GardenLayout`, so they agree with the art in every layout. The start
-/// line sits on the garden (nothing moves there yet), the one-line hints and banners on the mirror half. Nothing here
-/// draws light: the scene draws only what the hinge (or the finger) makes.
+/// The play overlay. R2: score and chain sit in the MIRROR half's far corner on the u = 0 side, the pause button in
+/// its far corner on the u = 1 side (away from the crease; `AppRules.hudCenter`), so no SwiftUI plate ever covers a
+/// flower (`GardenScene.flowerRects`, tested in all four layouts). The start line sits on the garden towards the crease
+/// (nothing moves there yet), the one-line hints and banners on the mirror half. Nothing here draws light: the scene
+/// draws only what the hinge (or the finger) makes.
 struct PlayHUD: View {
     @ObservedObject var controller: GameController
     @ObservedObject var hud: HUDModel
     let canvas: AppCanvas
 
+    /// The HUD plates' sizes (the overlap test uses the same numbers).
+    static func scoreSize(compact: Bool) -> CGSize { CGSize(width: compact ? 120 : 140, height: compact ? 52 : 58) }
+    static let pauseSize = CGSize(width: 56, height: 56)
+    static let margin: CGFloat = 10
+
     var body: some View {
         let layout = canvas.layout
         let c = canvas.compact
-        let scoreSize = CGSize(width: c ? 120 : 140, height: c ? 52 : 58)
-        let pauseSize = CGSize(width: 56, height: 56)
-        let garden = layout.gardenRect
+        let scoreSize = Self.scoreSize(compact: c)
+        let pauseSize = Self.pauseSize
         let mirror = layout.mirrorRect
         ZStack {
             ScorePill(state: hud.state, compact: c)
                 .frame(width: scoreSize.width, height: scoreSize.height)
-                .position(AppRules.hudCenter(u: 0, item: scoreSize, layout: layout, insets: canvas.insets, margin: 10))
+                .position(AppRules.hudCenter(u: 0, item: scoreSize, layout: layout, insets: canvas.insets,
+                                             margin: Self.margin))
                 .allowsHitTesting(false)
 
             RoundIconButton(symbol: "pause.fill", label: "Pause", size: pauseSize.width) {
                 controller.pauseTapped()
             }
-            .position(AppRules.hudCenter(u: 1, item: pauseSize, layout: layout, insets: canvas.insets, margin: 10))
+            .position(AppRules.hudCenter(u: 1, item: pauseSize, layout: layout, insets: canvas.insets,
+                                         margin: Self.margin))
             .opacity(controller.pause.menu ? 0 : 1)
 
             if let prompt = controller.prompt {
+                let maxSize = AppRules.promptMaxSize(layout: layout)
                 PromptCard(prompt: prompt, compact: c)
-                    .frame(maxWidth: max(min(garden.width - 32, 460), 200))
-                    .position(x: garden.midX, y: garden.midY)
+                    .frame(maxWidth: maxSize.width, maxHeight: maxSize.height)
+                    .position(AppRules.promptCenter(layout: layout))
                     .allowsHitTesting(false)
                     .transition(.opacity)
             }
 
             if let hint = controller.hint {
+                // R2 addendum: on the garden (never over the sun), with a small arrow at the thing it is about.
+                let at = AppRules.hintCenter(layout: layout)
                 HintLine(text: HintRules.text(hint), compact: c)
-                    .frame(maxWidth: max(mirror.width - 32, 200))
-                    .position(x: mirror.midX, y: mirror.midY)
+                    .frame(maxWidth: min(AppRules.promptMaxSize(layout: layout).width, 420))
+                    .position(at)
                     .allowsHitTesting(false)
                     .transition(.opacity)
+                if let target = hud.hintTarget {
+                    HintArrow(from: at, to: target)
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                }
             }
 
             if let banner = hud.banner {
@@ -76,6 +91,30 @@ struct PlayHUD: View {
     }
 }
 
+/// A small gold arrow between the hint line and its subject (pointing at it). Hidden when the subject is too close.
+struct HintArrow: View {
+    let from: CGPoint
+    let to: CGPoint
+
+    var body: some View {
+        let dx = to.x - from.x
+        let dy = to.y - from.y
+        let dist = (dx * dx + dy * dy).squareRoot()
+        // Just short of the subject, pointing at it (the hint plate stays where it is).
+        let back: CGFloat = 34
+        let ux = dist > 0 ? dx / dist : 0
+        let uy = dist > 0 ? dy / dist : 0
+        let angle = AppRules.angle(from: from, to: to)
+        Image(systemName: "arrowtriangle.right.fill")
+            .font(.system(size: 22, weight: .black))
+            .foregroundStyle(GlintTheme.gold)
+            .shadow(color: GlintTheme.night.opacity(0.8), radius: 4)
+            .rotationEffect(.radians(angle))
+            .position(x: to.x - ux * back, y: to.y - uy * back)
+            .opacity(dist > 70 ? 1 : 0)
+    }
+}
+
 struct ScorePill: View {
     let state: HUDState
     let compact: Bool
@@ -88,8 +127,9 @@ struct ScorePill: View {
                 .contentTransition(.numericText())
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
-            if state.multiplier > 1.001 {
-                Text("×" + AppTrace.fixed(state.multiplier, state.multiplier.truncatingRemainder(dividingBy: 1) == 0 ? 0 : 2))
+            if state.chain >= 2 {
+                // R2 (review P2-16): a whole count, no arithmetic to read.
+                Text("Chain \(state.chain)")
                     .font(GlintType.caption(compact))
                     .foregroundStyle(GlintTheme.gold)
             } else if state.wave > 0 {

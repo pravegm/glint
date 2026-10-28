@@ -99,6 +99,49 @@ enum CreatureArt {
         for k in GloomKind.allCases {
             for l in GloomLayer.allCases { _ = gloom(k, l) }
         }
+        _ = pool
+    }
+
+    /// R2: the dark seam a submerged gloom sits in: ink below a gently wavy surface with a cool rim of light, soft at
+    /// the sides and bottom. 132 × 80 pt; the surface runs at y = `poolSurface`.
+    static let poolSize = CGSize(width: 132, height: 80)
+    static let poolSurface: CGFloat = 68
+
+    static var pool: SKTexture {
+        GardenArt.make("gloom-pool", size: poolSize, scale: 2) { ctx, s in
+            let top = poolSurface
+            func surface(_ x: CGFloat) -> CGFloat {
+                let f = x / s.width
+                return top + sin(f * 4 * CGFloat.pi) * 1.8 - abs(f - 0.5) * 9
+            }
+            let body = CGMutablePath()
+            let edge = CGMutablePath()
+            body.move(to: CGPoint(x: 0, y: 0))
+            var x: CGFloat = 0
+            while x <= s.width + 0.1 {
+                let p = CGPoint(x: x, y: surface(x))
+                body.addLine(to: p)
+                if x == 0 { edge.move(to: p) } else { edge.addLine(to: p) }
+                x += 4
+            }
+            body.addLine(to: CGPoint(x: s.width, y: 0))
+            body.closeSubpath()
+            GardenPainter.clipped(ctx, body) {
+                GardenPainter.linear(ctx, [GardenInk(hex: 0x03050E, alpha: 0), GardenInk(hex: 0x03050E, alpha: 0.96),
+                                           GardenInk(hex: 0x060A1C, alpha: 0.98)], [0, 0.45, 1],
+                                     from: CGPoint(x: 0, y: 0), to: CGPoint(x: 0, y: top))
+                // A cool sheen just under the surface.
+                GardenPainter.linear(ctx, [GardenInk(hex: 0x5C8FD8, alpha: 0), GardenInk(hex: 0x5C8FD8, alpha: 0.22)],
+                                     [0, 1], from: CGPoint(x: 0, y: top - 14), to: CGPoint(x: 0, y: top))
+            }
+            GardenPainter.stroke(ctx, edge, GardenInk(hex: 0x9CCBFF, alpha: 0.14), width: 6)
+            GardenPainter.stroke(ctx, edge, GardenInk(hex: 0xB8DCFF, alpha: 0.6), width: 1.6)
+            // Soften the sides.
+            ctx.setBlendMode(.destinationIn)
+            GardenPainter.linear(ctx, [GardenInk(1, 1, 1, 0), GardenInk.white, GardenInk.white, GardenInk(1, 1, 1, 0)],
+                                 [0, 0.2, 0.8, 1], from: CGPoint(x: 0, y: 0), to: CGPoint(x: s.width, y: 0))
+            ctx.setBlendMode(.normal)
+        }
     }
 
     // MARK: Shapes (R units, centred; every loop runs counter-clockwise so unions fill with nonzero winding)

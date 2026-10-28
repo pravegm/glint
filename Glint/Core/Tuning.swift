@@ -15,8 +15,9 @@ enum Tuning {
     static let shutAngle: Double = 15
     /// θ where the band leaves the crease (band centre d = 0).
     static let creaseAngle: Double = 80
-    /// θ where the band reaches the flower edge (d = 1). The hinge only holds its position up to about here.
-    static let edgeAngle: Double = 145
+    /// θ where the band reaches the flower edge (d = 1). R2: 135° (was 145°), so the danger zone sits where the
+    /// hinge still holds its position (≈ 15°…145°).
+    static let edgeAngle: Double = 135
     /// A paused level resumes once θ ≥ this.
     static let resumeAngle: Double = 25
     /// Seconds θ must stay ≤ `shutAngle` before a level pauses.
@@ -36,11 +37,16 @@ enum Tuning {
     static let burnRate: Double = 1.0
     /// Light is measured at the gloom's centre, moved toward the band by this share of its radius.
     static let litPadFraction: Double = 0.4
+    /// R2: the mirror shades the strip next to the crease. Light does nothing for d < this (glooms there are safe,
+    /// drawn submerged). The band can still sit there; it's just dim.
+    static let creaseShade: Double = 0.12
+    /// R2: a cloud shadow's soft edge (u units, centred on its half-width).
+    static let cloudEdge: Double = 0.03
 
     // MARK: The phone fallback (GAME-DESIGN §3)
 
-    /// The drag fallback's soft band speed cap (d units per second).
-    static let dragSpeedCap: Double = 2.4
+    /// The drag fallback's soft band speed cap (d units per second). R2: 1.4 (was 2.4), so phones aren't easier.
+    static let dragSpeedCap: Double = 1.4
 
     // MARK: Flowers, score, chain (GAME-DESIGN §4–§5)
 
@@ -94,7 +100,8 @@ enum Tuning {
     static let hopperHopTime: Double = 0.22
     /// R1: lit while resting, the rest clock runs `1 + hurry × intensity` times as fast (shadows never stand still in
     /// the light: a hopper hops on through a parked band; a band that rides on it pops it about twice as fast).
-    static let hopperLitHurry: Double = 2.0
+    /// R2: 1.0 (was 2.0; with the crease shade and human hands it made hoppers outrun everyone).
+    static let hopperLitHurry: Double = 1.0
 
     // MARK: Session
 
@@ -140,9 +147,26 @@ enum Tuning {
     }
 
     /// 0…1 light at floor distance `d` from a band centred on `band`: 1 within `bandCoreHalfWidth`, smoothstep to 0
-    /// at `bandEdgeHalfWidth`.
+    /// at `bandEdgeHalfWidth`. R2: 0 in the crease shade (`d < creaseShade`).
     static func intensity(d: Double, band: Double) -> Double {
+        if isShaded(d: d) { return 0 }
         return intensity(distance: abs(d - band))
+    }
+
+    /// R2: inside the crease shade (no light reaches it).
+    static func isShaded(d: Double) -> Bool {
+        return d < creaseShade
+    }
+
+    /// R2: how much light a cloud's shadow lets through at `u` (1 = clear, 0 = fully shaded). Several multiply.
+    static func cloudFactor(u: Double, shades: [ShadeState]) -> Double {
+        var f: Double = 1
+        for c in shades {
+            let dist: Double = abs(u - c.u)
+            let e: Double = smoothstep((c.halfWidth + cloudEdge / 2 - dist) / cloudEdge)
+            f *= 1 - min(max(c.strength, 0), 1) * e
+        }
+        return f
     }
 
     /// The band profile by distance from its centre (≥ 0).
@@ -155,8 +179,14 @@ enum Tuning {
     }
 
     /// The light on a body of `radius` centred at `d`: the band measured at its centre moved `litPadFraction ×
-    /// radius` toward the band.
+    /// radius` toward the band. 0 while the centre is in the crease shade.
     static func intensity(d: Double, radius: Double, band: Double) -> Double {
+        if isShaded(d: d) { return 0 }
+        return unshadedIntensity(d: d, radius: radius, band: band)
+    }
+
+    /// The padded light ignoring every shade (what the band would give).
+    static func unshadedIntensity(d: Double, radius: Double, band: Double) -> Double {
         let gap: Double = abs(d - band) - litPadFraction * max(radius, 0)
         return intensity(distance: max(gap, 0))
     }

@@ -8,9 +8,9 @@
 #   START-CLOSED  open at launch → `GLINT-T prompt close` (a level never starts open)
 #   COVER         shut (5°) → `GLINT-T screen cover`
 #   OPEN-PROMPT   reopened a little (40°) → `GLINT-T prompt open`, band still < 0 (light pooled in the crease)
-#   BAND-MID      112.5° → band ≈ 0.50 (±0.10), phase playing
-#   BAND-EDGE     145° → band ≥ 0.92
-#   BAND-BACK     95° → band ≈ 0.23 (±0.10): the light follows the phone both ways
+#   BAND-MID      108° → band ≈ 0.51 (±0.10), phase playing (R2: band = (θ−80)/55)
+#   BAND-EDGE     135° → band ≥ 0.92
+#   BAND-BACK     94° → band ≈ 0.255 (±0.10): the light follows the phone both ways
 #   PAUSE-SHUT    shut mid-level → `GLINT-T paused shut`; reopen to 100° → `GLINT-T resumed`
 # Frames: duo-screens/<n>-<what>.png. Results: duo-screens/checks.txt and the job summary. Exit 0 unless STRICT=1.
 set -uo pipefail
@@ -42,7 +42,28 @@ hsweep() { # hsweep <from> <to> <seconds>
   to $(( ${3%.*} + 12 )) hinge -d "$UDID" sweep "$1" "$2" "$3" >/dev/null 2>&1 || { log "WARN sweep $1→$2 failed; setting"; hset "$2"; return; }
   sleep 2.5
 }
-shot() { to 60 xcrun simctl io "$UDID" screenshot "$OUT_ABS/$1.png" >/dev/null 2>&1 || log "WARN shot $1 failed"; }
+# The Duo needs --display (names vary: LCD/LCD-1, primary/primary-1, 1/3; Snapjaw ci/duo.sh). Probed once after boot.
+INNER=""; COVER=""
+probe_displays() {
+  local c
+  for c in LCD-1 primary-1 3 internal; do
+    to 30 xcrun simctl io "$UDID" screenshot --display="$c" "$OUT_ABS/_p.png" >/dev/null 2>&1 && { INNER="$c"; break; }
+  done
+  for c in LCD primary 1 external; do
+    [[ "$c" == "$INNER" ]] && continue
+    to 30 xcrun simctl io "$UDID" screenshot --display="$c" "$OUT_ABS/_p.png" >/dev/null 2>&1 && { COVER="$c"; break; }
+  done
+  rm -f "$OUT_ABS/_p.png"; log "displays inner=$INNER cover=$COVER"
+}
+# shot <name>: the inner display (and the cover display too, as <name>-cover, when it was found).
+shot() {
+  if [[ -n "$INNER" ]]; then
+    to 60 xcrun simctl io "$UDID" screenshot --display="$INNER" "$OUT_ABS/$1.png" >/dev/null 2>&1 || log "WARN shot $1 failed"
+  else
+    to 60 xcrun simctl io "$UDID" screenshot "$OUT_ABS/$1.png" >/dev/null 2>&1 || log "WARN shot $1 failed"
+  fi
+  [[ -n "$COVER" ]] && { to 60 xcrun simctl io "$UDID" screenshot --display="$COVER" "$OUT_ABS/$1-cover.png" >/dev/null 2>&1 || true; }
+}
 since() { tail -n +"$1" "$LOG" 2>/dev/null; }
 mark() { wc -l < "$LOG" 2>/dev/null | tr -d ' '; }
 lastband() { since "$1" | grep -oE "GLINT-T band -?[0-9.]+" | tail -1 | awk '{print $3}'; }
@@ -56,6 +77,7 @@ to 60 hinge -d "$UDID" get || true
 to 300 xcrun simctl install "$UDID" "$APP" || { echo "install failed"; exit 1; }
 
 hset 160
+probe_displays
 log "launch"
 to 30 xcrun simctl terminate "$UDID" "$BUNDLE" 2>/dev/null || true
 to 90 xcrun simctl launch --terminate-running-process --stdout="$LOG" --stderr="$LOG" "$UDID" "$BUNDLE" \
@@ -66,32 +88,32 @@ m=0
 grep -q "GLINT-T prompt close" "$LOG" && ok=1 || ok=0
 verdict START-CLOSED $ok "launched open at 160°: $(grep -oE 'GLINT-T prompt [a-z]+' "$LOG" | tail -1)"
 
-m=$(mark); hsweep 160 5 2.0; sleep 2; shot 02-cover
+m=$(mark); mc=$m; hsweep 160 5 2.0; sleep 2; shot 02-cover
 since "$m" | grep -q "GLINT-T screen cover" && ok=1 || ok=0
 verdict COVER $ok "shut to 5°"
 
 m=$(mark); hsweep 5 40 1.5; sleep 1.5; shot 03-crease-glow
 b=$(lastband "$m")
-since "$m" | grep -q "GLINT-T prompt open" && awk -v b="${b:-1}" 'BEGIN { exit !(b < 0) }' && ok=1 || ok=0
-verdict OPEN-PROMPT $ok "40°: band ${b:-none}, $(since "$m" | grep -oE 'GLINT-T prompt [a-z]+' | tail -1)"
+since "$mc" | grep -q "GLINT-T prompt open" && awk -v b="${b:-1}" 'BEGIN { exit !(b < 0) }' && ok=1 || ok=0
+verdict OPEN-PROMPT $ok "40°: band ${b:-none}, $(since "$mc" | grep -oE 'GLINT-T prompt [a-z]+' | tail -1)"
 
-m=$(mark); hsweep 40 112 2.0; sleep 2; shot 04-band-mid
+m=$(mark); hsweep 40 108 2.0; sleep 2; shot 04-band-mid
 b=$(lastband "$m")
-near "$b" 0.50 0.10 && since "$m" | grep -q "phase playing" && ok=1 || ok=0
-verdict BAND-MID $ok "112°: band ${b:-none}"
+near "$b" 0.51 0.10 && since "$m" | grep -q "phase playing" && ok=1 || ok=0
+verdict BAND-MID $ok "108°: band ${b:-none}"
 
-m=$(mark); hsweep 112 145 1.5; sleep 2; shot 05-band-edge
+m=$(mark); hsweep 108 135 1.5; sleep 2; shot 05-band-edge
 b=$(lastband "$m")
 awk -v b="${b:-0}" 'BEGIN { exit !(b >= 0.92) }' && ok=1 || ok=0
-verdict BAND-EDGE $ok "145°: band ${b:-none}"
+verdict BAND-EDGE $ok "135°: band ${b:-none}"
 
-m=$(mark); hsweep 145 95 1.5; sleep 2; shot 06-band-back
+m=$(mark); hsweep 135 94 1.5; sleep 2; shot 06-band-back
 b=$(lastband "$m")
-near "$b" 0.23 0.10 && ok=1 || ok=0
-verdict BAND-BACK $ok "95°: band ${b:-none}"
+near "$b" 0.255 0.10 && ok=1 || ok=0
+verdict BAND-BACK $ok "94°: band ${b:-none}"
 
 sleep 6; shot 07-playing
-m=$(mark); hsweep 95 5 1.5; sleep 2; shot 08-paused-cover
+m=$(mark); hsweep 94 5 1.5; sleep 2; shot 08-paused-cover
 since "$m" | grep -q "GLINT-T paused shut" && p=1 || p=0
 m2=$(mark); hsweep 5 100 1.5; sleep 3; shot 09-resumed
 since "$m2" | grep -q "GLINT-T resumed" && r=1 || r=0

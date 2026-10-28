@@ -331,20 +331,25 @@ enum AppRules {
         }
     }
 
-    /// The centre of a HUD item of `item` size in the garden's flower-edge corner on the `u` side (u < 0.5: the
-    /// u = 0 corner), `margin` in from both edges and inside the safe area.
+    /// The centre of a HUD item of `item` size in one of the MIRROR half's far corners (R2 decision: the edge away from
+    /// the crease; u < 0.5: the u = 0 corner, else the u = 1 corner), `margin` in from both edges and inside the safe
+    /// area. Nothing here can cover a flower: the flowers live on the garden half.
     static func hudCenter(u: Double, item: CGSize, layout: GardenLayout, insets: EdgeInsets, margin: CGFloat) -> CGPoint {
         let size = layout.size
-        let corner = layout.point(u: u < 0.5 ? 0 : 1, d: 1)
         let dVec = layout.dDirection
+        let axis: CGFloat = layout.foldVertical ? size.width : size.height
+        let mirrorDepth = max(axis - layout.gardenDepth, 0)
+        let creaseEnd = layout.point(u: u < 0.5 ? 0 : 1, d: 0)
+        // The mirror's far edge: from the crease, away from the garden by the mirror's depth.
+        let corner = CGPoint(x: creaseEnd.x - dVec.dx * mirrorDepth, y: creaseEnd.y - dVec.dy * mirrorDepth)
         let uVec = layout.foldVertical ? CGVector(dx: 0, dy: 1) : CGVector(dx: 1, dy: 0)
         let uSign: CGFloat = u < 0.5 ? 1 : -1
         let halfAlongD: CGFloat = layout.foldVertical ? item.width / 2 : item.height / 2
         let halfAlongU: CGFloat = layout.foldVertical ? item.height / 2 : item.width / 2
         let inD = halfAlongD + margin
         let inU = halfAlongU + margin
-        var x = corner.x - dVec.dx * inD + uVec.dx * uSign * inU
-        var y = corner.y - dVec.dy * inD + uVec.dy * uSign * inU
+        var x = corner.x + dVec.dx * inD + uVec.dx * uSign * inU
+        var y = corner.y + dVec.dy * inD + uVec.dy * uSign * inU
         let minX = insets.leading + item.width / 2 + 4
         let maxX = size.width - insets.trailing - item.width / 2 - 4
         let minY = insets.top + item.height / 2 + 4
@@ -352,6 +357,144 @@ enum AppRules {
         if maxX > minX { x = min(max(x, minX), maxX) }
         if maxY > minY { y = min(max(y, minY), maxY) }
         return CGPoint(x: x, y: y)
+    }
+
+    // MARK: Duo: nothing tappable near the crease (R2 addendum)
+
+    /// No control within this distance of the crease on a Duo layout (the founder's rule is 28; the regions keep 32).
+    static let creaseNoTouch: CGFloat = 28
+    static let creaseClearance: CGFloat = 32
+
+    /// The crease line's band, ± `half` (SwiftUI coordinates).
+    static func creaseBand(layout: GardenLayout, half: CGFloat = creaseNoTouch) -> CGRect {
+        let g = layout.gardenRect
+        let size = layout.size
+        if layout.foldVertical {
+            let x = layout.gardenAfter ? g.minX : g.maxX
+            return CGRect(x: x - half, y: 0, width: half * 2, height: size.height)
+        }
+        let y = layout.gardenAfter ? g.minY : g.maxY
+        return CGRect(x: 0, y: y - half, width: size.width, height: half * 2)
+    }
+
+    /// Where a menu may put things. Phones: one region (the safe area). A Duo split layout: the mirror half
+    /// (`secondary`: titles and art) and the garden half (`primary`: the controls), each inside the safe area and
+    /// `creaseClearance` clear of the crease, so no control can sit across the fold.
+    struct MenuRegions: Equatable {
+        var primary: CGRect
+        var secondary: CGRect?
+    }
+
+    static func menuRegions(layout: GardenLayout, insets: EdgeInsets, isDuo: Bool) -> MenuRegions {
+        let size = layout.size
+        let safe = CGRect(x: insets.leading, y: insets.top,
+                          width: max(size.width - insets.leading - insets.trailing, 1),
+                          height: max(size.height - insets.top - insets.bottom, 1))
+        guard isDuo else { return MenuRegions(primary: safe, secondary: nil) }
+        let band = creaseBand(layout: layout, half: creaseClearance)
+        let garden = clear(layout.gardenRect.intersection(safe), of: band, layout: layout)
+        let mirror = clear(layout.mirrorRect.intersection(safe), of: band, layout: layout)
+        return MenuRegions(primary: garden, secondary: mirror)
+    }
+
+    /// `r` with the part inside `band` cut off (along the fold-normal axis).
+    private static func clear(_ r: CGRect, of band: CGRect, layout: GardenLayout) -> CGRect {
+        guard !r.isNull, r.intersects(band) else { return r.isNull ? .zero : r }
+        if layout.foldVertical {
+            if r.midX >= band.midX {
+                let minX = max(r.minX, band.maxX)
+                return CGRect(x: minX, y: r.minY, width: max(r.maxX - minX, 1), height: r.height)
+            }
+            let maxX = min(r.maxX, band.minX)
+            return CGRect(x: r.minX, y: r.minY, width: max(maxX - r.minX, 1), height: r.height)
+        }
+        if r.midY >= band.midY {
+            let minY = max(r.minY, band.maxY)
+            return CGRect(x: r.minX, y: minY, width: r.width, height: max(r.maxY - minY, 1))
+        }
+        let maxY = min(r.maxY, band.minY)
+        return CGRect(x: r.minX, y: r.minY, width: r.width, height: max(maxY - r.minY, 1))
+    }
+
+    /// Where a hint line sits (R2 addendum: on the garden, at 40 % of its depth, never on the sun).
+    static let hintD = 0.4
+
+    static func hintCenter(layout: GardenLayout) -> CGPoint {
+        layout.point(u: 0.5, d: hintD)
+    }
+
+    /// The thing a hint is about: the oldest gloom of its kind (or firefly), as a floor point; nil if gone.
+    static func hintSubject(_ id: HintID, snapshot: DawnSnapshot) -> (u: Double, d: Double)? {
+        switch id {
+        case .spareTheFireflies:
+            guard let f = snapshot.fireflies.first else { return nil }
+            return (f.u, f.d)
+        case .lightTheShadows:
+            guard let g = snapshot.glooms.first else { return nil }
+            return (g.u, g.d)
+        case .followTheBigOnes, .splitters, .hoppers:
+            let kind: GloomKind = id == .followTheBigOnes ? .brute : (id == .splitters ? .splitter : .hopper)
+            guard let g = snapshot.glooms.first(where: { $0.kind == kind }) else { return nil }
+            return (g.u, g.d)
+        }
+    }
+
+    /// The phone lever on the mirror (R2 addendum): only in play, only for the drag fallback, never on a Duo layout.
+    static func showsLever(route: AppRoute, hasHinge: Bool, isDuo: Bool) -> Bool {
+        route == .play && !hasHinge && !isDuo
+    }
+
+    /// Home's Today's Dawn card status (R2 addendum: "come back tomorrow").
+    static func dailyCardStatus(open: Bool, playedToday: Bool, todayBest: Int, streak: Int) -> String {
+        guard open else { return "Win level \(ProgressRules.dailyLevel)" }
+        if playedToday {
+            return streak >= 2 ? "✓ Day \(streak) streak" : "✓ Today \(grouped(todayBest))"
+        }
+        return streak >= 1 ? "Day \(streak) streak" : "New today"
+    }
+
+    /// The cover display's second line in the menus: nil when Today's Dawn isn't open yet.
+    static func dailyCoverLine(open: Bool, playedToday: Bool, todayBest: Int, streak: Int) -> String? {
+        guard open else { return nil }
+        if playedToday { return "Today: \(grouped(todayBest)) · streak \(max(streak, 1))" }
+        return "Today's Dawn is up"
+    }
+
+    /// The angle (radians, SwiftUI's y-down convention) from `from` to `to`; 0 = pointing right.
+    static func angle(from: CGPoint, to: CGPoint) -> Double {
+        Double(atan2(to.y - from.y, to.x - from.x))
+    }
+
+    /// The rect of an item of `size` centred on `center` (SwiftUI coordinates).
+    static func rect(center: CGPoint, size: CGSize) -> CGRect {
+        CGRect(x: center.x - size.width / 2, y: center.y - size.height / 2, width: size.width, height: size.height)
+    }
+
+    /// Where the start prompt card sits: on the garden, towards the crease, clear of the flowers.
+    static let promptD = 0.4
+
+    static func promptCenter(layout: GardenLayout) -> CGPoint {
+        layout.point(u: 0.5, d: promptD)
+    }
+
+    /// The largest the start prompt card may be: along d it stays inside 0.04…0.76 of the garden (the flowers sit at
+    /// the far edge), along u it keeps 16 pt from each side (at most 460 pt).
+    static func promptMaxSize(layout: GardenLayout) -> CGSize {
+        let alongD: CGFloat = layout.gardenDepth * 0.72
+        let alongU: CGFloat = min(max(layout.gardenSpan - 32, 120), 460)
+        let w: CGFloat = layout.foldVertical ? alongD : alongU
+        let h: CGFloat = layout.foldVertical ? alongU : alongD
+        return CGSize(width: max(w, 120), height: max(h, 80))
+    }
+
+    /// Reduce motion (R2): the player's explicit choice in Settings, else the iOS setting.
+    static func reduceMotion(choice: Bool?, system: Bool) -> Bool {
+        choice ?? system
+    }
+
+    /// The level map's world tab status line: "★ 24/30" when open, "★ 20" (the stars needed) when locked.
+    static func worldTabStatus(open: Bool, stars: Int, max: Int, gate: Int) -> String {
+        open ? "★ \(stars)/\(max)" : "★ \(gate)"
     }
 
     /// 12,340 style grouping (locale independent, for HUD numbers).
@@ -403,5 +546,37 @@ enum LevelMapGeometry {
         let cellW = size.width / CGFloat(cols)
         let cellH = size.height / CGFloat(max(rows, 1))
         return min(max(min(cellW * 0.62, cellH * 0.6), 40), 96)
+    }
+}
+
+// MARK: - Lost-level tips (R2 addendum; pure, tested)
+
+/// One tip for a lost level, from what ate the flowers (`DawnStats`).
+enum TipRules {
+    static let cloud = "Wait for the cloud to pass, then light them."
+    static let brute = "Follow the big ones as they walk."
+    static let wisp = "Sweep the flocks fast: one quick pass pops them all."
+    static let hopper = "Catch hoppers after they land."
+    static let splitter = "Splitters burst in two: catch the pieces as they fly."
+    static let murk = "Meet the shadows in the open garden: the light can't reach the crease."
+    static let fireflies = "Sweep past fireflies quickly: they bring flowers back."
+
+    static func text(for kind: GloomKind) -> String {
+        switch kind {
+        case .brute: return brute
+        case .wisp: return wisp
+        case .hopper: return hopper
+        case .splitter: return splitter
+        case .murk: return murk
+        }
+    }
+
+    /// Clouds first when they cost at least half the flowers; then the kind that ate the most; then fireflies.
+    static func tip(won: Bool, stats: DawnStats) -> String? {
+        guard !won else { return nil }
+        if stats.eatenAfterCloud > 0 && stats.eatenAfterCloud * 2 >= max(stats.flowersEaten, 1) { return cloud }
+        if let kind = stats.worstKind { return text(for: kind) }
+        if stats.firefliesScorched >= 2 { return fireflies }
+        return nil
     }
 }

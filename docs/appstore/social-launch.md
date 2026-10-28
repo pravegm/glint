@@ -62,7 +62,7 @@ Count each with the real link before posting (X and Mastodon count a link as 23 
 
 ### r/iPhoneDuo (only if the rules allow a launch post; otherwise the megathread)
 **Title:** [Dev] The Duo's top half is a mirror that catches the sun: Glint is out
-> Developer here, so this is self-promo. Glint uses the hinge as a continuous aim: one half of the inner screen is a mirror, the other a garden, and the opening angle is where a band of sunlight lands. Shut is dark; from about 80° the light lifts out of the crease, and it reaches the far edge at about 145°. So it plays in the hinge's comfortable range, never flat, and there's no pause or warning anywhere near 90°.
+> Developer here, so this is self-promo. Glint uses the hinge as a continuous aim: one half of the inner screen is a mirror, the other a garden, and the opening angle is where a band of sunlight lands. Shut is dark; from about 80° the light lifts out of the crease, and it reaches the far edge at about 135°. So it plays in the hinge's comfortable range, never flat, and there's no pause or warning anywhere near 90°.
 >
 > Every level starts with the phone shut, and shutting it mid-level pauses (the cover screen shows your score). Laptop or book pose both work, and Settings → Swap halves flips which half is the mirror, handy if your Duo blurs one side as a fold starts from flat.
 >
@@ -99,7 +99,7 @@ Rules: no price in the video (it goes in the post text); calm, slow hinge moves 
 
 Apple's rules: 15–30 s; captures of the app only (**no hands, no people, no device frame**); no prices; autoplays muted, so every beat has a caption on screen ≥ 1.5 s. Previews lock with the version and the CI has no screen-recording step yet, so this waits for 1.0.1.
 
-| Time | Picture (app capture, Duo inner display, laptop layout) | Caption |
+| Time | Picture (app capture, Duo inner display, book layout as in the store set) | Caption |
 |---|---|---|
 | 00.0–03.0 | The crease glowing, the band lifting out. **Poster frame 00:02.0** | **Your phone is a *mirror*** |
 | 03.0–07.0 | The band sweeping out and back | **Open wider, light goes *further*** |

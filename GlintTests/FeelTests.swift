@@ -709,4 +709,185 @@ struct FeelTests {
         #expect(result.finite)
         #expect(result.peak < 1e-4)
     }
+
+    // MARK: R2: hinge precision (1° ≈ 0.018 d with 55° of travel; the full-light core is ±0.05 d)
+
+    @Test func aNoisyStillHandBarelyMovesTheBand() {
+        let theta = 110.0
+        for seed in [UInt64(1), 2, 3] {
+            let source = HingeMirrorSource()
+            let hinge = FeelFakeHinge(source: source)
+            var dice = FeelDice(seed: seed)
+            hinge.run(4.0, rate: 27) { _ in theta + dice.range(-1.5, 1.5) }
+            let settled = Array(hinge.inputs.dropFirst(120))
+            #expect(settled.count > 200)
+            let mean = settled.reduce(0.0) { $0 + $1.band } / Double(max(settled.count, 1))
+            var jitter = 0.0
+            var offset = 0.0
+            for input in settled {
+                jitter = max(jitter, abs(input.band - mean))
+                offset = max(offset, abs(input.band - HingeMirrorSource.band(angle: theta)))
+            }
+            // Node port: ≤ 0.0056 d over 8 seeds (R1's pipeline: 0.037 d).
+            #expect(jitter < 0.01)
+            #expect(offset < 0.02)
+        }
+    }
+
+    @Test func aSixtyDegreeMoveFollowsWithinSixtyMilliseconds() {
+        let start = 85.0
+        let end = 130.0
+        let speed = 60.0
+        let duration = (end - start) / speed
+        let rate = (HingeMirrorSource.band(angle: end) - HingeMirrorSource.band(angle: start)) / duration
+        #expect(rate > 0)
+        for noisy in [false, true] {
+            let source = HingeMirrorSource()
+            let hinge = FeelFakeHinge(source: source)
+            var dice = FeelDice(seed: 9)
+            hinge.run(0.5, rate: 27) { _ in start + (noisy ? dice.range(-1.5, 1.5) : 0) }
+            hinge.run(duration + 0.8, rate: 27) { t in
+                let hand = t < duration ? start + speed * t : end
+                return hand + (noisy ? dice.range(-1.5, 1.5) : 0)
+            }
+            var lags: [Double] = []
+            for (index, input) in hinge.inputs.enumerated() {
+                let t = Double(index + 1) * FeelFakeHinge.frame
+                guard t > 0.3 && t < duration - 0.05 else { continue }
+                let truth = HingeMirrorSource.band(angle: start + speed * t)
+                lags.append((truth - input.band) / rate)
+            }
+            #expect(lags.count > 20)
+            let meanLag = lags.reduce(0, +) / Double(max(lags.count, 1))
+            // Node port: 12 ms clean, 9 ms noisy (R1: 9 / 6 ms).
+            #expect(meanLag < 0.06)
+            if !noisy {
+                #expect((lags.max() ?? 1) < 0.06)
+                // The hand stopped and the Duo went quiet: the light rests on the phone's real angle.
+                #expect(feelClose(source.angle ?? 0, end, 0.3))
+            }
+        }
+    }
+
+    @Test func theSteadyFilterIgnoresNoiseButFollowsAMove() {
+        var steady = HingeMirrorSource.steadyFilter()
+        var plain = OneEuroSmoother()
+        var dice = FeelDice(seed: 21)
+        var t = 0.0
+        var steadyWorst = 0.0
+        var plainWorst = 0.0
+        for k in 0..<120 {
+            t += 1.0 / 27
+            let x = 110 + dice.range(-1.5, 1.5)
+            let a = steady.filter(x, at: t)
+            let b = plain.filter(x, at: t)
+            if k > 27 {
+                steadyWorst = max(steadyWorst, abs(a - 110))
+                plainWorst = max(plainWorst, abs(b - 110))
+            }
+        }
+        #expect(steadyWorst < plainWorst / 2)
+        // A real 10° move is followed at once (the residual boost), not after a 0.2 Hz crawl.
+        var after = 0.0
+        for _ in 0..<3 {
+            t += 1.0 / 27
+            after = steady.filter(120, at: t)
+        }
+        #expect(feelClose(after, 120, 0.5))
+    }
+
+    // MARK: R2: cloud shadows
+
+    @Test func shadeCoverFollowsTheContract() {
+        let shade = ShadeState(id: 1, u: 0.5, halfWidth: 0.1, strength: 1)
+        #expect(feelClose(FeelSoundBook.shadeCover(u: 0.5, shades: [shade]), 1, 1e-9))
+        #expect(FeelSoundBook.shadeCover(u: 0.9, shades: [shade]) == 0)
+        #expect(FeelSoundBook.shadeCover(u: 0.3, shades: []) == 0)
+        let half = ShadeState(id: 2, u: 0.5, halfWidth: 0.1, strength: 0.5)
+        #expect(feelClose(FeelSoundBook.shadeCover(u: 0.5, shades: [half, half]), 0.75, 1e-9))
+        let edge = FeelSoundBook.shadeCover(u: 0.6, shades: [shade])
+        #expect(edge > 0.2 && edge < 0.8)
+    }
+
+    @Test func aShadedBurnIsMuffledNotCut() {
+        let gloom = GloomState(id: 1, kind: .brute, u: 0.5, d: 0.5, radius: 0.08, hp: 1.5, maxHP: 2.2, lit: 0)
+        let cloud = ShadeState(id: 1, u: 0.5, halfWidth: 0.15, strength: 1)
+        var telemetry = Telemetry()
+        telemetry.burnRate = 0 // Core: no light reaches it under the cloud
+        let shaded = DawnSnapshot(mode: .level(12), phase: .playing, glooms: [gloom], shades: [cloud], band: 0.5,
+                                  telemetry: telemetry)
+        let state = FeelSoundBook.burn(of: shaded)
+        #expect(state.level > 0.2)
+        #expect(state.muffle > 0.95)
+        let bed = FeelSoundBook.playBed(snapshot: shaded, sound: true, music: false, paused: false, advancing: true)
+        #expect(bed.sizzle > 0)
+        #expect(bed.sizzleMuffle > 0.95)
+        #expect(bed.kettle < 0.05)
+
+        var open = Telemetry()
+        open.burnRate = 1
+        var lit = gloom
+        lit.lit = 1
+        let clear = DawnSnapshot(mode: .level(12), phase: .playing, glooms: [lit], band: 0.5, telemetry: open)
+        let clearState = FeelSoundBook.burn(of: clear)
+        #expect(clearState.muffle == 0)
+        #expect(clearState.level > state.level)
+        #expect(FeelHapticBook.sizzleSharpness(heat: 0.5, muffle: 1) < FeelHapticBook.sizzleSharpness(heat: 0.5))
+        #expect(FeelHapticBook.muffledIntensity(1) < FeelHapticBook.muffledIntensity(0))
+        #expect(FeelSynth.muffleCutoff(1) < 700 && FeelSynth.muffleCutoff(0) > 10_000)
+    }
+
+    @Test func theMuffleDarkensTheSizzle() {
+        func sizzleRMS(muffle: Float) -> Double {
+            let synth = FeelSynth(sampleRate: 48_000)
+            var bed = FeelBed()
+            bed.master = FeelSoundBook.masterGain
+            bed.glide = 0.004
+            bed.sizzle = 1
+            bed.sizzleHz = 3500
+            bed.crackleRate = 150
+            bed.sizzleMuffle = muffle
+            synth.send(.bed(bed))
+            let result = feelRender(synth, seconds: 0.6)
+            #expect(result.finite)
+            return result.rms
+        }
+        let open = sizzleRMS(muffle: 0)
+        let muffled = sizzleRMS(muffle: 1)
+        #expect(open > 0.005)
+        #expect(muffled > 0)
+        #expect(muffled < open * 0.6)
+    }
+
+    @Test func aCloudHushesOnceAsItReachesTheBand() {
+        var watcher = FeelShadeWatcher()
+        let outside = ShadeState(id: 1, u: -0.3, halfWidth: 0.1, strength: 1)
+        let first = watcher.update(shades: [outside], phase: .playing, sessionTime: 10, now: 100)
+        #expect(!first)
+        let entering = ShadeState(id: 1, u: -0.05, halfWidth: 0.1, strength: 1)
+        let second = watcher.update(shades: [entering], phase: .playing, sessionTime: 11, now: 101)
+        #expect(second)
+        let again = watcher.update(shades: [entering], phase: .playing, sessionTime: 11.1, now: 101.1)
+        #expect(!again)
+        // A second cloud arriving 0.3 s later makes no second hush (one sound for clouds arriving together).
+        let twin = ShadeState(id: 2, u: 1.05, halfWidth: 0.1, strength: 1)
+        let tooSoon = watcher.update(shades: [entering, twin], phase: .playing, sessionTime: 11.3, now: 101.3)
+        #expect(!tooSoon)
+        #expect(watcher.seen.contains(2))
+        let faint = ShadeState(id: 3, u: 0.5, halfWidth: 0.1, strength: 0.05)
+        let weak = watcher.update(shades: [faint], phase: .playing, sessionTime: 14, now: 104)
+        #expect(!weak)
+        let paused = ShadeState(id: 4, u: 0.5, halfWidth: 0.1, strength: 1)
+        let silent = watcher.update(shades: [paused], phase: .playing, live: false, sessionTime: 15, now: 105)
+        #expect(!silent)
+        #expect(watcher.seen.contains(4))
+        // A new level: the ids are forgotten.
+        _ = watcher.update(shades: [], phase: .waiting, sessionTime: 0, now: 106)
+        #expect(watcher.seen.isEmpty)
+        let fresh = watcher.update(shades: [entering], phase: .playing, sessionTime: 1, now: 108)
+        #expect(fresh)
+        var dice = FeelDice(seed: 4)
+        #expect(!FeelSoundBook.coolHush(dice: &dice).isEmpty)
+        #expect(!FeelHapticBook.coolHush.notes.isEmpty)
+    }
 }

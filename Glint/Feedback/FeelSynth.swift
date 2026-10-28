@@ -170,6 +170,9 @@ struct FeelBed: Sendable, Equatable {
     var sizzleHz: Float = 1800
     /// Crackles per second.
     var crackleRate: Float = 0
+    /// R2 (cloud shadows): 0…1 how muffled the sizzle is (the burning is under a cloud's shade): a 24 dB low-pass
+    /// closing from 14 kHz (0, open) to 600 Hz (1), so a shaded burn sounds smothered instead of cutting out.
+    var sizzleMuffle: Float = 0
     /// 0…1 kettle whistle (only when something lit is nearly popped).
     var kettle: Float = 0
     var kettleHz: Float = 1200
@@ -201,6 +204,7 @@ struct FeelBed: Sendable, Equatable {
         sizzle += (target.sizzle - sizzle) * k
         sizzleHz += (target.sizzleHz - sizzleHz) * k
         crackleRate += (target.crackleRate - crackleRate) * k
+        sizzleMuffle += (target.sizzleMuffle - sizzleMuffle) * k
         kettle += (target.kettle - kettle) * k
         kettleHz += (target.kettleHz - kettleHz) * k
         alarm += (target.alarm - alarm) * k
@@ -393,6 +397,8 @@ final class FeelSynth: @unchecked Sendable {
     private var hissFilter = FeelSVF()
     private var fryFilter = FeelSVF()
     private var crackleFilter = FeelSVF()
+    private var muffleFilterA = FeelSVF()
+    private var muffleFilterB = FeelSVF()
     private var crackleEnv: Float = 0
     private var flutter: Float = 0.5
     private var flutterTarget: Float = 0.5
@@ -576,7 +582,17 @@ final class FeelSynth: @unchecked Sendable {
         if crackleEnv > 0.0005 {
             crackle = crackleFilter.process(nextNoise() * crackleEnv, .bandPass) * FeelSynth.crackleGain
         }
-        return (hiss + fry + crackle) * bed.sizzle
+        let mix = hiss + fry + crackle
+        // R2: under a cloud's shade the burn is smothered (low-passed), not cut. Always in the path (14 kHz when open,
+        // nearly transparent), so the filter never switches in with a click.
+        let muffled = muffleFilterB.process(muffleFilterA.process(mix, .lowPass), .lowPass)
+        return muffled * bed.sizzle
+    }
+
+    /// R2: the muffle's low-pass cutoff (Hz) for a muffle amount: 14 kHz open … 600 Hz fully shaded (log sweep).
+    static func muffleCutoff(_ muffle: Float) -> Float {
+        let m = min(max(muffle, 0), 1)
+        return 14_000 * pow(600.0 / 14_000.0, m)
     }
 
     /// The kettle: a breathy whistle (a sine plus noise through a narrow band at the same pitch) with a 5.5 Hz
@@ -703,6 +719,9 @@ final class FeelSynth: @unchecked Sendable {
 
     private func retuneContinuous() {
         hissFilter.tune(cutoff: min(max(bed.sizzleHz, 400), 9000), q: 0.7, sampleRate: sampleRate)
+        let muffle = FeelSynth.muffleCutoff(bed.sizzleMuffle)
+        muffleFilterA.tune(cutoff: muffle, q: 0.6, sampleRate: sampleRate)
+        muffleFilterB.tune(cutoff: muffle, q: 0.6, sampleRate: sampleRate)
         kettleFilter.tune(cutoff: min(max(bed.kettleHz, 200), 8000), q: 8, sampleRate: sampleRate)
         airFilter.tune(cutoff: min(max(bed.airHz, 150), 4000), q: 0.6, sampleRate: sampleRate)
         let bright = min(max(bed.padBright, 0), 1)
@@ -742,6 +761,8 @@ final class FeelSynth: @unchecked Sendable {
         hissFilter = FeelSVF()
         fryFilter = FeelSVF()
         crackleFilter = FeelSVF()
+        muffleFilterA = FeelSVF()
+        muffleFilterB = FeelSVF()
         kettleFilter = FeelSVF()
         airFilter = FeelSVF()
         padFilterA = FeelSVF()

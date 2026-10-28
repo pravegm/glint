@@ -62,3 +62,26 @@ founder-agent for paths). What the frames and balance table say:
   `GLINT-T badges done 10`. Add a `badges` scenario line to `ci/scenarios.txt` (`20-badges|screen=badges|8|…|GLINT-T
   badges done`) and copy `Documents/badges/` into `ci-screens/badges/` — tell the founder-agent which CI step to add.
 - Reduce motion defaults to the iOS setting. Notes → `design/notes/app-R2.md`.
+
+## R2 addendum (after design/REVIEW-1.md, the critic panel: 5 / 4 / 5 / 4)
+- **Cloud shadows (Core + Scene), from L11.** `DawnSnapshot.shades: [ShadeState]` (Contracts, founder-edited): clouds
+  drifting across the mirror's sky cast shade stripes on the band. Light × (1 − strength) inside, soft 0.03 edge in u.
+  1–2 at a time, half-width 0.08–0.16, drifting 0.04–0.10 u/s, telegraphed (they slide in from an edge). World 3 more
+  and wider. Glooms under a shade are safe: choose who and when. Include it in the retune.
+- **Flower edge at 135°** (was 145°): `Tuning.edgeAngle = 135`, band = (θ−80)/55. The danger zone must sit where the
+  hinge still holds. Drag cap `Tuning.dragSpeedCap` 2.4 → 1.4 d/s (phones mustn't be easier).
+- **The light is a pool, not a slab (Scene).** Additive, soft, the grass visible through it; a faint light cone from
+  the mirror's crease edge to the band; a warm fading trail where the band just was. Fireflies lime and distinct; no
+  white sprinkles in the grass (they read as fireflies).
+- **Lever = band (Scene + App).** The phone lever's knob maps 1:1 to the band (track ends = bandMin…1), and the band
+  gets a small grip handle at its edge on phones. No lever when `fold=1` (demo) or on a Duo.
+- **No control within ±28 pt of the crease (App)**: Home's Play sat across the crease in the Duo split frame. A test
+  checks every menu's buttons against the crease band on Duo sizes.
+- **Icon (App):** the CI-rendered icon is solid black (SKView offscreen, "no drawables"). Render `AppIconArt` with
+  SwiftUI `ImageRenderer` (no SpriteKit) and have the demo log `GLINT-T icon dark` if the mean luminance is < 0.08.
+- **Teaching (App):** hint lines sit on the garden with a small arrow at the thing (not on the sun). A lost level shows
+  one tip from what ate the flowers (brutes: "Follow the big ones as they walk"; wisps: "Sweep the flocks fast";
+  hoppers: "Catch hoppers after they land"; clouds: "Wait for the cloud to pass"). Today's Dawn shows a day streak
+  (Home card + cover display).
+- **Fold demos (App):** with `fold=1` on a phone sim the pilot must drive the band (it read `angle -1`, band stuck near
+  the crease).

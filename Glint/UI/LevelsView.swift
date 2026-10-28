@@ -15,11 +15,22 @@ struct LevelsView: View {
         let open = ProgressRules.isWorldOpen(world, data)
         ZStack {
             MenuScrim(tint: GlintTheme.worldTint(world))
-            VStack(spacing: c ? 10 : 16) {
-                MenuHeader(title: "Sunrises", compact: c, trailing: AnyView(starTotal(total, compact: c))) {
-                    controller.back()
+            // R2: on a Duo the header and tabs sit on the mirror half, the map on the garden half (off the crease).
+            SplitMenu(canvas: canvas, scrolls: false, maxWidth: 980) {
+                VStack(spacing: c ? 10 : 16) {
+                    MenuHeader(title: "Levels", compact: c, trailing: AnyView(starTotal(total, compact: c))) {
+                        controller.back()
+                    }
+                    worldTabs(selected: world, data: data, compact: c)
+                    if canvas.isDuo {
+                        WorldArt(world: world)
+                            .frame(maxWidth: 260, maxHeight: 150)
+                            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                            .frame(maxHeight: .infinity)
+                    }
                 }
-                worldTabs(selected: world, data: data, compact: c)
+                .frame(maxWidth: 980)
+            } bottom: {
                 ZStack {
                     LevelMap(levels: Array(LevelBook.levels(inWorld: world)), data: data,
                              next: ProgressRules.nextLevel(data), tint: GlintTheme.worldTint(world),
@@ -34,13 +45,8 @@ struct LevelsView: View {
                             .padding(.horizontal, 24)
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: 980, maxHeight: .infinity)
             }
-            .padding(.top, canvas.insets.top + 12)
-            .padding(.bottom, canvas.insets.bottom + 12)
-            .padding(.leading, canvas.insets.leading + 16)
-            .padding(.trailing, canvas.insets.trailing + 16)
-            .frame(maxWidth: 980)
         }
         .frame(width: canvas.size.width, height: canvas.size.height)
     }
@@ -67,36 +73,48 @@ struct LevelsView: View {
                 Button {
                     controller.selectWorld(w)
                 } label: {
+                    // R2: two short lines ("Meadow" / "★ 24/30"), never truncated at 402 pt. The world art sits
+                    // beside them only when there is room (not on a phone).
+                    let status = AppRules.worldTabStatus(open: open, stars: ProgressRules.stars(data, world: w),
+                                                         max: ProgressRules.maxStars(world: w),
+                                                         gate: ProgressRules.gate(world: w))
                     HStack(spacing: 8) {
-                        WorldArt(world: w)
-                            .frame(width: compact ? 34 : 44, height: compact ? 26 : 34)
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        VStack(alignment: .leading, spacing: 0) {
+                        if !compact {
+                            WorldArt(world: w)
+                                .frame(width: 44, height: 34)
+                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        }
+                        VStack(alignment: compact ? .center : .leading, spacing: 1) {
                             Text(LevelBook.worldName(w))
                                 .font(GlintType.body(compact))
                                 .foregroundStyle(isSelected ? GlintTheme.ink : GlintTheme.cream)
                                 .lineLimit(1)
-                                .minimumScaleFactor(0.6)
+                                .fixedSize(horizontal: true, vertical: false)
                             HStack(spacing: 3) {
-                                Image(systemName: open ? "star.fill" : "lock.fill")
-                                Text(open ? "\(ProgressRules.stars(data, world: w))/\(ProgressRules.maxStars(world: w))"
-                                          : "\(ProgressRules.gate(world: w)) ★")
+                                if !open {
+                                    Image(systemName: "lock.fill")
+                                }
+                                Text(status)
                             }
                             .font(GlintType.caption(true))
                             .foregroundStyle(isSelected ? GlintTheme.ink.opacity(0.8) : GlintTheme.haze)
                             .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
                         }
-                        Spacer(minLength: 0)
+                        if !compact { Spacer(minLength: 0) }
                     }
-                    .padding(.horizontal, 10)
+                    .padding(.horizontal, compact ? 4 : 10)
+                    .padding(.vertical, 6)
                     .frame(maxWidth: .infinity, minHeight: GlintTheme.minTap)
                     .background(
                         ZStack {
                             if isSelected {
-                                Capsule().fill(GlintTheme.goldFace)
+                                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(GlintTheme.goldFace)
                             } else {
-                                Capsule().fill(GlintTheme.cardDeep.opacity(0.85))
-                                Capsule().strokeBorder(GlintTheme.stroke, lineWidth: 1)
+                                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                    .fill(GlintTheme.cardDeep.opacity(0.85))
+                                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                    .strokeBorder(GlintTheme.stroke, lineWidth: 1)
                             }
                         }
                     )

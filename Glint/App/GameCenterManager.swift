@@ -6,6 +6,9 @@ import UIKit
 /// gating: authentication is quiet (a sign-in view controller handed to us is only shown when the player taps the
 /// Game Center button), scores earned while signed out are queued in UserDefaults and sent once a player is
 /// authenticated, and every failure is silent. The access point stays off. Skipped entirely in demo runs.
+/// R2: achievements (`achievementIDs` = Core's `Achievements.all`) are reported at the Results card. While a level is
+/// on screen (`holdBanners`) nothing is reported, so a banner never lands mid-level. Every earned one, and the star
+/// total, is re-sent on each sign-in (achievements.md).
 @MainActor
 final class GameCenterManager {
     static let shared = GameCenterManager()
@@ -19,7 +22,17 @@ final class GameCenterManager {
         static let stars = "glint.stars"
     }
 
+    /// Every achievement id (`glint.ach.<key>`), in Core's order (the ASC tool reads them from here too).
+    nonisolated static let achievementIDs: [String] = Achievements.all.map(\.id)
+
     private(set) var isAuthenticated = false
+    /// True while a level is on screen: achievements wait (no banner mid-level).
+    private(set) var holdBanners = false
+    private let reportedKey = "glint.gc.reported"
+    private let pendingKey = "glint.gc.pending"
+    /// The progress's earned ids and star total, re-sent on each sign-in.
+    private var knownEarned: [String] = []
+    private var knownStars = 0
     private var started = false
     private var disabled = false
     private let pendingScoresKey = "glint.gc.pendingScores"
@@ -74,6 +87,41 @@ final class GameCenterManager {
     func submitStars(_ total: Int) {
         guard !disabled, total > 0 else { return }
         queueScore(total, leaderboard: Leaderboard.stars, day: nil)
+    }
+
+    /// The App's progress (launch, and after every result): re-sent on sign-in.
+    func syncProgress(achievements: [String], totalStars: Int) {
+        knownEarned = achievements
+        knownStars = totalStars
+    }
+
+    /// Earned ids to report (now, unless a level is on screen; else when it ends).
+    func unlock(_ ids: [String]) {
+        guard !disabled, !ids.isEmpty else { return }
+        let reported = Set(UserDefaults.standard.stringArray(forKey: reportedKey) ?? [])
+        let queued = UserDefaults.standard.stringArray(forKey: pendingKey) ?? []
+        let pending = Self.pendingAchievements(earned: queued + ids, reported: reported, known: Self.achievementIDs)
+        UserDefaults.standard.set(pending, forKey: pendingKey)
+        flush()
+    }
+
+    /// The App says whether a level is on screen (banners wait until it isn't).
+    func setHoldBanners(_ hold: Bool) {
+        guard hold != holdBanners else { return }
+        holdBanners = hold
+        if !hold { flush() }
+    }
+
+    /// `earned` not yet reported and known to Game Center, without repeats, in order. Pure; tested.
+    nonisolated static func pendingAchievements(earned: [String], reported: Set<String>, known: [String]) -> [String] {
+        let knownSet = Set(known)
+        var seen = reported
+        var out: [String] = []
+        for id in earned where knownSet.contains(id) && !seen.contains(id) {
+            seen.insert(id)
+            out.append(id)
+        }
+        return out
     }
 
     // MARK: - Queue entries (pure; tested)
@@ -135,7 +183,13 @@ final class GameCenterManager {
     private func authenticationChanged(signIn: UIViewController?) {
         if let signIn { signInController = signIn }
         isAuthenticated = GKLocalPlayer.local.isAuthenticated
-        if isAuthenticated { signInController = nil }
+        if isAuthenticated {
+            signInController = nil
+            // Re-send everything earned (Game Center keeps the best; achievements are idempotent).
+            UserDefaults.standard.removeObject(forKey: reportedKey)
+            if knownStars > 0 { submitStars(knownStars) }
+            if !knownEarned.isEmpty { unlock(knownEarned) }
+        }
         GKAccessPoint.shared.isActive = false
         flush()
     }
@@ -156,6 +210,7 @@ final class GameCenterManager {
             return !Self.isStale(parsed, today: today)
         }
         if kept.count != queued.count { UserDefaults.standard.set(kept, forKey: pendingScoresKey) }
+        flushAchievements()
         for entry in kept where !inFlight.contains(entry) {
             guard let parsed = Self.parse(entry) else { continue }
             inFlight.insert(entry)
@@ -167,6 +222,33 @@ final class GameCenterManager {
                 }
             }
         }
+    }
+
+    private func flushAchievements() {
+        guard isAuthenticated, !disabled, !holdBanners else { return }
+        let ids = UserDefaults.standard.stringArray(forKey: pendingKey) ?? []
+        guard !ids.isEmpty else { return }
+        let achievements: [GKAchievement] = ids.map { id in
+            let achievement = GKAchievement(identifier: id)
+            achievement.percentComplete = 100
+            achievement.showsCompletionBanner = true
+            return achievement
+        }
+        GKAchievement.report(achievements) { error in
+            let ok = error == nil
+            Task { @MainActor in
+                GameCenterManager.shared.didReport(ids, ok: ok)
+            }
+        }
+    }
+
+    private func didReport(_ ids: [String], ok: Bool) {
+        guard ok else { return }
+        var reported = Set(UserDefaults.standard.stringArray(forKey: reportedKey) ?? [])
+        reported.formUnion(ids)
+        UserDefaults.standard.set(Array(reported).sorted(), forKey: reportedKey)
+        let pending = (UserDefaults.standard.stringArray(forKey: pendingKey) ?? []).filter { !reported.contains($0) }
+        UserDefaults.standard.set(pending, forKey: pendingKey)
     }
 
     private func didSubmit(_ entry: String, ok: Bool) {

@@ -1,8 +1,10 @@
 import SwiftUI
 
-/// Results: the sunrise (or the night), stars that land one by one, the score rolling up, the best, anything this
-/// run opened, then Next / Retry / Levels (levels) or Again / Home (Long Night, Today's Dawn). The finished garden
-/// stays behind the glass.
+/// Results: the sunrise (or the night), stars that land one by one, the five flowers (eaten ones greyed), the score
+/// rolling up, the best ("New best!" on a first clear too), a lost level's one tip, anything this run opened or
+/// earned (achievements: their Game Center banners are held until this card), then the buttons. R2: won = Next
+/// sunrise + Retry with Levels / Home as small links; on a Duo the card sits on the mirror half and the buttons on the
+/// garden half, clear of the crease. The finished garden stays behind the glass.
 struct ResultsView: View {
     @ObservedObject var controller: GameController
     let summary: ResultSummary
@@ -18,17 +20,11 @@ struct ResultsView: View {
             LinearGradient(colors: [GlintTheme.night.opacity(0.72), GlintTheme.indigo.opacity(0.5),
                                     GlintTheme.night.opacity(0.8)], startPoint: .top, endPoint: .bottom)
                 .ignoresSafeArea()
-            ScrollView(.vertical) {
+            SplitMenu(canvas: canvas, maxWidth: 480) {
                 card(compact: c)
-                    .frame(maxWidth: 480)
-                    .padding(.horizontal, 24)
-                    .padding(.top, canvas.insets.top + 20)
-                    .padding(.bottom, canvas.insets.bottom + 20)
-                    .frame(maxWidth: .infinity)
-                    .frame(minHeight: canvas.size.height)
+            } bottom: {
+                buttons(compact: c)
             }
-            .scrollIndicators(.hidden)
-            .scrollBounceBehavior(.basedOnSize)
         }
         .frame(width: canvas.size.width, height: canvas.size.height)
         .onAppear { animateIn() }
@@ -85,7 +81,7 @@ struct ResultsView: View {
                 .contentTransition(.numericText())
                 .accessibilityLabel("Score \(summary.score)")
 
-            if summary.outcome.showsNewBest {
+            if summary.outcome.isNewBest && summary.score > 0 {
                 Text("New best!")
                     .font(GlintType.headline(compact))
                     .foregroundStyle(GlintTheme.ink)
@@ -98,10 +94,37 @@ struct ResultsView: View {
                     .foregroundStyle(GlintTheme.goldLight)
             }
 
+            if !summary.flowers.isEmpty {
+                HStack(spacing: compact ? 6 : 10) {
+                    ForEach(0..<summary.flowers.count, id: \.self) { i in
+                        MenuFlowerArt(petal: GlintTheme.petals[i % GlintTheme.petals.count])
+                            .frame(width: compact ? 24 : 30, height: compact ? 24 : 30)
+                            .saturation(summary.flowers[i] ? 1 : 0)
+                            .opacity(summary.flowers[i] ? 1 : 0.3)
+                    }
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(detailLine)
+            }
+
             Text(detailLine)
                 .font(GlintType.caption(compact))
                 .foregroundStyle(GlintTheme.haze)
                 .multilineTextAlignment(.center)
+
+            if let tip = summary.tip {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "lightbulb.fill")
+                        .foregroundStyle(GlintTheme.gold)
+                    Text(tip)
+                        .foregroundStyle(GlintTheme.cream)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .font(GlintType.body(compact))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(GlintTheme.cardDeep.opacity(0.9)))
+            }
 
             if showRest {
                 ForEach(0..<summary.outcome.unlocked.count, id: \.self) { i in
@@ -116,12 +139,25 @@ struct ResultsView: View {
                     .background(Capsule().fill(GlintTheme.goldFace))
                     .transition(.scale.combined(with: .opacity))
                 }
+                ForEach(0..<summary.newAchievements.count, id: \.self) { i in
+                    HStack(spacing: 8) {
+                        AchievementBadge(key: BadgeBook.key(of: summary.newAchievements[i]), side: 30)
+                            .frame(width: 30, height: 30)
+                            .clipShape(Circle())
+                        Text(AchievementNames.title(summary.newAchievements[i]))
+                    }
+                    .font(GlintType.body(compact))
+                    .foregroundStyle(GlintTheme.cream)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Capsule().fill(GlintTheme.cardDeep.opacity(0.95)))
+                    .overlay(Capsule().strokeBorder(GlintTheme.brassLight.opacity(0.6), lineWidth: 1))
+                    .transition(.scale.combined(with: .opacity))
+                }
             }
-
-            buttons(compact: compact)
-                .padding(.top, 6)
         }
         .padding(compact ? 20 : 26)
+        .frame(maxWidth: .infinity)
         .background(CardBackground())
     }
 
@@ -163,9 +199,9 @@ struct ResultsView: View {
                 }
                 HStack(spacing: 12) {
                     Button("Levels") { controller.openLevels() }
-                        .buttonStyle(GlintButtonStyle(kind: .secondary, height: 58, compact: compact))
+                        .buttonStyle(GlintButtonStyle(kind: .quiet, height: 48, compact: compact))
                     Button("Home") { controller.goHome() }
-                        .buttonStyle(GlintButtonStyle(kind: .secondary, height: 58, compact: compact))
+                        .buttonStyle(GlintButtonStyle(kind: .quiet, height: 48, compact: compact))
                 }
             } else {
                 Button {
@@ -176,19 +212,20 @@ struct ResultsView: View {
                 .buttonStyle(GlintButtonStyle(kind: .primary, compact: compact))
                 HStack(spacing: 12) {
                     Button("Leaderboards") { controller.openGameCenter() }
-                        .buttonStyle(GlintButtonStyle(kind: .secondary, height: 58, compact: compact))
+                        .buttonStyle(GlintButtonStyle(kind: .quiet, height: 48, compact: compact))
                     Button("Home") { controller.goHome() }
-                        .buttonStyle(GlintButtonStyle(kind: .secondary, height: 58, compact: compact))
+                        .buttonStyle(GlintButtonStyle(kind: .quiet, height: 48, compact: compact))
                 }
             }
         }
+        .frame(maxWidth: 480)
     }
 
     private func animateIn() {
         let stars = summary.stars
         let score = summary.score
         let reduce = controller.reduceMotion
-        let unlocked = !summary.outcome.unlocked.isEmpty
+        let unlocked = !summary.outcome.unlocked.isEmpty || !summary.newAchievements.isEmpty
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 350_000_000)
             let steps = 24

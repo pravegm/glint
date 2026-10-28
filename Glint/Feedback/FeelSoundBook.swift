@@ -50,6 +50,8 @@ struct FeelBurn: Equatable, Sendable {
     var heat: Double = 0
     /// 0…1 the highest scorch of a firefly in the light.
     var danger: Double = 0
+    /// R2: 0…1 how much of what the band is on sits under a cloud's shade (the sizzle is muffled, not cut).
+    var muffle: Double = 0
 
     static let zero = FeelBurn()
 }
@@ -549,12 +551,77 @@ enum FeelSoundBook {
         return FeelMath.clamp01(sum / weight)
     }
 
-    /// What is burning in a snapshot (all zero outside `.playing`).
+    /// What is burning in a snapshot (all zero outside `.playing`). R2: the light a cloud's shade keeps off the glooms
+    /// still counts towards the level (smothered: up to 40 % quieter) and sets `muffle`, so a burn that slides under a
+    /// cloud is heard going muffled, not cut off.
     static func burn(of snapshot: DawnSnapshot) -> FeelBurn {
         guard snapshot.phase == .playing else { return FeelBurn.zero }
         let t = snapshot.telemetry
-        return FeelBurn(level: sizzleLevel(burn: t.burnRate), heat: heat(of: snapshot.glooms),
-                        danger: FeelMath.clamp01(t.fireflyDanger))
+        let real = t.burnRate.isFinite ? max(t.burnRate, 0) : 0
+        let shaded = shadedBurn(glooms: snapshot.glooms, shades: snapshot.shades, band: snapshot.band)
+        let total = real + shaded
+        let muffle = total > 1e-6 ? FeelMath.clamp01(shaded / total) : 0
+        return FeelBurn(level: sizzleLevel(burn: total) * (1 - shadeQuieter * muffle), heat: heat(of: snapshot.glooms),
+                        danger: FeelMath.clamp01(t.fireflyDanger), muffle: muffle)
+    }
+
+    // MARK: Cloud shadows (R2)
+
+    /// A smothered burn is this much quieter at full muffle.
+    static let shadeQuieter = 0.4
+    /// The shade's soft edge in `u` (Contracts: 0.03).
+    static let shadeEdge = 0.03
+    /// A shade weaker than this is not worth a "cool hush".
+    static let hushStrength = 0.15
+
+    /// 0…1 how much light the clouds keep off the point `u` (0 clear … 1 fully shaded). Several shades multiply, as the
+    /// contract says: light × Π(1 − strength · edge).
+    static func shadeCover(u: Double, shades: [ShadeState]) -> Double {
+        guard !shades.isEmpty, u.isFinite else { return 0 }
+        var through = 1.0
+        for shade in shades {
+            let distance = abs(u - shade.u)
+            let edge = FeelMath.smoothstep((shade.halfWidth + shadeEdge / 2 - distance) / shadeEdge)
+            through *= 1 - FeelMath.clamp01(shade.strength) * edge
+        }
+        return FeelMath.clamp01(1 - through)
+    }
+
+    /// The burn (HP/s at `Tuning`'s 1 HP/s per unit of light) the clouds are keeping off the glooms: each gloom's
+    /// unshaded light (`Tuning.intensity(d:band:)` at its centre padded 40 % of its radius towards the band, as Core
+    /// measures it) times its shade cover.
+    static func shadedBurn(glooms: [GloomState], shades: [ShadeState], band: Double) -> Double {
+        guard !shades.isEmpty, band.isFinite else { return 0 }
+        var sum = 0.0
+        for gloom in glooms where gloom.hp > 0 {
+            let cover = shadeCover(u: gloom.u, shades: shades)
+            guard cover > 0.001 else { continue }
+            let pad = 0.4 * max(gloom.radius, 0)
+            let d = gloom.d > band ? max(gloom.d - pad, band) : min(gloom.d + pad, band)
+            sum += FeelMath.clamp01(Tuning.intensity(d: d, band: band)) * cover
+        }
+        return sum
+    }
+
+    /// A shade is on the band (the band runs the garden's full width, so: any of it over u 0…1) and strong enough.
+    static func shadeCrossesBand(_ shade: ShadeState) -> Bool {
+        guard shade.u.isFinite, shade.halfWidth.isFinite else { return false }
+        let reach = max(shade.halfWidth, 0) + shadeEdge / 2
+        return shade.u - reach < 1 && shade.u + reach > 0 && shade.strength >= hushStrength
+    }
+
+    /// The "cool hush" as a cloud's shadow first slides onto the band: a soft cool exhale falling away, a low breath
+    /// under it, and an open fifth of faint glass (A5, E6). Quiet: it's a telegraph, not a reward.
+    static func coolHush(dice: inout FeelDice) -> [FeelSynthCommand] {
+        [
+            .noise(FeelNoiseSpec(.bandPass, cutoff: dice.float(2500, 2800), to: 700, sweep: 0.7, q: 0.8, attack: 0.18,
+                                 decay: 0.4, gain: 0.045)),
+            .noise(FeelNoiseSpec(.lowPass, cutoff: 400, q: 0.7, attack: 0.15, decay: 0.35, gain: 0.03)),
+            .ring(FeelRingSpec(.glass, fundamental: 880, partials: 2, decay: 0.8, brightness: 0.25, gain: 0.018,
+                               delay: 0.1, seed: dice.seed32())),
+            .ring(FeelRingSpec(.glass, fundamental: 1318.51, partials: 2, decay: 0.8, brightness: 0.25, gain: 0.015,
+                               delay: 0.2, seed: dice.seed32())),
+        ]
     }
 
     /// The hiss's centre (Hz): 1.5 kHz on a fresh gloom, rising ~1.7 octaves as it weakens, a little brighter louder.
@@ -635,7 +702,8 @@ enum FeelSoundBook {
                 bed.sizzle = Float(state.level)
                 bed.sizzleHz = Float(sizzleHz(heat: state.heat, level: state.level))
                 bed.crackleRate = Float(crackleRate(level: state.level, heat: state.heat))
-                bed.kettle = Float(kettleLevel(level: state.level, heat: state.heat))
+                bed.sizzleMuffle = Float(state.muffle)
+                bed.kettle = Float(kettleLevel(level: state.level, heat: state.heat) * (1 - state.muffle))
                 bed.kettleHz = Float(1100 + 1500 * state.heat)
             }
             let alarm = alarmLevel(danger: state.danger)

@@ -10,6 +10,8 @@ enum GloomDeath: Equatable {
     case eaten
     /// Anything else (a new phase, an unannounced removal).
     case fade
+    /// R2: a brute popping: a two-frame white squash (hit-stop feel) over its burst.
+    case squash
 }
 
 /// One shadow on the lawn: an upright puppet (body, lit rim, eyes, pupils, squeeze, mouth, brow) plus a contact
@@ -29,6 +31,21 @@ final class GloomNode {
     private let squeeze = SKSpriteNode()
     private let mouth = SKSpriteNode()
     private let brow = SKSpriteNode()
+    /// R2: the dark seam a gloom in the crease shade sits in (over its lower half).
+    private let pool = SKSpriteNode()
+
+    /// R2: 1 = sunk in the crease shade (lower half hidden, eyes peeking), 0 = out in the garden.
+    private(set) var sink: CGFloat = 0
+    private var wasSunk = false
+    private var fresh = true
+    /// It came up out of the shade this frame (the scene adds a ripple).
+    private(set) var surfacedThisFrame = false
+    /// Where the seam's surface is drawn (scene points).
+    private(set) var surfacePoint: CGPoint = .zero
+    /// Where it looks (scene unit vector, as passed: towards the band).
+    private(set) var lookDir = CGVector(dx: 0, dy: -1)
+
+    var isSubmerged: Bool { sink > 0.5 }
 
     private(set) var kind: GloomKind = .murk
     private(set) var id: Int = -1
@@ -86,6 +103,11 @@ final class GloomNode {
         brow.zPosition = 0.25
         root.addChild(puppet)
         for n in [body, lit, mouth, eyes, pupils, squeeze, brow] { puppet.addChild(n) }
+        pool.texture = CreatureArt.pool
+        pool.anchorPoint = CGPoint(x: 0.5, y: CreatureArt.poolSurface / CreatureArt.poolSize.height)
+        pool.zPosition = 0.4
+        pool.isHidden = true
+        root.addChild(pool)
         configure(kind: .murk, id: -1)
     }
 
@@ -130,6 +152,11 @@ final class GloomNode {
         shadow.isHidden = false
         puppet.zRotation = 0
         puppet.position = .zero
+        sink = 0
+        wasSunk = false
+        fresh = true
+        surfacedThisFrame = false
+        pool.isHidden = true
     }
 
     /// A hop starts (Core moves the gloom; the node adds the arc).
@@ -145,12 +172,20 @@ final class GloomNode {
         shownLit = GardenMath.approach(shownLit, litTarget, rate: litTarget > shownLit ? 30 : 6, dt: dt)
         if shownLit < 0.002 { shownLit = 0 }
         tension = CGFloat(GardenMath.clamp(g.tension, 0, 1))
+        lookDir = dir
 
-        // Blinks.
+        // R2: sunk in the crease shade, or out in the open.
+        sink = GardenMath.sink(d: g.d)
+        let sunkNow = sink > 0.5
+        surfacedThisFrame = !fresh && wasSunk && !sunkNow
+        wasSunk = sunkNow
+        fresh = false
+
+        // Blinks (more often while peeking out of the seam).
         if blinkLeft > 0 {
             blinkLeft = max(0, blinkLeft - dt)
         } else {
-            blinkWait -= dt
+            blinkWait -= dt * (1 + sink)
             if blinkWait <= 0 {
                 blinkLeft = 0.14
                 blinkWait = rng.range(1.6, 4.4)
@@ -196,7 +231,20 @@ final class GloomNode {
         puppet.xScale = s * sx
         puppet.yScale = s * sy
         let crouch: CGFloat = kind == .hopper ? 0.1 * tension : 0
-        puppet.position = CGPoint(x: 0, y: (lift - crouch) * r)
+        puppet.position = CGPoint(x: 0, y: (lift - crouch - 0.1 * sink) * r)
+        // The seam: its surface rises to just under the eyes as the gloom sinks.
+        if sink > 0.005 {
+            let top = GardenMath.lerp(-1.3, -0.04, sink) * s
+            let pw = 3.0 * s
+            pool.isHidden = false
+            pool.size = CGSize(width: pw, height: pw * CreatureArt.poolSize.height / CreatureArt.poolSize.width)
+            pool.position = CGPoint(x: 0, y: top)
+            pool.alpha = GardenMath.smooth(0, 0.3, sink)
+            surfacePoint = CGPoint(x: p.x, y: p.y + top)
+        } else {
+            pool.isHidden = true
+            surfacePoint = CGPoint(x: p.x, y: p.y - 0.04 * s)
+        }
         puppet.zRotation = sin(time * 1.7 + phase * 1.3) * 0.06 * motion
 
         // A sizzling shiver while lit.
@@ -228,7 +276,7 @@ final class GloomNode {
             eyes.yScale = open
             pupils.yScale = open
             eyes.position = CGPoint(x: 0, y: ey)
-            let off = look.eyeRadius * 0.22
+            let off = look.eyeRadius * 0.26
             let wx = sin(time * 0.7 + phase) * 0.35
             let wy = cos(time * 0.5 + phase) * 0.25
             var lx = dir.dx + wx
@@ -254,7 +302,7 @@ final class GloomNode {
         shadow.position = CGPoint(x: p.x + r * 0.12, y: p.y - r * 0.6 * hpScale)
         shadow.size = CGSize(width: max(r * 2.1 * hpScale * grow * lifted, 1),
                              height: max(r * 0.8 * hpScale * grow * lifted, 1))
-        shadow.alpha = 0.42 * (0.6 + 0.4 * lifted)
+        shadow.alpha = 0.42 * (0.6 + 0.4 * lifted) * (1 - sink)
     }
 
     /// Starts leaving without a pop. `target`: where an eating gloom dives (scene points).
@@ -263,12 +311,18 @@ final class GloomNode {
         switch mode {
         case .evaporate: deathTotal = 0.9
         case .eaten: deathTotal = 0.32
+        case .squash: deathTotal = 0.05
         case .fade, .none: deathTotal = 0.22
         }
         deathLeft = deathTotal
         deathFrom = root.position
         deathTarget = target ?? root.position
-        if mode == .evaporate {
+        if mode == .squash {
+            lit.alpha = 1
+            lit.color = GardenInk.white.ui
+            pool.isHidden = true
+        }
+        if mode == .evaporate || mode == .squash {
             squeeze.isHidden = false
             eyes.isHidden = true
             pupils.isHidden = true
@@ -294,6 +348,12 @@ final class GloomNode {
                                     y: deathFrom.y + (deathTarget.y - deathFrom.y) * e)
             puppet.setScale(scaleNow * (1 - 0.7 * t))
             root.alpha = 1 - t * t
+        case .squash:
+            // Held flat and white for a beat, then gone (the burst is already flying).
+            puppet.xScale = scaleNow * 1.32
+            puppet.yScale = scaleNow * 0.62
+            lit.alpha = 1
+            root.alpha = t < 0.6 ? 1 : max(0, (1 - t) / 0.4)
         case .fade, .none:
             root.alpha = 1 - t
         }
@@ -323,7 +383,9 @@ final class GardenFirefly {
     private(set) var scorch: CGFloat = 0
     private(set) var size: CGFloat = 12
     var trailClock: CGFloat = 0
-    /// The colour as drawn (green-gold → red with scorch).
+    /// R2: the scorch warning ring has shown (re-armed once it cools).
+    var warned = false
+    /// The colour as drawn (lime → red with scorch).
     private(set) var tint: GardenInk = GardenPalette.firefly
 
     init() {
@@ -349,6 +411,7 @@ final class GardenFirefly {
         hasLast = false
         fadeLeft = 0
         trailClock = 0
+        warned = false
         scorch = 0
         root.alpha = 1
         root.isHidden = false

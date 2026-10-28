@@ -1,0 +1,21 @@
+# App Store screenshot scenarios, iPhone sets (6.9" 1320x2868 and 6.3" 1206x2622, PORTRAIT): docs/appstore/screenshots.md §A.
+# Captured by ci/store-capture.sh phone → ci/screenshots.sh (SCENARIOS=this file), framed by ci/store-set.sh +
+# ci/store-frame.swift. THIS FILE IS THE SOURCE OF TRUTH for names and captions (tools/appstore/build-metadata.js checks
+# the names against docs/appstore/asc-metadata.json and every sub-line against screenshots.md).
+# name|demo args (-glintDemo)|wait s|caption (drawn on the frame: headline / sub-line, one *highlight*)|expect|frame
+#  - Every play frame uses t= (the pilot plays to t s, then the app freezes: "GLINT-T freeze time") or freezeOn=, and
+#    progress=mid, so the set reads as one player. No band= pins: the light shown is the light the pilot made.
+#  - frame: book:D01-hero = frame 1 is the Duo book composite of the Duo set's D01 capture (flat fallback = FLAGGED).
+#  - No "|" inside a field.
+P01-hero|screen=play;level=6;t=18;skill=0.8;progress=mid|28|Your phone is a *mirror* / Best on iPhone Duo. Plays on other iPhones too.|GLINT-T freeze|book:D01-hero
+P02-sweep|screen=play;level=3;skill=0.9;freezeOn=sweep;progress=mid|60|Sweep the light. *Pop!* / Every pop climbs a rising scale.|GLINT-T freeze sweep
+P03-reach|screen=play;level=2;t=20;skill=0.8;progress=mid|30|Aim the *sunlight* / Drag anywhere. The lever follows.|GLINT-T freeze
+P04-fireflies|screen=play;level=4;t=12;skill=0.6;hint=spareTheFireflies;progress=mid|22|Spare the *fireflies* / They replant lost flowers.|GLINT-T freeze
+P05-brute|screen=play;level=6;t=25;skill=0.8;progress=mid|35|Follow the *big ones* / Keep the light on a brute as it creeps.|GLINT-T freeze
+P06-worlds|screen=levels;progress=mid|8|30 *sunrises*, 3 worlds / Meadow, Rooftops and Harbour.|GLINT-T screen levels
+P07-rooftops|screen=play;level=15;t=30;skill=0.8;progress=mid|40|Shadows that *split* and hop / New tricks on the Rooftops.|GLINT-T freeze
+P08-harbour|screen=play;level=27;t=40;skill=0.7;progress=mid|50|Hard by the *Harbour* / World 3 will cost you petals.|GLINT-T freeze
+P09-long-night|screen=play;mode=endless;t=60;skill=0.8;progress=mid|70|Then the *Long Night* / Endless waves. One best score.|GLINT-T freeze
+P10-todays-dawn|screen=play;mode=daily;t=20;skill=0.8;progress=mid|30|A new *dawn* every day / Today's Dawn: one sunrise for everyone.|GLINT-T freeze
+# Reserves (not in the default filter ^P[0-9]): run with phone_filter '^R' to compare.
+R2-results|screen=results;results=won;level=4;progress=mid|10|Save every *flower* / Five flowers kept, three stars.|GLINT-T screen results

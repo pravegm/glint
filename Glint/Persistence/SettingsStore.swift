@@ -13,13 +13,13 @@ struct SettingsData: Codable, Equatable {
     var hapticsOn: Bool = true
     /// Settings › Swap halves: the garden on the other half (`GardenLayout.gardenAfter` false).
     var swapHalves: Bool = false
-    /// The app's own Reduce motion (the system setting is honoured as well).
-    var reduceMotion: Bool = false
+    /// R2: Settings › Reduce motion as the player chose it; nil = follow the iOS setting (the default).
+    var reduceMotionChoice: Bool?
 
     init() {}
 
     enum CodingKeys: String, CodingKey {
-        case version, soundOn, musicOn, hapticsOn, swapHalves, reduceMotion
+        case version, soundOn, musicOn, hapticsOn, swapHalves, reduceMotionChoice
     }
 
     init(from decoder: Decoder) throws {
@@ -29,7 +29,7 @@ struct SettingsData: Codable, Equatable {
         musicOn = (try? c.decodeIfPresent(Bool.self, forKey: .musicOn)) ?? true
         hapticsOn = (try? c.decodeIfPresent(Bool.self, forKey: .hapticsOn)) ?? true
         swapHalves = (try? c.decodeIfPresent(Bool.self, forKey: .swapHalves)) ?? false
-        reduceMotion = (try? c.decodeIfPresent(Bool.self, forKey: .reduceMotion)) ?? false
+        reduceMotionChoice = (try? c.decodeIfPresent(Bool.self, forKey: .reduceMotionChoice)) ?? nil
     }
 }
 
@@ -43,7 +43,11 @@ final class SettingsStore: ObservableObject {
     @Published var musicOn: Bool { didSet { changed() } }
     @Published var hapticsOn: Bool { didSet { changed() } }
     @Published var swapHalves: Bool { didSet { save() } }
-    @Published var reduceMotion: Bool { didSet { save() } }
+    /// nil = follow iOS. Use `reduceMotion(system:)` for the effective value.
+    @Published var reduceMotionChoice: Bool? { didSet { save() } }
+
+    /// The effective Reduce motion: the player's choice, else iOS.
+    func reduceMotion(system: Bool) -> Bool { AppRules.reduceMotion(choice: reduceMotionChoice, system: system) }
 
     /// Demo `sound=0`: silent for this launch, never saved (pushed by the next `apply()`, which launch calls).
     var muted: Bool = false
@@ -60,7 +64,7 @@ final class SettingsStore: ObservableObject {
         musicOn = stored.musicOn
         hapticsOn = stored.hapticsOn
         swapHalves = stored.swapHalves
-        reduceMotion = stored.reduceMotion
+        reduceMotionChoice = stored.reduceMotionChoice
     }
 
     var snapshot: SettingsData {
@@ -69,7 +73,7 @@ final class SettingsStore: ObservableObject {
         d.musicOn = musicOn
         d.hapticsOn = hapticsOn
         d.swapHalves = swapHalves
-        d.reduceMotion = reduceMotion
+        d.reduceMotionChoice = reduceMotionChoice
         return d
     }
 

@@ -13,39 +13,16 @@ struct HomeView: View {
         let c = canvas.compact
         ZStack {
             HomeScrim()
-            ScrollView(.vertical) {
-                Group {
-                    if canvas.wide {
-                        HStack(alignment: .center, spacing: 36) {
-                            titleBlock(compact: c)
-                                .frame(maxWidth: .infinity)
-                            VStack(spacing: 16) {
-                                playButton(next: next, compact: c)
-                                cards(data: data, compact: c)
-                                bottomRow
-                            }
-                            .frame(maxWidth: 520)
-                        }
-                    } else {
-                        VStack(spacing: c ? 16 : 22) {
-                            titleBlock(compact: c)
-                            playButton(next: next, compact: c)
-                            cards(data: data, compact: c)
-                            bottomRow
-                        }
-                        .frame(maxWidth: 560)
-                    }
+            // R2: on a Duo the title sits on the mirror half and every control on the garden half, clear of the crease.
+            SplitMenu(canvas: canvas) {
+                titleBlock(compact: c)
+            } bottom: {
+                VStack(spacing: c ? 16 : 20) {
+                    playButton(next: next, compact: c)
+                    cards(data: data, compact: c)
+                    bottomRow
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, canvas.insets.top + 16)
-                .padding(.bottom, canvas.insets.bottom + 16)
-                .padding(.leading, canvas.insets.leading)
-                .padding(.trailing, canvas.insets.trailing)
-                .frame(maxWidth: .infinity)
-                .frame(minHeight: canvas.size.height)
             }
-            .scrollIndicators(.hidden)
-            .scrollBounceBehavior(.basedOnSize)
         }
         .frame(width: canvas.size.width, height: canvas.size.height)
     }
@@ -91,8 +68,11 @@ struct HomeView: View {
         let dailyOpen = ProgressRules.dailyUnlocked(data)
         let total = ProgressRules.totalStars(data)
         let todayBest = ProgressRules.dailyBest(data, day: today)
+        let dailyStatus = AppRules.dailyCardStatus(open: dailyOpen, playedToday: ProgressRules.playedDaily(data, day: today),
+                                                   todayBest: todayBest,
+                                                   streak: ProgressRules.dailyStreak(data, today: today))
         return HStack(spacing: 12) {
-            ModeCard(title: "Sunrises", status: "★ \(total) / \(ProgressRules.maxTotalStars())", locked: false,
+            ModeCard(title: "Levels", status: "★ \(total) / \(ProgressRules.maxTotalStars())", locked: false,
                      compact: compact, art: AnyView(MenuSunArt())) {
                 controller.openLevels()
             }
@@ -104,8 +84,7 @@ struct HomeView: View {
                 controller.playEndless()
             }
             ModeCard(title: "Today's Dawn",
-                     status: dailyOpen ? (todayBest > 0 ? "Today \(AppRules.grouped(todayBest))" : "New today")
-                                       : "Win level \(ProgressRules.dailyLevel)",
+                     status: dailyStatus,
                      locked: !dailyOpen, compact: compact,
                      art: AnyView(MenuSunriseArt())) {
                 controller.playDaily()
@@ -113,19 +92,32 @@ struct HomeView: View {
         }
     }
 
+    /// R2: the round buttons carry a 13 pt caption.
     private var bottomRow: some View {
-        HStack(spacing: 16) {
-            RoundIconButton(symbol: "gearshape.fill", label: "Settings") {
-                controller.open(.settings)
+        HStack(alignment: .top, spacing: 22) {
+            captioned("Settings") {
+                RoundIconButton(symbol: "gearshape.fill", label: "Settings") { controller.open(.settings) }
             }
-            RoundIconButton(symbol: "trophy.fill", label: "Game Center") {
-                controller.openGameCenter()
+            captioned("Game Center") {
+                RoundIconButton(symbol: "trophy.fill", label: "Game Center") { controller.openGameCenter() }
             }
-            RoundIconButton(symbol: "info", label: "About") {
-                controller.open(.about)
+            captioned("About") {
+                RoundIconButton(symbol: "info", label: "About") { controller.open(.about) }
             }
         }
         .padding(.top, 4)
+    }
+
+    private func captioned<Content: View>(_ text: String, @ViewBuilder _ content: () -> Content) -> some View {
+        VStack(spacing: 4) {
+            content()
+            Text(text)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(GlintTheme.mist)
+                .lineLimit(1)
+                .fixedSize()
+                .accessibilityHidden(true)
+        }
     }
 }
 

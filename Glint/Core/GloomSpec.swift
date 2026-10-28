@@ -54,13 +54,24 @@ struct SpawnGroup: Equatable {
     var speedScale: Double
 }
 
-/// One sunrise: `groups` sorted by time.
+/// R2: one cloud shadow. It appears at `time` just off one edge (`fromLeft`: off u = 0, moving right) and slides
+/// across at `speed` u/s, `halfWidth` wide each side, letting `1 − strength` of the light through.
+struct CloudSpec: Equatable {
+    var time: Double
+    var fromLeft: Bool
+    var halfWidth: Double
+    var speed: Double
+    var strength: Double
+}
+
+/// One sunrise: `groups` sorted by time; R2: `clouds` sorted by time (none before world 2).
 struct LevelSpec: Equatable {
     var number: Int
     var world: Int
     var title: String
     var duration: Double
     var groups: [SpawnGroup]
+    var clouds: [CloudSpec] = []
 }
 
 extension LevelSpec {

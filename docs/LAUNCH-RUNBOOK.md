@@ -243,11 +243,11 @@ In App Store Connect → the app:
 
 ### 6c. The last robot run (Wed 9 Dec, after Claude names the release build)
 
-Claude makes the final screenshots on Mon 7 Dec (the **App Store screenshots** workflow), puts that run's number into the tool for you, and tells you the release build number. Then: **Actions** → **App Store Connect tool** → **Run workflow** → tick **Contact App Store Connect** → mode **push** → in **"Release build number"** type the number Claude gave you → if Claude also gave you a "header and search art" run number, type it in the box that starts **"ID of a store.yml run with a store-placements artifact"** → **Run workflow**. This uploads the screenshots (6.9", 6.3" and iPhone Duo, 10 each, the first one the Duo standing like a laptop with the mirror catching the sun) and puts the build on the 1.0 page with Game Center attached. It refuses any set with a flagged or missing frame, so a green tick means every frame passed its checks. Green tick = done.
+Claude makes the final screenshots on Mon 7 Dec (the **App Store screenshots** workflow), puts that run's number into the tool for you, and tells you the release build number. Then: **Actions** → **App Store Connect tool** → **Run workflow** → tick **Contact App Store Connect** → mode **push** → in **"Release build number"** type the number Claude gave you → if Claude also gave you a "header and search art" run number, type it in the box that starts **"ID of a store.yml run with a store-placements artifact"** → **Run workflow**. This uploads the screenshots (6.9", 6.3" and iPhone Duo, 10 each, the first one the Duo open like a book: one page the mirror catching the sun, the other the garden) and puts the build on the 1.0 page with Game Center attached. It refuses any set with a flagged or missing frame, so a green tick means every frame passed its checks. Green tick = done.
 
 ### 6d. Check the build and screenshots (Wed 9 Dec)
 
-On the 1.0 page: **Build** shows the number Claude named (if it's empty: **+** → pick it → **Done** → **Save**). **Previews and Screenshots**: 10 in each size, the first one showing the Duo with the mirror on top. In the **Game Center** section, all three leaderboards and all ten achievements are listed.
+On the 1.0 page: **Build** shows the number Claude named (if it's empty: **+** → pick it → **Done** → **Save**). **Previews and Screenshots**: 10 in each size, the first one showing the Duo open like a book, the mirror on one page. In the **Game Center** section, all three leaderboards and all ten achievements are listed.
 
 ### 6e. Submit (Wed 9 Dec; last safe day Fri 11 Dec)
 
@@ -276,7 +276,7 @@ On the 1.0 page: **Build** shows the number Claude named (if it's empty: **+** �
 
 ## Reference: what the tool sets (no action needed)
 
-Claude runs the App Store Connect tool (GitHub → Actions → **App Store Connect tool**; `tools/appstore/README.md`). It reads `docs/appstore/asc-metadata.json`, which is built from the docs (`node tools/appstore/build-metadata.js`), and changes only what differs. It never submits for review and never releases. The screenshots and the optional header and search art come from the **App Store screenshots** workflow (`store.yml`, to be ported from Snapjaw).
+Claude runs the App Store Connect tool (GitHub → Actions → **App Store Connect tool**; `tools/appstore/README.md`). It reads `docs/appstore/asc-metadata.json`, which is built from the docs (`node tools/appstore/build-metadata.js`), and changes only what differs. It never submits for review and never releases. The screenshots and the optional header and search art come from the **App Store screenshots** workflow (`store.yml`, manual only).
 
 | What | Value | Source |
 |---|---|---|
@@ -287,7 +287,7 @@ Claude runs the App Store Connect tool (GitHub → Actions → **App Store Conne
 | Description, keywords, promotional text, support and marketing URLs (en-GB and en-US) | | `metadata.md` §3–5, §9 |
 | App Review notes ("NO LOGIN" first), "no sign-in", the contact (copied from Squish's record, never in the repo) | | `review-notes.md` |
 | Game Center | On; the 3 leaderboards and 10 achievements below, each achievement with its badge | `achievements.md` |
-| Screenshots | 6.9", 6.3" and iPhone Duo sets (10 each, portrait) | `screenshots.md` |
+| Screenshots | 6.9" and 6.3" sets (portrait) and the iPhone Duo set (book pose), 10 each | `screenshots.md` |
 | Price and availability | £1.99 (UK base; Apple sets $1.99 and the rest); every country except China mainland and Vietnam | `metadata.md` §9 |
 | Featuring nomination | App Launch, publish date Tue 15 Dec 2026, **submitted** (by Mon 23 Nov) | `featuring-nomination.md` |
 
@@ -316,7 +316,7 @@ IDs can never be changed once created. These are the exact values (the same as `
 | `glint.ach.harbour` | Harbour Lights | Win all 10 Harbour sunrises. | The whole harbour, lit at last. | 100 |
 | `glint.ach.allstars` | Ninety Suns | Earn all 90 stars. | Every sunrise, every flower. | 100 |
 | `glint.ach.daily` | Early Riser | Finish a Today's Dawn. | Up with the sun, with everyone else. | 15 |
-| `glint.ach.longnight` | Night Watch | Score 10,000 in one Long Night. | Ten thousand points before dawn. | 50 |
+| `glint.ach.longnight` | Night Watch | Score 20,000 in one Long Night. | Twenty thousand points before dawn. | 50 |
 | | | | **Total** | **435** (of 1,000 allowed) |
 
 English (U.S.) is identical.

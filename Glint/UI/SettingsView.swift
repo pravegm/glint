@@ -5,18 +5,23 @@ struct SettingsView: View {
     @ObservedObject var controller: GameController
     @ObservedObject var settings: SettingsStore
     let canvas: AppCanvas
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
 
     var body: some View {
         let c = canvas.compact
         ZStack {
             MenuScrim()
-            ScrollView(.vertical) {
+            // R2: on a Duo the title and art on the mirror half, every switch on the garden half (off the crease).
+            SplitMenu(canvas: canvas) {
                 VStack(spacing: c ? 14 : 18) {
                     MenuHeader(title: "Settings", compact: c) {
                         controller.back()
                     }
                     MenuMirrorArt(sun: 0.6)
                         .frame(width: c ? 120 : 150, height: c ? 84 : 104)
+                }
+            } bottom: {
+                VStack(spacing: c ? 14 : 18) {
                     VStack(spacing: 0) {
                         SettingRow(symbol: "speaker.wave.2.fill", title: "Sound", detail: "Pops, sizzle and chimes",
                                    isOn: $settings.soundOn, compact: c)
@@ -26,13 +31,17 @@ struct SettingsView: View {
                         divider
                         SettingRow(symbol: "hand.tap.fill", title: "Haptics", detail: "Feel every pop",
                                    isOn: $settings.hapticsOn, compact: c)
+                        if canvas.isDuo {
+                            // Only a Duo has two halves to swap (review P1-15).
+                            divider
+                            SettingRow(symbol: "rectangle.split.2x1.fill", title: "Swap halves",
+                                       detail: "Put the garden on the other half of the screen",
+                                       isOn: $settings.swapHalves, compact: c)
+                        }
                         divider
-                        SettingRow(symbol: "rectangle.split.2x1.fill", title: "Swap halves",
-                                   detail: "Put the garden on the other half of the screen",
-                                   isOn: $settings.swapHalves, compact: c)
-                        divider
-                        SettingRow(symbol: "sparkles", title: "Reduce motion", detail: "Calmer light, no shimmer",
-                                   isOn: $settings.reduceMotion, compact: c)
+                        SettingRow(symbol: "sparkles", title: "Reduce motion",
+                                   detail: "Calmer light, no shimmer. Follows iOS until you change it",
+                                   isOn: reduceMotionBinding, compact: c)
                     }
                     .padding(.vertical, 6)
                     .background(CardBackground())
@@ -51,18 +60,15 @@ struct SettingsView: View {
                         .buttonStyle(GlintButtonStyle(kind: .secondary, height: 58, compact: c))
                     }
                 }
-                .frame(maxWidth: 560)
-                .padding(.horizontal, 20)
-                .padding(.top, canvas.insets.top + 12)
-                .padding(.bottom, canvas.insets.bottom + 20)
-                .padding(.leading, canvas.insets.leading)
-                .padding(.trailing, canvas.insets.trailing)
-                .frame(maxWidth: .infinity)
             }
-            .scrollIndicators(.hidden)
-            .scrollBounceBehavior(.basedOnSize)
         }
         .frame(width: canvas.size.width, height: canvas.size.height)
+    }
+
+    /// Shows the effective value (iOS's until the player chooses); flipping it records the player's choice.
+    private var reduceMotionBinding: Binding<Bool> {
+        Binding(get: { settings.reduceMotion(system: systemReduceMotion) },
+                set: { settings.reduceMotionChoice = $0 })
     }
 
     private var divider: some View {

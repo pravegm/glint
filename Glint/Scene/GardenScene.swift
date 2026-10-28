@@ -65,6 +65,12 @@ struct GardenFrame {
     /// A floor point in the canonical garden's coordinates.
     func local(u: Double, d: Double) -> CGPoint { CGPoint(x: CGFloat(d) * depth, y: CGFloat(u) * span) }
 
+    static func distance(_ a: CGPoint, _ b: CGPoint) -> CGFloat {
+        let dx = a.x - b.x
+        let dy = a.y - b.y
+        return sqrt(dx * dx + dy * dy)
+    }
+
     /// A SwiftUI-space rect (y down) in scene coordinates (y up).
     static func sceneRect(_ r: CGRect, height: CGFloat) -> CGRect {
         CGRect(x: r.minX, y: height - r.maxY, width: r.width, height: r.height)
@@ -77,7 +83,9 @@ struct GardenFrame {
 ///
 /// Composition (z, all under `world`, which shakes):
 /// - 0  `garden` (canonical, rotated per layout): night lawn, dawn lawn, night veil, crease ink, dew glints, the band
-///   (bloom, warm wash, core, shimmer rays), the crease's pooled glow; the seam (46) and the night rolling in (55) too.
+///   (R2: additive light layers — beam, halo, trail, pool, core — cut along u by cloud shades), shade tints, the crease
+///   shade and its rim (7.5), the crease's pooled glow; the seam (46) and the night rolling in (55) too.
+/// - 11 / 45 / 47 the phone lever (R2): the rail's garden and mirror parts, the grip on the band's edge.
 /// - 12 flowers, 19 contact shadows, 20 glooms (ordered by d), 24 fireflies — upright, in scene points.
 /// - 30 particles and rings. 40 the mirror (it covers anything still inside the crease). 50 floating words.
 /// - 56 the sunrise flood.
@@ -114,10 +122,28 @@ final class GardenScene: SKScene {
     private let groundDawn = SKSpriteNode()
     private let nightVeil = SKSpriteNode(color: .black, size: CGSize(width: 4, height: 4))
     private let creaseInk = SKSpriteNode()
-    private let bandBloom = SKSpriteNode()
-    private let bandWash = SKSpriteNode()
-    private let bandCore = SKSpriteNode()
-    private let bandRays = SKSpriteNode()
+    /// R2: the reflected light as additive layers, cut along u by cloud shades.
+    private let lightHalo: GardenLightLayer
+    private let lightBeam: GardenLightLayer
+    private let lightTrail: GardenLightLayer
+    private let lightPool: GardenLightLayer
+    private let lightCore: GardenLightLayer
+    private var lightPieces: [LightPiece] = []
+    /// R2: the crease shade (light does nothing for d < `Tuning.creaseShade`) and its cool rim.
+    private let shadeStrip = SKSpriteNode()
+    private let shadeRim = SKSpriteNode()
+    /// R2: cloud shades' cool tint over the light's path.
+    private var shadeTints: [SKSpriteNode] = []
+    /// R2: the phone's 1:1 lever: a rail from d = bandMin to 1 and a grip pill on the band's edge.
+    private let railMirror = SKSpriteNode()
+    private let railGarden = SKSpriteNode()
+    private let grip = SKSpriteNode()
+    private let gripGlow = SKSpriteNode()
+    private var firstBand: Double?
+    private(set) var gripPulsing = false
+    /// R2: the light's lagging ghost (a warm trail where the band just was) and the sweep's swell.
+    private var trailBand: CGFloat = -0.2
+    private(set) var bandSwell: CGFloat = 0
     private let creaseGlow = SKSpriteNode()
     private let seam = SKSpriteNode()
     private let seamGlow = SKSpriteNode()
@@ -186,9 +212,24 @@ final class GardenScene: SKScene {
     var drawnNodeCount: Int { GardenScene.countNodes(self, visibleOnly: true) }
     /// The canonical garden node (tests convert through it).
     var gardenNode: SKNode { garden }
-    /// The lever is drawn (phone fallback).
-    var leverShowing: Bool { mirror.leverShowing }
-    var leverPoint: CGPoint { mirror.leverPoint }
+    /// The lever is drawn (phone fallback): R2, the grip on the band's edge riding its rail.
+    var leverShowing: Bool { !grip.isHidden }
+    /// The grip's centre (scene points): it sits at d = band exactly (1:1).
+    var leverPoint: CGPoint { grip.position }
+    /// R2: the sun's glint as drawn and the sun's radius; the glass's hot spot.
+    var sunGlintSize: CGFloat { mirror.glintSize }
+    var sunRadius: CGFloat { mirror.sunRadius }
+    var mirrorHotSpot: CGPoint { mirror.hotSpotPoint }
+    /// R2: the shade clouds drawn in the mirror's sky, and light sprites drawn in the garden.
+    var mirrorShadeClouds: Int { mirror.shadeCloudCount }
+    var lightSpriteCount: Int {
+        lightHalo.visibleCount + lightBeam.visibleCount + lightTrail.visibleCount + lightPool.visibleCount
+            + lightCore.visibleCount
+    }
+    /// R2: where the crease shade's cool rim is drawn (scene points, its middle).
+    var shadeRimCenter: CGPoint { garden.convert(shadeRim.position, to: self) }
+    /// R2: the biggest scale a chain's "×n" reached (it springs past 1).
+    var chainTextPeakScale: CGFloat { labels.peakBounceScale }
     /// The sun as drawn on the mirror (scene points).
     var sunPoint: CGPoint { mirror.sunPoint }
     /// The mirror's glass inside its frame (scene points).
@@ -201,14 +242,22 @@ final class GardenScene: SKScene {
     var flowersStanding: [Bool] { flowers.map { $0.standing } }
     /// The band's core as drawn: its centre in scene points (nil while hidden).
     var bandCenter: CGPoint? {
-        guard !bandCore.isHidden else { return nil }
-        return garden.convert(bandCore.position, to: self)
+        guard lightCore.visibleCount > 0 else { return nil }
+        return gardenFrame.scene(u: 0.5, d: snapshot.band)
     }
 
     /// Where gloom `id` is drawn (scene points), if it is on screen.
     func gloomPoint(id: Int) -> CGPoint? { glooms[id]?.drawnPoint }
     /// Gloom `id` has its eyes squeezed shut in the light.
     func gloomSqueezing(id: Int) -> Bool { glooms[id]?.isSqueezing ?? false }
+    /// R2: gloom `id` is sunk in the crease shade; its drawn radius (points); where its eyes look (scene unit vector).
+    func gloomSubmerged(id: Int) -> Bool { glooms[id]?.isSubmerged ?? false }
+    func gloomRadius(id: Int) -> CGFloat? { glooms[id]?.radiusPts }
+    func gloomLook(id: Int) -> CGVector? { glooms[id]?.lookDir }
+
+    /// R2: the rects the App's HUD must never cover (SwiftUI space): the flowers.
+    /// Static and nonisolated, so App tests can call `GardenScene.hudSafeRects(layout:)` without a scene.
+    nonisolated static func hudSafeRects(layout: GardenLayout) -> [CGRect] { flowerRects(layout: layout) }
 
     /// The flowers as drawn (petals and leaves), in SwiftUI space (y down), for `layout`. The App keeps its HUD clear of
     /// them. Lane i sits at u = (i + 0.5) / count, just inside the flower edge.
@@ -242,6 +291,12 @@ final class GardenScene: SKScene {
         mirror = GardenMirror()
         fx = GardenFX()
         labels = GardenLabels(capacity: 8)
+        // R2 (REVIEW-1 P0-2): reflected sunlight, additive, the grass showing through.
+        lightHalo = GardenLightLayer(.halo, color: GardenInk(hex: 0xFFB04A).ui)
+        lightBeam = GardenLightLayer(.beam, color: GardenInk(hex: 0xFFC86A).ui)
+        lightTrail = GardenLightLayer(.pool, color: GardenInk(hex: 0xFFB24A).ui)
+        lightPool = GardenLightLayer(.pool, color: GardenInk(hex: 0xFFC24A).ui)
+        lightCore = GardenLightLayer(.core, color: GardenInk(hex: 0xFFF4D6).ui)
         super.init(size: layout.size)
         setUp()
     }
@@ -279,25 +334,36 @@ final class GardenScene: SKScene {
         creaseInk.color = GardenInk(hex: 0x07040F).ui
         creaseInk.anchorPoint = CGPoint(x: 0, y: 0.5)
         creaseInk.zPosition = 2
-        bandBloom.texture = GardenArt.bandBloom
-        bandBloom.blendMode = .add
-        bandBloom.colorBlendFactor = 1
-        bandBloom.color = GardenPalette.amber.ui
-        bandBloom.zPosition = 4
-        bandWash.texture = GardenArt.bandProfile(lines: false)
-        bandWash.colorBlendFactor = 1
-        bandWash.color = GardenPalette.bandWash.ui
-        bandWash.zPosition = 5
-        bandCore.texture = GardenArt.bandProfile(lines: true)
-        bandCore.blendMode = .add
-        bandCore.colorBlendFactor = 1
-        bandCore.color = GardenPalette.bandCore.ui
-        bandCore.zPosition = 6
-        bandRays.texture = GardenArt.bandRays
-        bandRays.blendMode = .add
-        bandRays.colorBlendFactor = 1
-        bandRays.color = GardenPalette.goldHot.ui
-        bandRays.zPosition = 7
+        lightBeam.root.zPosition = 4
+        lightHalo.root.zPosition = 4.5
+        lightTrail.root.zPosition = 5
+        lightPool.root.zPosition = 5.5
+        lightCore.root.zPosition = 6
+        let lightRoots: [SKNode] = [lightBeam.root, lightHalo.root, lightTrail.root, lightPool.root, lightCore.root]
+        for n in lightRoots { garden.addChild(n) }
+        for _ in 0..<3 {
+            let t = SKSpriteNode(texture: GardenArt.shadeTint)
+            t.colorBlendFactor = 1
+            t.color = GardenInk(hex: 0x233F73).ui
+            t.anchorPoint = CGPoint(x: 0, y: 0.5)
+            t.zPosition = 7.2
+            t.isHidden = true
+            garden.addChild(t)
+            shadeTints.append(t)
+        }
+        shadeStrip.texture = GardenArt.creaseShade
+        shadeStrip.colorBlendFactor = 1
+        shadeStrip.color = GardenInk(hex: 0x03050F).ui
+        shadeStrip.anchorPoint = CGPoint(x: 0, y: 0.5)
+        shadeStrip.alpha = 0.62
+        shadeStrip.zPosition = 7.5
+        shadeRim.texture = GardenArt.line
+        shadeRim.blendMode = .add
+        shadeRim.colorBlendFactor = 1
+        shadeRim.color = GardenInk(hex: 0x8FC4FF).ui
+        shadeRim.zPosition = 7.6
+        garden.addChild(shadeStrip)
+        garden.addChild(shadeRim)
         creaseGlow.texture = GardenArt.creaseGlow
         creaseGlow.blendMode = .add
         creaseGlow.colorBlendFactor = 1
@@ -317,8 +383,7 @@ final class GardenScene: SKScene {
         nightRoll.anchorPoint = CGPoint(x: 1, y: 0.5)
         nightRoll.zPosition = 55
         nightRoll.isHidden = true
-        for n in [groundNight, groundDawn, nightVeil, creaseInk, bandBloom, bandWash, bandCore, bandRays, creaseGlow,
-                  seam, seamGlow, nightRoll] {
+        for n in [groundNight, groundDawn, nightVeil, creaseInk, creaseGlow, seam, seamGlow, nightRoll] {
             garden.addChild(n)
         }
         for n in [groundNight, groundDawn, nightVeil] { n.anchorPoint = .zero }
@@ -358,6 +423,26 @@ final class GardenScene: SKScene {
         floodRays.colorBlendFactor = 1
         floodRays.color = GardenPalette.goldHot.ui
         floodRays.isHidden = true
+
+        // R2: the phone's lever rides the band 1:1: a brass rail from d = bandMin (inside the mirror) to the flower
+        // edge, and a gold grip pill on the band's edge. The rail's mirror part sits over the glass; its garden part
+        // under the flowers.
+        railMirror.texture = MirrorArt.leverTrack
+        railMirror.zPosition = 45
+        railGarden.texture = MirrorArt.leverTrack
+        railGarden.zPosition = 11
+        gripGlow.texture = GardenArt.glow
+        gripGlow.blendMode = .add
+        gripGlow.colorBlendFactor = 1
+        gripGlow.color = GardenPalette.gold.ui
+        gripGlow.zPosition = 47
+        grip.texture = MirrorArt.grip
+        grip.zPosition = 47.5
+        let rail: [SKSpriteNode] = [railMirror, railGarden, gripGlow, grip]
+        for n in rail {
+            n.isHidden = true
+            world.addChild(n)
+        }
 
         // A warm pool, so the first wave never allocates nodes mid-play.
         for _ in 0..<12 {
@@ -441,12 +526,30 @@ final class GardenScene: SKScene {
         seam.size = CGSize(width: max(6, depth * 0.014), height: span)
         seamGlow.position = CGPoint(x: 0, y: span / 2)
         seamGlow.size = CGSize(width: max(12, depth * 0.035), height: span)
-        let edgeW = CGFloat(GardenMath.bandEdge) * depth * 2
-        bandWash.size = CGSize(width: edgeW, height: span)
-        bandCore.size = CGSize(width: edgeW, height: span)
-        bandRays.size = CGSize(width: edgeW, height: span * 1.3)
-        bandBloom.size = CGSize(width: depth * 0.4, height: span)
         nightRoll.size = CGSize(width: 1, height: span)
+        // R2: the crease shade ends (and its cool rim sits) at d = Tuning.creaseShade.
+        let shadeX = CGFloat(GardenMath.creaseShade) * depth
+        shadeStrip.position = CGPoint(x: 0, y: span / 2)
+        shadeStrip.size = CGSize(width: shadeX / GardenArt.shadeEnd, height: span)
+        shadeRim.position = CGPoint(x: shadeX, y: span / 2)
+        shadeRim.size = CGSize(width: max(5, depth * 0.014), height: span)
+        // R2: the lever's rail runs along d at the grip's u, from bandMin to the flower edge.
+        let gu = gripU
+        let a = f.scene(u: gu, d: GardenMath.bandMin)
+        let z = f.scene(u: gu, d: 0)
+        let e = f.scene(u: gu, d: 1)
+        let railAngle = atan2(-f.dUnit.dx, f.dUnit.dy)
+        let railW: CGFloat = 9
+        railMirror.position = CGPoint(x: (a.x + z.x) / 2, y: (a.y + z.y) / 2)
+        railMirror.size = CGSize(width: railW, height: max(GardenFrame.distance(a, z), 1))
+        railMirror.zRotation = railAngle
+        railGarden.position = CGPoint(x: (z.x + e.x) / 2, y: (z.y + e.y) / 2)
+        railGarden.size = CGSize(width: railW, height: max(GardenFrame.distance(z, e), 1))
+        railGarden.zRotation = railAngle
+        grip.size = CGSize(width: 44, height: 20)
+        grip.zRotation = atan2(f.uUnit.dy, f.uUnit.dx)
+        gripGlow.size = CGSize(width: 96, height: 64)
+        gripGlow.zRotation = grip.zRotation
         for (i, s) in dew.enumerated() {
             let sp = dewSpots[i]
             s.position = f.local(u: sp.u, d: sp.d)
@@ -514,7 +617,13 @@ final class GardenScene: SKScene {
         GardenMath.clamp(min(gardenFrame.depth, gardenFrame.span) * 0.075, 24, 46)
     }
 
-    private var fireflySize: CGFloat { GardenMath.clamp(gardenFrame.depth * 0.03, 10, 18) }
+    private var fireflySize: CGFloat { GardenMath.clamp(gardenFrame.depth * 0.032, 11, 19) }
+
+    /// R2: glooms 15 % bigger on phones.
+    private var gloomScale: CGFloat { GardenMath.gloomArtScale(layout: layout) }
+
+    /// R2: the phone grip's lane: 30 pt in from the u = 1 edge.
+    private var gripU: Double { Double(1 - 30 / max(gardenFrame.span, 60)) }
 
     /// A kind's typical radius (points), for FX when the node isn't on screen.
     private func nominalRadius(_ kind: GloomKind) -> CGFloat {
@@ -526,7 +635,7 @@ final class GardenScene: SKScene {
         case .splitter: d = 0.060
         case .hopper: d = 0.050
         }
-        return max(d * gardenFrame.depth, 6)
+        return max(d * gardenFrame.depth * gloomScale, 6)
     }
 
     /// Keeps a floating word inside the garden.
@@ -578,6 +687,9 @@ final class GardenScene: SKScene {
         world.position = .zero
         sunriseAge = s.phase == .won ? 10 : -1
         nightAge = s.phase == .lost ? 10 : -1
+        firstBand = nil
+        trailBand = CGFloat(s.band.isFinite ? s.band : GardenMath.bandMin)
+        bandSwell = 0
         if s.flowers.count != flowers.count { rebuildFlowers(count: s.flowers.count) }
         for (i, fl) in flowers.enumerated() where i < s.flowers.count {
             fl.setStanding(s.flowers[i], animated: false)
@@ -612,10 +724,11 @@ final class GardenScene: SKScene {
 
         let band = CGFloat(s.band)
         let light = max(CGFloat(GardenMath.clamp(s.creaseGlow, 0, 1)), band >= 0 ? 1 : 0)
-        let leverT = CGFloat((GardenMath.clamp(s.band, GardenMath.bandMin, 1) - GardenMath.bandMin)
-                             / (1 - GardenMath.bandMin))
+        // R2: the lever lives on the band itself now (`drawLever`); the mirror's own slot stays hidden.
         mirror.update(dt: dt, time: animTime, dawn: dawn, band: band, light: light, veilLevel: nightLevel,
-                      lever: showsLever, leverT: leverT, motion: motion)
+                      lever: false, leverT: 0, motion: motion)
+        placeShadeClouds(s)
+        drawLever(s, motion: motion)
 
         fx.update(dt)
         labels.update(dt)
@@ -656,7 +769,9 @@ final class GardenScene: SKScene {
         for e in events {
             switch e {
             case .emerged(_, let kind, let u):
-                fx.ink(at: f.scene(u: u, d: 0.02), radius: nominalRadius(kind), count: 4, toward: f.dUnit)
+                let p = f.scene(u: u, d: 0.03)
+                fx.ink(at: p, radius: nominalRadius(kind), count: 3, toward: f.dUnit)
+                fx.ripple(at: p, radius: nominalRadius(kind))
             case .popped(let id, let kind, let u, let d, let chain, _):
                 framePopped.append(id)
                 var p = f.scene(u: u, d: d)
@@ -667,11 +782,16 @@ final class GardenScene: SKScene {
                 }
                 fx.pop(at: p, radius: r, big: kind == .brute || kind == .splitter, chain: chain)
                 recordPop(p)
+                if kind == .brute && !reduceMotion && !attract { shakeAmp = max(shakeAmp, 3.5) }
                 if chain >= 3 && !attract {
-                    labels.show("×\(chain)", at: clampLabel(CGPoint(x: p.x, y: p.y + r * 1.3)), size: labelSize * 0.72,
-                                color: GardenPalette.goldHot, rise: 34, life: 0.8)
+                    // R2: the chain count springs in, a little bigger with each step.
+                    let grow = 0.72 + 0.04 * CGFloat(min(chain - 3, 8))
+                    labels.show("×\(chain)", at: clampLabel(CGPoint(x: p.x, y: p.y + r * 1.3)), size: labelSize * grow,
+                                color: GardenPalette.goldHot, rise: 34, life: 0.85, bouncy: true)
                 }
             case .swept(let count, _):
+                // R2: a brief swell of light along the band.
+                bandSwell = 1
                 let c = sweepCentre()
                 fx.rings.spawn(at: c, fromRadius: 10, toRadius: labelSize * 4, life: 0.55, color: GardenPalette.gold.ui,
                                alpha: 0.9)
@@ -784,10 +904,14 @@ final class GardenScene: SKScene {
             }
             node.seenFrame = frameIndex
             let p = f.scene(u: g.u, d: g.d)
-            let r = max(CGFloat(g.radius) * f.depth, 4)
+            let r = max(CGFloat(g.radius) * f.depth * gloomScale, 4)
             // Further along d draws in front.
             node.root.zPosition = CGFloat(GardenMath.clamp(g.d, -0.5, 1.5)) * 2
-            node.update(g, at: p, radius: r, dir: f.dUnit, dt: dt, time: animTime, motion: motion)
+            // R2: the eyes track the band (towards the light, or the crease while it's hidden there).
+            let towardBand = s.band >= g.d
+            let look = towardBand ? f.dUnit : CGVector(dx: -f.dUnit.dx, dy: -f.dUnit.dy)
+            node.update(g, at: p, radius: r, dir: look, dt: dt, time: animTime, motion: motion)
+            if node.surfacedThisFrame { fx.ripple(at: node.surfacePoint, radius: r) }
             if g.lit > 0.02 && dt > 0 {
                 let lit = CGFloat(g.lit)
                 node.steamClock += dt * lit * 14 * fx.density
@@ -816,7 +940,13 @@ final class GardenScene: SKScene {
         for id in scratch {
             guard let n = glooms.removeValue(forKey: id) else { continue }
             if framePopped.contains(id) {
-                releaseGloom(n)
+                if n.kind == .brute {
+                    // R2: hit-stop feel: the brute holds flat and white for a couple of frames over its burst.
+                    n.startDeath(.squash, target: nil)
+                    dyingGlooms.append(n)
+                } else {
+                    releaseGloom(n)
+                }
                 continue
             }
             if frameEvaporate || s.phase == .won {
@@ -875,6 +1005,14 @@ final class GardenScene: SKScene {
             }
             node.seenFrame = frameIndex
             node.update(ff, at: f.scene(u: ff.u, d: ff.d), size: size, dt: dt, time: animTime, motion: motion)
+            // R2: a red-orange warning ring the moment the light starts scorching it.
+            if node.scorch > 0.12 && !node.warned {
+                node.warned = true
+                fx.rings.spawn(at: node.drawnPoint, fromRadius: size * 0.8, toRadius: size * 2.8, life: 0.45,
+                               color: GardenInk(hex: 0xFF7A3A).ui, alpha: 0.95)
+            } else if node.scorch < 0.02 {
+                node.warned = false
+            }
             if dt > 0 {
                 node.trailClock += dt * 16 * fx.density
                 while node.trailClock >= 1 {
@@ -944,21 +1082,56 @@ final class GardenScene: SKScene {
         let band = CGFloat(s.band)
         let glowIn = CGFloat(GardenMath.clamp(s.creaseGlow, 0, 1))
 
-        // The band: a full-width stripe at d = band (its profile is Core's intensity).
+        // R2: the band is reflected sunlight: an additive pool (Core's intensity profile) with a cream core, a faint
+        // halo, a beam from the crease that brightens towards the band, and a warm trail where the band just was.
+        // All of it fades over the outer 6 % of the width and is cut exactly by cloud shades.
         let x = band * depth
-        let visible = band > -0.3
-        for n in [bandBloom, bandWash, bandCore, bandRays] {
-            n.isHidden = !visible
-            n.position = CGPoint(x: x, y: span / 2)
+        // At bandMin (−0.2) every layer is still inside the crease, under the mirror.
+        let visible = band > CGFloat(GardenMath.bandMin) + 0.001
+        GardenLightMath.pieces(shades: s.shades, into: &lightPieces)
+        bandSwell = bandSwell > 0.01 ? bandSwell * exp(-dt * 4.5) : 0
+        trailBand = GardenMath.approach(trailBand, band, rate: 3.2, dt: dt)
+        let shimmer: CGFloat = motion > 0.5 ? 0.95 + 0.05 * sin(animTime * 2.3) : 1
+        if visible {
+            let edgeW = CGFloat(GardenMath.bandEdge) * depth * 2
+            lightPool.draw(x: x, width: edgeW, anchorX: 0.5, span: span, pieces: lightPieces,
+                           alpha: (0.42 + 0.18 * bandSwell) * shimmer)
+            lightCore.draw(x: x, width: edgeW, anchorX: 0.5, span: span, pieces: lightPieces,
+                           alpha: (0.32 + 0.04 * dawn + 0.3 * bandSwell) * shimmer)
+            lightHalo.draw(x: x, width: depth * 0.4 * (1 + 0.15 * bandSwell), anchorX: 0.5, span: span,
+                           pieces: lightPieces, alpha: 0.15 + 0.22 * bandSwell)
+            lightBeam.draw(x: 0, width: max(x, 0), anchorX: 0, span: span, pieces: lightPieces,
+                           alpha: 0.16 + 0.1 * bandSwell)
+            let lag = abs(band - trailBand)
+            lightTrail.draw(x: trailBand * depth, width: edgeW * 1.3, anchorX: 0.5, span: span, pieces: lightPieces,
+                            alpha: GardenMath.clamp(lag / 0.12, 0, 1) * 0.32)
+        } else {
+            lightPool.hide()
+            lightCore.hide()
+            lightHalo.hide()
+            lightBeam.hide()
+            lightTrail.hide()
         }
-        let shimmer: CGFloat = motion > 0.5 ? 0.94 + 0.06 * sin(animTime * 2.3) : 1
-        bandWash.alpha = 0.36 * shimmer
-        bandCore.alpha = (0.44 + 0.06 * dawn) * shimmer
-        bandBloom.alpha = 0.2 + 0.05 * sin(animTime * 1.1) * motion
-        bandRays.alpha = 0.3 * shimmer
-        if motion > 0.5 {
-            bandRays.position = CGPoint(x: x, y: span / 2 + sin(animTime * 0.35) * span * 0.08)
+
+        // R2: cloud shades: a cool tint over the light's path where the light is cut.
+        let reach = (band + CGFloat(GardenMath.bandEdge)) * depth
+        for (i, t) in shadeTints.enumerated() {
+            guard visible, reach > 1, i < s.shades.count else {
+                t.isHidden = true
+                continue
+            }
+            let sh = s.shades[i]
+            let k = CGFloat(GardenMath.clamp(sh.strength.isFinite ? sh.strength : 0, 0, 1))
+            t.isHidden = k < 0.01
+            t.position = CGPoint(x: 0, y: CGFloat(sh.u) * span)
+            t.size = CGSize(width: reach / 0.85, height: max(CGFloat(max(sh.halfWidth, 0)) * 2 * span / 0.88, 2))
+            t.alpha = 0.3 * k
         }
+
+        // R2: the crease shade's cool rim brightens where the light reaches it (and stops).
+        let atEdge = CGFloat(GardenMath.intensity(d: GardenMath.creaseShade, band: s.band))
+        let lit = max(glowIn, band >= 0 ? 1 : 0)
+        shadeRim.alpha = (0.16 + 0.5 * atEdge) * max(lit, 0.3)
 
         // Dawn in the crease: light pooled at the seam while the band is still hidden.
         let hidden = GardenMath.clamp(1 - (band + 0.02) / 0.15, 0, 1)
@@ -974,7 +1147,9 @@ final class GardenScene: SKScene {
 
         // Dew glints where the band crosses the drops.
         for (i, sp) in dewSpots.enumerated() {
-            let k = CGFloat(GardenMath.intensity(d: sp.d, band: s.band))
+            let shaded = GardenMath.isShaded(d: sp.d)
+            let k: CGFloat = shaded ? 0 : CGFloat(GardenMath.intensity(d: sp.d, band: s.band)
+                                                 * GardenLightMath.factor(u: sp.u, shades: s.shades))
             let tw: CGFloat = motion > 0.5 ? max(0, sin(animTime * 2.4 + sp.phase)) : 0.6
             let a = k * (0.25 + 0.75 * tw * tw)
             let glint = dew[i]
@@ -990,9 +1165,52 @@ final class GardenScene: SKScene {
                 moteClock -= 1
                 let u = Double(rng.unit())
                 let dd = s.band + Double(rng.range(-1, 1)) * GardenMath.bandCore
-                if dd >= 0 { fx.mote(at: f.scene(u: u, d: dd), color: GardenPalette.goldHot) }
+                if !GardenMath.isShaded(d: dd) && GardenLightMath.factor(u: u, shades: s.shades) > 0.3 {
+                    fx.mote(at: f.scene(u: u, d: dd), color: GardenPalette.goldHot)
+                }
             }
         }
+    }
+
+    /// R2: each cloud shade's cloud in the mirror's sky: at the shade's u, on the sun's path (a cloud over the sun is
+    /// what takes that stretch of light away).
+    private func placeShadeClouds(_ s: DawnSnapshot) {
+        let f = gardenFrame
+        let sun = mirror.sunPoint
+        let behind = -((sun.x - f.origin.x) * f.dUnit.dx + (sun.y - f.origin.y) * f.dUnit.dy)
+        var centers: [CGPoint] = []
+        var widths: [CGFloat] = []
+        var strengths: [CGFloat] = []
+        for sh in s.shades.prefix(3) {
+            guard sh.u.isFinite, sh.halfWidth.isFinite else { continue }
+            let c = f.scene(u: sh.u, d: 0)
+            centers.append(CGPoint(x: c.x - f.dUnit.dx * behind, y: c.y - f.dUnit.dy * behind))
+            widths.append(CGFloat(max(sh.halfWidth, 0)) * 2 * f.span * 1.15)
+            strengths.append(CGFloat(sh.strength.isFinite ? sh.strength : 0))
+        }
+        mirror.placeShadeClouds(centers: centers, widths: widths, strengths: strengths)
+    }
+
+    /// R2 (REVIEW-1 P0-4): one control on phones. The grip sits on the band's edge at d = band exactly (the rail's ends
+    /// are bandMin and 1), and pulses until the band first moves.
+    private func drawLever(_ s: DawnSnapshot, motion: CGFloat) {
+        let show = showsLever && !attract
+        let parts: [SKSpriteNode] = [railMirror, railGarden, gripGlow, grip]
+        for n in parts { n.isHidden = !show }
+        guard show else {
+            gripPulsing = false
+            return
+        }
+        let b = GardenMath.clamp(s.band.isFinite ? s.band : GardenMath.bandMin, GardenMath.bandMin, 1)
+        if firstBand == nil { firstBand = b }
+        let start = firstBand ?? b
+        gripPulsing = abs(b - start) <= 0.02
+        let p = gardenFrame.scene(u: gripU, d: b)
+        grip.position = p
+        gripGlow.position = p
+        let pulse: CGFloat = gripPulsing ? 0.5 + 0.5 * sin(animTime * 5) : 0
+        grip.setScale(1 + 0.12 * pulse * (motion > 0.5 ? 1 : 0.4))
+        gripGlow.alpha = 0.22 + 0.45 * pulse
     }
 
     private func drawOverlays(dt: CGFloat) {

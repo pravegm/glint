@@ -139,3 +139,42 @@ struct FeelThrottle {
         last = -Double.infinity
     }
 }
+
+/// R2 (cloud shadows): which shades have just slid onto the band for the first time (for the "cool hush"). Each shade
+/// id hushes once per session; a session restart (phase back to `.waiting`, or the clock running backwards) forgets
+/// the ids. At most one hush per `gap` s, so two clouds arriving together make one sound. Pure, with explicit times.
+struct FeelShadeWatcher {
+    static let gap = 0.6
+
+    private(set) var seen: Set<Int> = []
+    private var lastTime = -Double.infinity
+    private var lastHush = -Double.infinity
+
+    init() {}
+
+    /// Feed a frame's shades; returns true when a cool hush should play now. `live`: the frame is stepping play (not
+    /// paused or held); a cloud that arrives while not live is noted silently.
+    mutating func update(shades: [ShadeState], phase: SessionPhase, live: Bool = true, sessionTime: Double,
+                         now: Double) -> Bool {
+        if phase == .waiting || (sessionTime.isFinite && sessionTime < lastTime) {
+            seen.removeAll()
+            lastHush = -Double.infinity
+        }
+        if sessionTime.isFinite { lastTime = sessionTime }
+        var arrived = false
+        for shade in shades where !seen.contains(shade.id) && FeelSoundBook.shadeCrossesBand(shade) {
+            seen.insert(shade.id)
+            arrived = true
+        }
+        guard arrived, live, phase == .playing, now.isFinite else { return false }
+        if lastHush.isFinite && now - lastHush < Self.gap && now >= lastHush { return false }
+        lastHush = now
+        return true
+    }
+
+    mutating func reset() {
+        seen.removeAll()
+        lastTime = -Double.infinity
+        lastHush = -Double.infinity
+    }
+}

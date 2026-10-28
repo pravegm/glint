@@ -9,11 +9,14 @@ import Testing
 // GameController feeds a PilotSource. Every run is simulated once, in parallel, the first time a test asks, and the
 // table is printed as one block:
 //   GLINT-BAL level=<n> skill=<s> won=<k>/<seeds> flowers=<avg> score=<avg>
-// The JS mirror used for tuning (design/notes/core-R1.md) predicts, on 8 seeds: every level won by 0.9 and 1.0;
-// 0.6 wins all but loses 1–2.5 flowers on levels 26–29; 0.3 wins world 1, starts losing at 17–20 and loses most of
-// world 3 (level 30: 0 of 8).
-// The asserts are loose sanity only: level 1 won by 0.3 every time, level 30 lost by 0.3 most of the time, every
+// R2 (design/notes/core-R2.md): the pilot has the human-hinge model, light skips the crease shade, clouds from L11.
+// The JS mirror (design/notes/core-R1-sim) predicts, on 8 seeds: 0.3 wins every Meadow level (4.4–5 flowers),
+// 75–100 % of Rooftops (2.3–4.3 flowers), 0–50 % of Harbour; 0.6 wins every Rooftops level losing ≤ 1 and 62–100 %
+// of Harbour losing 1–2.6; 0.9 wins all 30 with 3★ on most seeds. Mid-level fields (0.6 pilot) hold 4–7 glooms from
+// L8 on (Meadow 6–7 and a few Rooftops/Harbour openers sit near 3).
+// The asserts are loose sanity only: levels 1–3 won by 0.3 every time, level 30 lost by 0.3 most of the time, every
 // level won at least once by 0.9, and in Harbour the 0.9 hand keeps more flowers than the 0.3 hand.
+// Each line also prints three=<runs with 5 flowers> and field=<mean glooms on the field from 25 % to 90 % of the level>.
 
 struct BalanceRun {
     var won: Bool
@@ -21,6 +24,8 @@ struct BalanceRun {
     var score: Int
     var eaten: Int
     var scorched: Int
+    /// R2: mean glooms on the field between 25 % and 90 % of the level.
+    var field: Double = 0
 }
 
 /// The parallel runs' results (one lock; written from DispatchQueue.concurrentPerform's workers).
@@ -84,6 +89,10 @@ final class GlintBalanceMemo: @unchecked Sendable {
         var t: Double = 0
         var eaten: Int = 0
         var scorched: Int = 0
+        var fieldSum: Double = 0
+        var fieldN: Int = 0
+        let lo: Double = 0.25 * s.duration
+        let hi: Double = 0.9 * s.duration
         while !s.isFinished && t < capSeconds {
             let input: MirrorInput = pilot.input(for: s.snapshot, dt: frameDt)
             for e in s.step(dt: frameDt, input: input) {
@@ -94,9 +103,13 @@ final class GlintBalanceMemo: @unchecked Sendable {
                 }
             }
             t += frameDt
+            if s.snapshot.time >= lo && s.snapshot.time <= hi {
+                fieldSum += Double(s.snapshot.glooms.count)
+                fieldN += 1
+            }
         }
         return BalanceRun(won: s.snapshot.phase == .won, flowers: s.snapshot.flowersLeft, score: s.snapshot.score,
-                          eaten: eaten, scorched: scorched)
+                          eaten: eaten, scorched: scorched, field: fieldN > 0 ? fieldSum / Double(fieldN) : 0)
     }
 
     private func build() {
@@ -166,23 +179,28 @@ final class GlintBalanceMemo: @unchecked Sendable {
         var score: Double = 0
         var eaten: Double = 0
         var scorched: Double = 0
+        var field: Double = 0
+        var three: Int = 0
         for r in runs {
+            field += r.field
+            if r.flowers == Tuning.flowerCount { three += 1 }
             flowers += Double(r.flowers)
             score += Double(r.score)
             eaten += Double(r.eaten)
             scorched += Double(r.scorched)
         }
         let n: Double = Double(count)
-        return String(format: "GLINT-BAL level=%d skill=%.1f won=%d/%d flowers=%.1f score=%.0f eaten=%.1f scorched=%.1f",
-                      level, skill, won, runs.count, flowers / n, score / n, eaten / n, scorched / n)
+        return String(format: "GLINT-BAL level=%d skill=%.1f won=%d/%d flowers=%.1f score=%.0f eaten=%.1f scorched=%.1f three=%d field=%.1f",
+                      level, skill, won, runs.count, flowers / n, score / n, eaten / n, scorched / n, three, field / n)
     }
 }
 
 struct BalanceTests {
 
-    @Test func levelOneIsWonByAWeakHand() {
-        let runs: [BalanceRun] = GlintBalanceMemo.shared.runs(level: 1, skill: 0)
-        let line: String = GlintBalanceMemo.line(level: 1, skill: 0.3, runs: runs)
+    @Test(arguments: [1, 2, 3])
+    func firstLevelsAreWonByAWeakHand(level: Int) {
+        let runs: [BalanceRun] = GlintBalanceMemo.shared.runs(level: level, skill: 0)
+        let line: String = GlintBalanceMemo.line(level: level, skill: 0.3, runs: runs)
         #expect(runs.count == GlintBalanceMemo.seedCount)
         let won: Int = runs.filter { (r: BalanceRun) -> Bool in r.won }.count
         #expect(won == runs.count, "\(line)")

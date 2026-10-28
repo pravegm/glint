@@ -135,23 +135,26 @@ struct RoutingTests {
         #expect(AppRules.grouped(12_345_678) == "12,345,678")
     }
 
-    @Test func hudSitsInsideTheCanvasAtTheFlowerEdge() {
+    @Test func hudSitsInTheMirrorsFarCorners() {
         let phone = GardenLayout.make(size: CGSize(width: 402, height: 874), isDuo: false, swapHalves: false)
         let item = CGSize(width: 120, height: 52)
         let insets = EdgeInsets(top: 59, leading: 0, bottom: 34, trailing: 0)
         let left = AppRules.hudCenter(u: 0, item: item, layout: phone, insets: insets, margin: 10)
         let right = AppRules.hudCenter(u: 1, item: item, layout: phone, insets: insets, margin: 10)
-        // Bottom corners (the flower edge is the bottom on a phone), inside the safe area.
+        // R2: the top corners (the mirror is the top on a phone, its far edge the top), inside the safe area.
         #expect(left.x < 201 && right.x > 201)
-        #expect(left.y > phone.gardenRect.midY)
-        #expect(left.y + item.height / 2 <= 874 - 34)
+        #expect(left.y < phone.mirrorRect.midY)
+        #expect(left.y - item.height / 2 >= 59)
         #expect(left.x - item.width / 2 >= 0)
         #expect(right.x + item.width / 2 <= 402)
-        // Book pose, garden on the right: the corners are on the right edge.
+        // Book pose, garden on the right: the mirror's far edge is the left edge.
         let book = GardenLayout.make(size: CGSize(width: 1100, height: 800), isDuo: true, swapHalves: false)
         let top = AppRules.hudCenter(u: 0, item: item, layout: book, insets: EdgeInsets(), margin: 10)
-        #expect(top.x > 1100 - 120)
+        let bottom = AppRules.hudCenter(u: 1, item: item, layout: book, insets: EdgeInsets(), margin: 10)
+        #expect(top.x < 120)
         #expect(top.y < 400)
+        #expect(bottom.x < 120)
+        #expect(bottom.y > 400)
     }
 
     @Test func levelMapPointsFitAndDontOverlap() {
@@ -606,5 +609,305 @@ struct HintAndQueueTests {
         let png = OpaquePNG.encodeRGB(rgbaRows: rgba, width: w, height: h)
         #expect(png != nil)
         if let png { #expect(OpaquePNG.colorType(png) == 2) }
+    }
+}
+
+// MARK: - Round 2 (design/ROUND-2.md "App engineer" + the R2 addendum)
+
+/// The four layouts (fold vertical/horizontal × garden after/before) on the Duo's inner display both ways round and
+/// on a phone.
+private func r2Layouts() -> [(layout: GardenLayout, insets: EdgeInsets, isDuo: Bool)] {
+    var out: [(layout: GardenLayout, insets: EdgeInsets, isDuo: Bool)] = []
+    let duoInsets = EdgeInsets(top: 24, leading: 0, bottom: 20, trailing: 0)
+    let phoneInsets = EdgeInsets(top: 59, leading: 0, bottom: 34, trailing: 0)
+    let sizes: [(CGSize, CGFloat, Bool)] = [(CGSize(width: 951, height: 669), 0.5, true),
+                                            (CGSize(width: 669, height: 951), 0.5, true),
+                                            (CGSize(width: 402, height: 874), 0.58, false)]
+    for (size, fraction, duo) in sizes {
+        for vertical in [true, false] {
+            for after in [true, false] {
+                let layout = GardenLayout(size: size, foldVertical: vertical, gardenAfter: after, gardenFraction: fraction)
+                out.append((layout, duo ? duoInsets : phoneInsets, duo))
+            }
+        }
+    }
+    return out
+}
+
+struct R2LayoutTests {
+    @Test @MainActor func hudNeverCoversAFlower() {
+        for item in r2Layouts() {
+            let layout = item.layout
+            let compact = min(layout.size.width, layout.size.height) < 500
+            let scoreSize = PlayHUD.scoreSize(compact: compact)
+            let score = AppRules.rect(center: AppRules.hudCenter(u: 0, item: scoreSize, layout: layout,
+                                                                 insets: item.insets, margin: PlayHUD.margin),
+                                      size: scoreSize)
+            let pause = AppRules.rect(center: AppRules.hudCenter(u: 1, item: PlayHUD.pauseSize, layout: layout,
+                                                                 insets: item.insets, margin: PlayHUD.margin),
+                                      size: PlayHUD.pauseSize)
+            let flowers = GardenScene.flowerRects(layout: layout)
+            #expect(flowers.count == 5)
+            for flower in flowers {
+                #expect(!score.intersects(flower))
+                #expect(!pause.intersects(flower))
+            }
+            // Both plates sit on the mirror half, inside the canvas.
+            #expect(layout.mirrorRect.contains(CGPoint(x: score.midX, y: score.midY)))
+            #expect(layout.mirrorRect.contains(CGPoint(x: pause.midX, y: pause.midY)))
+            #expect(!score.intersects(pause))
+            if item.isDuo {
+                let band = AppRules.creaseBand(layout: layout)
+                #expect(!score.intersects(band))
+                #expect(!pause.intersects(band))
+            }
+        }
+    }
+
+    @Test func promptAndHintStayOffTheFlowers() {
+        for item in r2Layouts() {
+            let layout = item.layout
+            let maxSize = AppRules.promptMaxSize(layout: layout)
+            let prompt = AppRules.rect(center: AppRules.promptCenter(layout: layout), size: maxSize)
+            let hintSize = CGSize(width: min(maxSize.width, 420), height: layout.foldVertical ? 90 : 64)
+            let hint = AppRules.rect(center: AppRules.hintCenter(layout: layout), size: hintSize)
+            for flower in GardenScene.flowerRects(layout: layout) {
+                #expect(!prompt.intersects(flower))
+                #expect(!hint.intersects(flower))
+            }
+            // The hint is on the garden, never on the mirror (the sun lives there).
+            #expect(layout.gardenRect.contains(AppRules.hintCenter(layout: layout)))
+        }
+    }
+
+    @Test func menusKeepEveryControlOffTheCrease() {
+        for item in r2Layouts() {
+            let regions = AppRules.menuRegions(layout: item.layout, insets: item.insets, isDuo: item.isDuo)
+            if item.isDuo {
+                let band = AppRules.creaseBand(layout: item.layout, half: AppRules.creaseNoTouch)
+                #expect(!regions.primary.intersects(band))
+                #expect(regions.secondary != nil)
+                if let secondary = regions.secondary {
+                    #expect(!secondary.intersects(band))
+                    #expect(secondary.width > 200 && secondary.height > 200)
+                    // The mirror half holds the titles, the garden half the controls.
+                    #expect(item.layout.mirrorRect.contains(CGPoint(x: secondary.midX, y: secondary.midY)))
+                }
+                #expect(regions.primary.width > 200 && regions.primary.height > 200)
+                #expect(item.layout.gardenRect.contains(CGPoint(x: regions.primary.midX, y: regions.primary.midY)))
+                // Play sits fully on the garden half, at least 32 pt from the crease.
+                let near = AppRules.creaseBand(layout: item.layout, half: 32)
+                #expect(!regions.primary.intersects(near.insetBy(dx: 0.5, dy: 0.5)))
+            } else {
+                #expect(regions.secondary == nil)
+                #expect(regions.primary.minY >= 59)
+                #expect(regions.primary.maxY <= 874 - 34)
+            }
+        }
+    }
+
+    @Test func creaseBandSitsOnTheFold() {
+        let book = GardenLayout(size: CGSize(width: 951, height: 669), foldVertical: true, gardenAfter: true,
+                                gardenFraction: 0.5)
+        let band = AppRules.creaseBand(layout: book)
+        #expect(near(band.midX, 475.5))
+        #expect(near(band.width, 56))
+        let laptop = GardenLayout(size: CGSize(width: 669, height: 951), foldVertical: false, gardenAfter: false,
+                                  gardenFraction: 0.5)
+        let band2 = AppRules.creaseBand(layout: laptop)
+        #expect(near(band2.midY, 475.5))
+        #expect(near(band2.height, 56))
+    }
+
+    @Test func leverOnlyForDragInPlay() {
+        #expect(AppRules.showsLever(route: .play, hasHinge: false, isDuo: false))
+        #expect(!AppRules.showsLever(route: .play, hasHinge: true, isDuo: true))
+        #expect(!AppRules.showsLever(route: .play, hasHinge: false, isDuo: true))
+        #expect(!AppRules.showsLever(route: .home, hasHinge: false, isDuo: false))
+        #expect(!AppRules.showsLever(route: .results, hasHinge: false, isDuo: false))
+    }
+
+    @Test func worldTabsAreShort() {
+        #expect(AppRules.worldTabStatus(open: true, stars: 24, max: 30, gate: 20) == "★ 24/30")
+        #expect(AppRules.worldTabStatus(open: false, stars: 0, max: 30, gate: 20) == "★ 20")
+        for w in 1...LevelBook.worldCount {
+            #expect(LevelBook.worldName(w).count <= 9)
+        }
+    }
+
+    @Test func reduceMotionFollowsIOSUntilChosen() {
+        #expect(AppRules.reduceMotion(choice: nil, system: true))
+        #expect(!AppRules.reduceMotion(choice: nil, system: false))
+        #expect(!AppRules.reduceMotion(choice: false, system: true))
+        #expect(AppRules.reduceMotion(choice: true, system: false))
+        let fresh = SettingsStore.decode(Data("{}".utf8))
+        #expect(fresh?.reduceMotionChoice == nil)
+        var chosen = SettingsData()
+        chosen.reduceMotionChoice = false
+        let back = SettingsStore.encode(chosen).flatMap { SettingsStore.decode($0) }
+        #expect(back?.reduceMotionChoice == false)
+    }
+
+    @Test func hintSubjects() {
+        let murk = GloomState(id: 1, kind: .murk, u: 0.3, d: 0.2, radius: 0.05, hp: 1, maxHP: 1)
+        let brute = GloomState(id: 2, kind: .brute, u: 0.7, d: 0.4, radius: 0.08, hp: 2, maxHP: 2)
+        var snap = DawnSnapshot(mode: .level(2))
+        snap.glooms = [murk, brute]
+        snap.fireflies = [FireflyState(id: 3, u: 0.5, d: 0.1)]
+        #expect(AppRules.hintSubject(.lightTheShadows, snapshot: snap).map { near($0.u, 0.3) } == true)
+        #expect(AppRules.hintSubject(.followTheBigOnes, snapshot: snap).map { near($0.u, 0.7) } == true)
+        #expect(AppRules.hintSubject(.spareTheFireflies, snapshot: snap).map { near($0.u, 0.5) } == true)
+        #expect(AppRules.hintSubject(.hoppers, snapshot: snap) == nil)
+        #expect(near(AppRules.angle(from: .zero, to: CGPoint(x: 10, y: 0)), 0))
+        #expect(near(AppRules.angle(from: .zero, to: CGPoint(x: 0, y: 10)), Double.pi / 2, 1e-6))
+    }
+}
+
+struct R2ProgressTests {
+    @Test func dailyStreak() {
+        var d = ProgressData()
+        d.dailyPlayed = [10, 11, 12]
+        #expect(ProgressRules.dailyStreak(d, today: 12) == 3)
+        #expect(ProgressRules.dailyStreak(d, today: 13) == 3)   // yesterday's streak still shows
+        #expect(ProgressRules.dailyStreak(d, today: 14) == 0)
+        d.dailyPlayed = [8, 10, 11]
+        #expect(ProgressRules.dailyStreak(d, today: 11) == 2)
+        #expect(ProgressRules.playedDaily(d, day: 11))
+        #expect(!ProgressRules.playedDaily(d, day: 9))
+        #expect(ProgressRules.dailyStreak(ProgressData(), today: 5) == 0)
+    }
+
+    @Test func recordingADailyMarksTheDay() {
+        var d = ProgressData()
+        _ = ProgressRules.record(&d, mode: .daily(day: 40), won: true, stars: 0, score: 500, now: Date())
+        _ = ProgressRules.record(&d, mode: .daily(day: 41), won: false, stars: 0, score: 300, now: Date())
+        _ = ProgressRules.record(&d, mode: .daily(day: 41), won: true, stars: 0, score: 900, now: Date())
+        #expect(d.dailyPlayed == [40, 41])
+        #expect(ProgressRules.dailyStreak(d, today: 41) == 2)
+        #expect(ProgressRules.cleanDays([3, 1, 3, 2]) == [1, 2, 3])
+    }
+
+    @Test func dailyCopy() {
+        #expect(AppRules.dailyCardStatus(open: false, playedToday: false, todayBest: 0, streak: 0) == "Win level 3")
+        #expect(AppRules.dailyCardStatus(open: true, playedToday: false, todayBest: 0, streak: 0) == "New today")
+        #expect(AppRules.dailyCardStatus(open: true, playedToday: false, todayBest: 0, streak: 2) == "Day 2 streak")
+        #expect(AppRules.dailyCardStatus(open: true, playedToday: true, todayBest: 2140, streak: 3) == "✓ Day 3 streak")
+        #expect(AppRules.dailyCardStatus(open: true, playedToday: true, todayBest: 2140, streak: 1) == "✓ Today 2,140")
+        #expect(AppRules.dailyCoverLine(open: false, playedToday: false, todayBest: 0, streak: 0) == nil)
+        #expect(AppRules.dailyCoverLine(open: true, playedToday: false, todayBest: 0, streak: 0) == "Today's Dawn is up")
+        #expect(AppRules.dailyCoverLine(open: true, playedToday: true, todayBest: 2140, streak: 3)
+                == "Today: 2,140 · streak 3")
+    }
+
+    @Test func progressCodecKeepsR2Fields() {
+        var d = ProgressData()
+        d.dailyPlayed = [5, 6]
+        d.achievements = ["glint.ach.firstlight"]
+        let back = ProgressStore.encode(d).flatMap { ProgressStore.decode($0) }
+        #expect(back == d)
+        let old = ProgressStore.decode(Data(#"{"levelStars":[3]}"#.utf8))
+        #expect(old?.dailyPlayed == [])
+        #expect(old?.achievements == [])
+    }
+
+    @Test func newAchievementsOnlyOnce() {
+        #expect(ProgressRules.newAchievements(["a", "b", "a"], earned: ["b"]) == ["a"])
+        #expect(ProgressRules.newAchievements([], earned: ["b"]).isEmpty)
+    }
+
+    @Test @MainActor func storeFilesAchievementsOnce() {
+        let store = ProgressStore(inMemory: ProgressData())
+        #expect(store.addAchievements(["glint.ach.sweep"]) == ["glint.ach.sweep"])
+        #expect(store.addAchievements(["glint.ach.sweep", "glint.ach.brute"]) == ["glint.ach.brute"])
+        #expect(store.data.achievements == ["glint.ach.sweep", "glint.ach.brute"])
+    }
+}
+
+struct R2GameCenterTests {
+    @Test func achievementIDsAndBoards() {
+        let ids = GameCenterManager.achievementIDs
+        #expect(ids.count == 10)
+        #expect(ids.allSatisfy { $0.hasPrefix("glint.ach.") })
+        #expect(Set(ids).count == 10)
+        #expect(GameCenterManager.Leaderboard.endless == "glint.endless")
+        #expect(GameCenterManager.Leaderboard.daily == "glint.daily")
+        #expect(GameCenterManager.Leaderboard.stars == "glint.stars")
+    }
+
+    @Test func pendingAchievements() {
+        let known = ["glint.ach.a", "glint.ach.b", "glint.ach.c"]
+        let p = GameCenterManager.pendingAchievements(earned: ["glint.ach.b", "glint.ach.x", "glint.ach.a", "glint.ach.b"],
+                                                      reported: ["glint.ach.a"], known: known)
+        #expect(p == ["glint.ach.b"])
+    }
+
+    @Test func everyAchievementHasABadgeMotif() {
+        #expect(Set(BadgeBook.keys) == Set(BadgeBook.motifKeys))
+        #expect(BadgeBook.key(of: "glint.ach.chain4") == "chain4")
+        #expect(BadgeBook.key(of: "chain4") == "chain4")
+        #expect(BadgeTier.of(points: 10) == .copper)
+        #expect(BadgeTier.of(points: 25) == .copper)
+        #expect(BadgeTier.of(points: 50) == .brass)
+        #expect(BadgeTier.of(points: 100) == .gold)
+        #expect(BadgeBook.tier(key: "harbour") == .gold)
+        #expect(AchievementNames.title("glint.ach.firstlight") == "First Light")
+    }
+
+    @Test func lostLevelTips() {
+        var s = DawnStats()
+        #expect(TipRules.tip(won: true, stats: s) == nil)
+        #expect(TipRules.tip(won: false, stats: s) == nil)
+        s.flowersEaten = 4
+        s.flowersEatenBy = [.brute: 3, .murk: 1]
+        #expect(TipRules.tip(won: false, stats: s) == TipRules.brute)
+        s.eatenAfterCloud = 2
+        #expect(TipRules.tip(won: false, stats: s) == TipRules.cloud)
+        s.eatenAfterCloud = 1
+        s.flowersEatenBy = [.wisp: 4]
+        #expect(TipRules.tip(won: false, stats: s) == TipRules.wisp)
+        var f = DawnStats()
+        f.firefliesScorched = 3
+        #expect(TipRules.tip(won: false, stats: f) == TipRules.fireflies)
+        for kind in GloomKind.allCases {
+            #expect(!TipRules.text(for: kind).isEmpty)
+        }
+    }
+
+    @Test func demoKeysR2() {
+        #expect(DemoMode.parse("screen=badges").effectiveScreen == .badges)
+        let fold = DemoMode.parse("screen=play;level=8;fold=1")
+        #expect(fold.wantsFallbackPilot)
+        #expect(!fold.forcesPilot)
+        #expect(!DemoMode.parse("screen=play;level=1;duolog=1").wantsFallbackPilot)
+    }
+}
+
+struct R2IconTests {
+    @Test @MainActor func iconIsBrightAndRich() {
+        let image = IconPainter.image(side: 256)
+        #expect(image != nil)
+        if let image {
+            let stats = IconPainter.stats(image)
+            #expect(stats.luminance >= IconPainter.darkLuminance)
+            #expect(stats.colours >= 40)   // ci/icon-check.sh's MIN_COLOURS
+            let png = OpaquePNG.encode(image)
+            #expect(png.flatMap { OpaquePNG.colorType($0) } == 2)
+        }
+    }
+
+    @Test func blackIsDark() {
+        let w = 8
+        let h = 8
+        var black = [UInt8](repeating: 0, count: w * h * 4)
+        let image: CGImage? = black.withUnsafeMutableBytes { buf -> CGImage? in
+            guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+                  let ctx = CGContext(data: buf.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                      space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
+            return ctx.makeImage()
+        }
+        #expect(image != nil)
+        if let image {
+            #expect(IconPainter.stats(image).luminance < IconPainter.darkLuminance)
+        }
     }
 }

@@ -11,22 +11,25 @@ not) and deleting the line.
 - GAME-DESIGN §4: brute HP 2.2 contradicts "parked light can't finish it" (a parked band gives a brute ≈ 3.1 s of
   light). `Tuning`/`GloomSpec` use 3.6. Hoppers also got one rule: light hurries a resting hopper's clock ×(1 + 2 ×
   intensity), so it hops on through a parked band (popping there takes ≈ 3 s of luck) while a band that rides on it
-  pops it in ≈ 1.3 s. Please update §4.
+  pops it in ≈ 1.3 s. Please update §4. (R2: the hurry is now ×(1 + 1 × intensity).)
 
-## App (R1) → Scene (answered by Scene R1)
-- `size == layout.size` after `init(layout:)` and every `apply(layout:)`, `.aspectFill`: confirmed (tested).
-- Flowers clear of the corners: **can't on a phone.** Five flowers fill the flower edge (lane i at u = (i + 0.5)/5,
-  radius min(lane × 0.34, depth × 0.072), centre ≈ 35 pt in from the edge on a 393 pt phone). The 140 × 58 score
-  plate at u = 0 covers flower 0 and part of flower 1; the pause button at u = 1 covers most of flower 4. The middle
-  between the two plates is ~180 pt, too little for five readable flowers. See the Scene → App line below.
+## Core (R2) → founder / launch lead (docs/appstore/achievements.md is not Core's file)
+- **Night Watch is too easy at 10,000.** The R2 mirror's Long Night medians: skill 0.3 ≈ 6,700 (3.4 min), 0.6 ≈
+  17,400 (4.9 min), 0.9 ≈ 22,200 (5.3 min). achievements.md's own check wants the bar above the 0.6 median and at or
+  below the 0.9 one: **20,000** fits. `Achievements.nightWatchScore` and the blurb still say 10,000 as written; change
+  the number in achievements.md (both descriptions and the trigger) and tell Core to change the constant and the
+  blurb together, before the tool creates it.
+- achievements.md sketches `AchievementDef(id:title:detail:)` and `def(key, title, detail)`; ROUND-2 asked for
+  `{ key, id, title, blurb, points }`, which is what Core built (`def("<key>", title, blurb, points)`, plus a `detail`
+  alias). If the ASC tool's grep expects exactly three arguments to `def(`, it needs the fourth (points) allowed.
+- Four Times Bright (chain 13) is fine: the 0.6 pilot's longest chain in Rooftops is 18–35. Ninety Suns is fine: the
+  0.9 pilot gets 3★ on 6–8 of 8 seeds on every Harbour level.
 
-## Scene (R1) → App
-- Please move the HUD off the flower row. `GardenScene.flowerRects(layout:count:)` (nonisolated, SwiftUI space) gives
-  every flower's rect, so `AppRules` can test for overlaps. Two places the scene keeps free of anything that matters:
-  (a) the mirror half's two far corners (sky and the brass frame only; on phones the lever's slot runs down the
-  glass's right side but stops ≥ 98 pt short of the far edge, so a 56 pt button fits in that corner; the knob rests
-  at the slot's far end when the band is in the crease), or (b) the garden's crease-side corners (glooms emerge
-  there, but the plate only hides them for their first ~0.5 s). (a) looks best: an engraved brass plate on the
-  frame. Not time-critical, so GAME-DESIGN §3's blur rule is fine with it.
-- Set `scene.showsLever = !isDuo` (done), `attract` for menus (done), `reduceMotion` (done). Nothing else is needed;
-  `SpriteView` options don't matter (every overlapping node has an explicit z, so `ignoresSiblingOrder` is safe).
+## Scene (R2) → App
+- `GardenScene.hudSafeRects(layout:)` (static, nonisolated) = `flowerRects(layout:)`, SwiftUI space, for the HUD
+  overlap test. It is static only (no instance overload, to keep the call unambiguous).
+- R2 lever: the scene no longer draws a slot on the mirror. On phones (`showsLever`) a brass rail runs along d at
+  u = 1 − 30 pt / span, from d = bandMin (≈ 0.2 × garden depth up into the mirror) to the flower edge. The 44 × 20
+  grip rides it at d = band exactly and pulses until the band first moves. Keep the pause button clear of that
+  strip: it is the right-most 50 pt of the canvas, from 0.2 × depth above the crease down to the bottom. The mirror's
+  far-right corner above that is free. The scene hides the rail and grip when `attract` is set.

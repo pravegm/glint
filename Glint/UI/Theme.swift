@@ -105,11 +105,94 @@ struct AppCanvas: Equatable {
     var size: CGSize
     var insets: EdgeInsets
     var layout: GardenLayout
+    /// The Duo split layout: menus keep off the crease (`AppRules.menuRegions`).
+    var isDuo: Bool = false
 
     var compact: Bool { min(size.width, size.height) < 500 }
     var landscape: Bool { size.width > size.height }
     /// Room for two columns (a Duo's inner display, a phone held sideways).
     var wide: Bool { size.width >= 700 && size.width > size.height * 1.1 }
+    var regions: AppRules.MenuRegions { AppRules.menuRegions(layout: layout, insets: insets, isDuo: isDuo) }
+}
+
+/// A menu page in two parts. On a phone: one scrolling column (`top` then `bottom`), centred. On a Duo split layout:
+/// `top` (titles, art) on the mirror half and `bottom` (the controls) on the garden half, each in its own region
+/// `AppRules.creaseClearance` clear of the crease, so nothing tappable ever sits across the fold (R2 addendum).
+/// `scrolls` false: no scroll views (the level map lays itself out in the region it gets).
+struct SplitMenu<Top: View, Bottom: View>: View {
+    let canvas: AppCanvas
+    let scrolls: Bool
+    let maxWidth: CGFloat
+    let top: () -> Top
+    let bottom: () -> Bottom
+
+    init(canvas: AppCanvas, scrolls: Bool = true, maxWidth: CGFloat = 560, @ViewBuilder top: @escaping () -> Top,
+         @ViewBuilder bottom: @escaping () -> Bottom) {
+        self.canvas = canvas
+        self.scrolls = scrolls
+        self.maxWidth = maxWidth
+        self.top = top
+        self.bottom = bottom
+    }
+
+    var body: some View {
+        let regions = canvas.regions
+        ZStack {
+            if let secondary = regions.secondary {
+                SplitRegion(rect: secondary, scrolls: scrolls, maxWidth: maxWidth) { top() }
+                SplitRegion(rect: regions.primary, scrolls: scrolls, maxWidth: maxWidth) { bottom() }
+            } else {
+                SplitRegion(rect: regions.primary, scrolls: scrolls, maxWidth: maxWidth) {
+                    VStack(spacing: canvas.compact ? 14 : 18) {
+                        top()
+                        bottom()
+                    }
+                }
+            }
+        }
+        .frame(width: canvas.size.width, height: canvas.size.height)
+    }
+}
+
+/// One region of a `SplitMenu`: its content centred (scrolling when it is taller), placed at `rect`.
+struct SplitRegion<Content: View>: View {
+    let rect: CGRect
+    let scrolls: Bool
+    let maxWidth: CGFloat
+    let content: () -> Content
+
+    init(rect: CGRect, scrolls: Bool, maxWidth: CGFloat, @ViewBuilder content: @escaping () -> Content) {
+        self.rect = rect
+        self.scrolls = scrolls
+        self.maxWidth = maxWidth
+        self.content = content
+    }
+
+    var body: some View {
+        let w = max(rect.width, 1)
+        let h = max(rect.height, 1)
+        Group {
+            if scrolls {
+                ScrollView(.vertical) {
+                    content()
+                        .frame(maxWidth: maxWidth)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: h)
+                }
+                .scrollIndicators(.hidden)
+                .scrollBounceBehavior(.basedOnSize)
+            } else {
+                content()
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .frame(width: w, height: h)
+        .position(x: rect.midX, y: rect.midY)
+    }
 }
 
 // MARK: - Buttons
@@ -222,13 +305,16 @@ struct CardBackground: View {
     }
 }
 
-/// The dim glass over the live garden for full-screen menus.
+/// The dim glass over the live garden for full-screen menus. R2 (review P1-14): a real blur plus a deep #140F2E scrim,
+/// so the scene's rails and the sun don't show through as clutter.
 struct MenuScrim: View {
     var tint: Color = GlintTheme.dusk
 
     var body: some View {
         ZStack {
-            LinearGradient(colors: [GlintTheme.night.opacity(0.9), GlintTheme.indigo.opacity(0.8), tint.opacity(0.78)],
+            Rectangle().fill(.ultraThinMaterial)
+            Color(appHex: 0x140F2E).opacity(0.55)
+            LinearGradient(colors: [GlintTheme.night.opacity(0.55), GlintTheme.indigo.opacity(0.35), tint.opacity(0.5)],
                            startPoint: .top, endPoint: .bottom)
             RadialGradient(colors: [GlintTheme.peach.opacity(0.22), Color.clear], center: UnitPoint(x: 0.5, y: 0),
                            startRadius: 10, endRadius: 520)
