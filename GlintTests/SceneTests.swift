@@ -158,8 +158,9 @@ struct SceneTests {
         #expect(GardenMath.world(for: .level(11)) == 2)
         #expect(GardenMath.world(for: .level(21)) == 3)
         #expect(GardenMath.world(for: .level(30)) == 3)
-        #expect(GardenMath.world(for: .endless) == 3)
+        #expect(GardenMath.world(for: .endless) == 1)
         #expect(GardenMath.world(for: .daily(day: 40)) == 1)
+        for n in 1...30 { #expect(GardenMath.world(for: .level(n)) == LevelBook.world(of: n)) }
         var s = DawnSnapshot(mode: .level(4))
         s.sun = 0.6
         #expect(abs(GardenMath.dawn(s) - 0.6) < 0.0001)
@@ -294,6 +295,87 @@ struct SceneTests {
             #expect(GardenScene.hudSafeRects(layout: layout) == GardenScene.flowerRects(layout: layout))
             #expect(GardenScene.hudSafeRects(layout: layout).count == 5)
         }
+    }
+
+    // MARK: R2b: a ground per world, Long Night under the moon
+
+    @Test func eachModeGetsItsGround() {
+        #expect(GroundStyle.of(.level(1)) == .meadow)
+        #expect(GroundStyle.of(.level(10)) == .meadow)
+        #expect(GroundStyle.of(.level(11)) == .rooftops)
+        #expect(GroundStyle.of(.level(20)) == .rooftops)
+        #expect(GroundStyle.of(.level(21)) == .harbour)
+        #expect(GroundStyle.of(.level(30)) == .harbour)
+        #expect(GroundStyle.of(.endless) == .moonlit)
+        #expect(GroundStyle.of(.daily(day: 300)) == .meadow)
+        for n in 1...30 {
+            let world = LevelBook.world(of: n)
+            let want: GroundStyle = world == 2 ? .rooftops : (world == 3 ? .harbour : .meadow)
+            #expect(GroundStyle.of(.level(n)) == want)
+        }
+    }
+
+    @Test func theSceneSwitchesGroundsAndCachesThemPerWorld() {
+        let layout = SceneTests.layouts[0]
+        let scene = GardenScene(layout: layout)
+        let cases: [(PlayMode, GroundStyle, Bool)] = [(.level(2), .meadow, false), (.level(13), .rooftops, false),
+                                                      (.level(27), .harbour, false), (.endless, .moonlit, true),
+                                                      (.daily(day: 9), .meadow, false)]
+        for (mode, style, moon) in cases {
+            var s = DawnSnapshot(mode: mode, phase: .playing)
+            s.band = 0.4
+            scene.render(s, events: [], dt: SceneTests.step)
+            #expect(scene.groundStyle == style)
+            #expect(scene.mirrorMoonlit == moon)
+            for warm in [false, true] {
+                let key = GardenArt.groundKey(depth: layout.gardenDepth, span: layout.gardenSpan, warm: warm,
+                                              style: style)
+                #expect(GardenArt.has(key))
+            }
+        }
+        // Back to a world already seen: nothing new is drawn.
+        let before = GardenArt.builds
+        var again = DawnSnapshot(mode: .level(14), phase: .playing)
+        again.band = 0.4
+        for _ in 0..<30 { scene.render(again, events: [], dt: SceneTests.step) }
+        #expect(scene.groundStyle == .rooftops)
+        #expect(GardenArt.builds == before)
+    }
+
+    @Test func harbourGlintsSitOnThePuddles() {
+        let layout = SceneTests.layouts[0]
+        let scene = GardenScene(layout: layout)
+        var s = DawnSnapshot(mode: .level(24), phase: .playing)
+        s.band = 0.5
+        scene.render(s, events: [], dt: SceneTests.step)
+        let puddles = GardenMath.puddles(depth: layout.gardenDepth, span: layout.gardenSpan)
+        #expect(!puddles.isEmpty)
+        #expect(scene.glintSpots.count == GardenScene.glintCount)
+        for g in scene.glintSpots {
+            var near = false
+            for p in puddles {
+                let dx = (g.d - p.d) * Double(layout.gardenDepth)
+                let dy = (g.u - p.u) * Double(layout.gardenSpan)
+                if (dx * dx + dy * dy).squareRoot() <= Double(p.r) + 0.5 { near = true }
+            }
+            #expect(near)
+        }
+        // Puddles stay clear of the crease shade and the flower row.
+        for p in puddles {
+            #expect(p.d - Double(p.r / layout.gardenDepth) > GardenMath.creaseShade)
+            #expect(p.d < 0.85)
+        }
+    }
+
+    @Test func dailyIsGoldenHourAndLongNightIsAtNight() {
+        var d = DawnSnapshot(mode: .daily(day: 3))
+        d.sun = 0
+        #expect(GardenMath.dawn(d) > 0.5)
+        var e = DawnSnapshot(mode: .endless)
+        e.sun = 0.7
+        #expect(GardenMath.dawn(e) < 0.31)
+        #expect(abs(GardenMath.nightDepth(e) - 0.7) < 0.0001)
+        #expect(GardenMath.nightDepth(d) < 0.0001)
     }
 
     // MARK: Textures and pooling

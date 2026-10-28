@@ -5,7 +5,6 @@ struct SettingsView: View {
     @ObservedObject var controller: GameController
     @ObservedObject var settings: SettingsStore
     let canvas: AppCanvas
-    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
 
     var body: some View {
         let c = canvas.compact
@@ -41,7 +40,7 @@ struct SettingsView: View {
                         divider
                         SettingRow(symbol: "sparkles", title: "Reduce motion",
                                    detail: "Calmer light, no shimmer. Follows iOS until you change it",
-                                   isOn: reduceMotionBinding, compact: c)
+                                   isOn: $settings.reduceMotionShown, compact: c)
                     }
                     .padding(.vertical, 6)
                     .background(CardBackground())
@@ -63,12 +62,6 @@ struct SettingsView: View {
             }
         }
         .frame(width: canvas.size.width, height: canvas.size.height)
-    }
-
-    /// Shows the effective value (iOS's until the player chooses); flipping it records the player's choice.
-    private var reduceMotionBinding: Binding<Bool> {
-        Binding(get: { settings.reduceMotion(system: systemReduceMotion) },
-                set: { settings.reduceMotionChoice = $0 })
     }
 
     private var divider: some View {

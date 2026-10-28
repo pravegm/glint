@@ -646,7 +646,7 @@ struct R2LayoutTests {
             let pause = AppRules.rect(center: AppRules.hudCenter(u: 1, item: PlayHUD.pauseSize, layout: layout,
                                                                  insets: item.insets, margin: PlayHUD.margin),
                                       size: PlayHUD.pauseSize)
-            let flowers = GardenScene.flowerRects(layout: layout)
+            let flowers = GardenScene.hudSafeRects(layout: layout)
             #expect(flowers.count == 5)
             for flower in flowers {
                 #expect(!score.intersects(flower))
@@ -909,5 +909,21 @@ struct R2IconTests {
         if let image {
             #expect(IconPainter.stats(image).luminance < IconPainter.darkLuminance)
         }
+    }
+}
+
+struct R2LeverTests {
+    /// Scene R2: on phones the lever's rail is the right-most 50 pt, from 0.2 × garden depth above the crease down to
+    /// the bottom. The pause button (mirror far-right corner) stays clear of it.
+    @Test @MainActor func pauseClearsTheLeverRail() {
+        let phone = GardenLayout.make(size: CGSize(width: 402, height: 874), isDuo: false, swapHalves: false)
+        let insets = EdgeInsets(top: 59, leading: 0, bottom: 34, trailing: 0)
+        let pause = AppRules.rect(center: AppRules.hudCenter(u: 1, item: PlayHUD.pauseSize, layout: phone,
+                                                             insets: insets, margin: PlayHUD.margin),
+                                  size: PlayHUD.pauseSize)
+        let creaseY = phone.gardenRect.minY
+        let top = creaseY - phone.gardenDepth * 0.2
+        let rail = CGRect(x: 402 - 50, y: top, width: 50, height: 874 - top)
+        #expect(!pause.intersects(rail))
     }
 }

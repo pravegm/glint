@@ -121,6 +121,8 @@ jobs:
             sleep 1
           done
           to 30 xcrun simctl terminate "$UDID" com.pravegm.glint 2>/dev/null || true
+          # R2 (REVIEW-1 P0-1): R1 rendered a solid black icon and still said "ok". The app logs this when it is dark.
+          if grep -q "GLINT-T icon dark" "$LOG"; then echo "::error::the rendered app icon is near-black (GLINT-T icon dark)"; ICON_DARK=1; fi
           if [ -n "$src" ] && [ -f "$src" ]; then
             cp "$src" "$OUT/app-icon-1024.png"
             dims=$(sips -g pixelWidth -g pixelHeight "$OUT/app-icon-1024.png" 2>/dev/null | awk '/pixel/ {printf "%s ", $2}')
@@ -128,6 +130,7 @@ jobs:
           else
             echo "::warning::no app icon PNG (no GLINT-ICON line)"
           fi
+          [ "${ICON_DARK:-0}" = 1 ] && exit 1 || exit 0
 
       - name: Upload logs
         if: always()

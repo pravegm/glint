@@ -49,6 +49,15 @@ final class SettingsStore: ObservableObject {
     /// The effective Reduce motion: the player's choice, else iOS.
     func reduceMotion(system: Bool) -> Bool { AppRules.reduceMotion(choice: reduceMotionChoice, system: system) }
 
+    /// iOS's Reduce Motion (the controller keeps it current; never saved).
+    @Published var systemReduceMotion: Bool = false
+
+    /// Settings' Reduce motion switch: shows the effective value, and flipping it records the player's choice.
+    var reduceMotionShown: Bool {
+        get { reduceMotion(system: systemReduceMotion) }
+        set { reduceMotionChoice = newValue }
+    }
+
     /// Demo `sound=0`: silent for this launch, never saved (pushed by the next `apply()`, which launch calls).
     var muted: Bool = false
 

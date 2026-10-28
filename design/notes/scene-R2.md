@@ -21,8 +21,28 @@ Tests (SceneTests): 9 new, plus a rewritten lever test (the grip's floor d equal
 - `Tuning.creaseShade: Double` and `Tuning.isShaded(d: Double) -> Bool`, as the brief names them. They are used only through `GardenMath.creaseShade` / `GardenMath.isShaded(d:)`, so a rename is a one-line fix in GardenArt.swift.
 - `ShadeState` / `snapshot.shades` from Contracts (already there).
 
-## Not done (not in my list)
-REVIEW-1 P1-12 (Long Night moonlit, a silver band) and P1-13 (a different ground per world). Both are good R3 candidates for the Scene.
+## R2b: a ground per world, Long Night, Today's Dawn (REVIEW-1 P1-12/13)
+- `GroundStyle.of(mode)`: levels go through `LevelBook.world(of:)` (1 Meadow, 2 Rooftops, 3 Harbour); Long Night →
+  `.moonlit`; Today's Dawn → Meadow. `GardenMath.world(for:)` now uses `LevelBook.world(of:)` too, and Long Night's
+  mirror horizon is the meadow.
+- **Rooftops** (`GroundWorlds.drawRooftops`): staggered terracotta tiles with slate patches, overlap shadows and lit
+  lips, moss (thicker near the crease), 2–3 chimney stacks with pots near the side edges (out of the main play), a
+  metal gutter with brackets, then a stone ledge as the flower edge with a wooden **window box** under each flower.
+- **Harbour** (`GroundWorlds.drawHarbour`): weathered boardwalk planks along u with staggered joints, grain and
+  nails, salt/damp patches, 6–9 **puddles** (`GardenMath.puddles`, seeded; they keep clear of the shade and the flower
+  row), a rope coil, a dock beam with rope at the edge, terracotta **pots** under the flowers. The band's 22 glints sit
+  on the puddles here.
+- Every ground keeps the crease's ink and darkening (the shade strip, the rim and the glooms read the same), the flower
+  row and the light. Night and dawn versions share one seed and crossfade with `sun` as before.
+- **Long Night**: the moonlit meadow (deep blue; silvered as the "dawn" layer). The mirror shows a big cratered moon
+  that climbs with the night's depth (`GardenMath.nightDepth`), a cool halo, faint rays, no flares, the night sky and
+  stars. The light is silver-gold moonlight (pool #F2DDA0, core #F6F2E6), still warm enough to read.
+- **Today's Dawn**: the meadow at golden hour (art dawn 0.55 → 1). I left out the date flag (the App can show a date
+  chip).
+- Caching: ground textures are keyed by style and size and built on the first use of each world (at session start,
+  when the mode changes), never per frame. The last 8 keys are kept. The moon disc is built up front.
+- Tests: mode → ground for all 30 levels plus both modes, the scene switching grounds (and the moon) and reusing them
+  with zero builds, harbour glints on puddles, golden hour and night depth. The R1 endless-world expectation is now 1.
 
 ## Compile risks
 - `GardenArt.LightProfile` is nested in the `@MainActor` enum `GardenArt` and used only from MainActor code.

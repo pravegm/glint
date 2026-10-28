@@ -248,6 +248,20 @@ final class GardenMirror {
     /// The shade clouds on screen now.
     var shadeCloudCount: Int { shadeClouds.filter { !$0.isHidden }.count }
 
+    /// R2b: Long Night: the moon instead of the sun (`moonDepth` = the night's depth, set each frame by the scene).
+    private(set) var moonlit = false
+    var moonDepth: CGFloat = 0
+    /// The moonlight's silver-gold.
+    static let moonGold = GardenInk(hex: 0xE8DDB0)
+
+    func setMoonlit(_ on: Bool) {
+        guard on != moonlit else { return }
+        moonlit = on
+        sun.texture = on ? MirrorArt.moonDisc : MirrorArt.sunDisc
+        hotSpot.color = (on ? GardenMirror.moonGold : GardenInk(hex: 0xFFD98A)).ui
+        tintKey = -1
+    }
+
     /// The world's horizon (1 Meadow, 2 Rooftops, 3 Harbour).
     func setWorld(_ w: Int) {
         let k = min(max(w, 1), 3)
@@ -387,7 +401,8 @@ final class GardenMirror {
     func update(dt: CGFloat, time: CGFloat, dawn: CGFloat, band: CGFloat, light: CGFloat, veilLevel: CGFloat,
                 lever: Bool, leverT: CGFloat, motion: CGFloat) {
         guard inner.width > 1, inner.height > 1 else { return }
-        let d = GardenMath.clamp(dawn, 0, 1)
+        // R2b: under the moon the sky stays at night (stars out, night clouds).
+        let d = moonlit ? 0 : GardenMath.clamp(dawn, 0, 1)
 
         // The sky's three gradients.
         skyDawn.alpha = GardenMath.smooth(0.02, 0.45, d)
@@ -400,9 +415,11 @@ final class GardenMirror {
         // The sun: half-hidden on the horizon at 0, high and bright at 1.
         let horizon = inner.minY + hillsHeight * 0.5
         let top = inner.maxY - inner.height * 0.2
-        let climb = pow(d, 0.85)
-        let r = sunRadius * (1.15 - 0.2 * d)
-        sunPoint = CGPoint(x: inner.midX + inner.width * 0.12, y: horizon - r * 0.35 + climb * max(top - horizon, 0))
+        // R2b: the moon rides high and big, climbing as the night deepens.
+        let climb: CGFloat = moonlit ? 0.5 + 0.35 * GardenMath.clamp(moonDepth, 0, 1) : pow(d, 0.85)
+        let r = moonlit ? sunRadius * 1.3 : sunRadius * (1.15 - 0.2 * d)
+        let sx: CGFloat = moonlit ? -0.14 : 0.12
+        sunPoint = CGPoint(x: inner.midX + inner.width * sx, y: horizon - r * 0.35 + climb * max(top - horizon, 0))
         sun.position = sunPoint
         sun.size = CGSize(width: r * 2, height: r * 2)
         sun.colorBlendFactor = 0.55 * (1 - d)
@@ -445,8 +462,17 @@ final class GardenMirror {
         shaft.position = sunPoint
         shaft.zRotation = atan2(vx, -vy)
         shaft.size = CGSize(width: r * 3.2, height: len)
-        shaft.color = GardenInk(hex: 0xFFD27A).ui
+        shaft.color = (moonlit ? GardenMirror.moonGold : GardenInk(hex: 0xFFD27A)).ui
         shaft.alpha = 0.24 * light
+        if moonlit {
+            // Silver: an untinted moon, a cool halo, faint rays.
+            sun.colorBlendFactor = 0
+            sunGlow.color = GardenInk(hex: 0xBCCCF4).ui
+            sunGlow.alpha = 0.5
+            sunRays.color = GardenInk(hex: 0xD6E0FF).ui
+            sunRays.alpha = 0.08
+            for fl in flares { fl.alpha = 0 }
+        }
 
         // R2: a hot spot on the glass where the light leaves the mirror for the garden.
         hotSpotPoint = target

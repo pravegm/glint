@@ -194,6 +194,12 @@ final class GardenScene: SKScene {
     private(set) var floodLevel: CGFloat = 0
     private var dragTouch: ObjectIdentifier?
     private var groundKeys: [String] = []
+    /// R2b: the ground drawn now (by `snapshot.mode`: Meadow / Rooftops / Harbour, Long Night's moonlit meadow).
+    private(set) var groundStyle: GroundStyle = .meadow
+    /// R2b: the mirror shows the moon (Long Night).
+    var mirrorMoonlit: Bool { mirror.moonlit }
+    /// R2b: the glint spots now (floor u, d): on the harbour they sit on the puddles.
+    var glintSpots: [(u: Double, d: Double)] { dewSpots.map { (u: $0.u, d: $0.d) } }
     private var rng = GardenRNG(seed: 0x6A2D)
 
     // MARK: Read-outs (tests, the App)
@@ -388,9 +394,8 @@ final class GardenScene: SKScene {
         }
         for n in [groundNight, groundDawn, nightVeil] { n.anchorPoint = .zero }
 
-        // Dew glints: fixed drops that sparkle where the band crosses them.
-        var dr = GardenRNG(seed: 0xDE_77)
-        for _ in 0..<22 {
+        // Dew glints: fixed drops (R2b: puddles on the harbour's boardwalk) that sparkle where the band crosses them.
+        for _ in 0..<GardenScene.glintCount {
             let s = SKSpriteNode(texture: GardenArt.sparkle)
             s.blendMode = .add
             s.colorBlendFactor = 1
@@ -399,8 +404,6 @@ final class GardenScene: SKScene {
             s.isHidden = true
             garden.addChild(s)
             dew.append(s)
-            dewSpots.append(DewSpot(u: Double(dr.range(0.03, 0.97)), d: Double(dr.range(0.08, 0.84)),
-                                    phase: dr.range(0, 6.28), size: dr.range(9, 16)))
         }
 
         flowersRoot.zPosition = 12
@@ -505,15 +508,7 @@ final class GardenScene: SKScene {
         let depth = max(f.depth, 1)
         let span = max(f.span, 1)
 
-        // The lawn, cached per size (a few recent sizes are kept for rotating back and forth).
-        groundNight.texture = GardenArt.ground(depth: depth, span: span, warm: false)
-        groundDawn.texture = GardenArt.ground(depth: depth, span: span, warm: true)
-        let keys = [GardenArt.groundKey(depth: depth, span: span, warm: false),
-                    GardenArt.groundKey(depth: depth, span: span, warm: true)]
-        groundKeys.removeAll { keys.contains($0) }
-        groundKeys.append(contentsOf: keys)
-        if groundKeys.count > 4 { groundKeys.removeFirst(groundKeys.count - 4) }
-        GardenArt.purge(prefix: "ground-", keeping: groundKeys)
+        applyGround()
         for n in [groundNight, groundDawn, nightVeil] {
             n.position = .zero
             n.size = CGSize(width: depth, height: span)
@@ -550,17 +545,78 @@ final class GardenScene: SKScene {
         grip.zRotation = atan2(f.uUnit.dy, f.uUnit.dx)
         gripGlow.size = CGSize(width: 96, height: 64)
         gripGlow.zRotation = grip.zRotation
-        for (i, s) in dew.enumerated() {
-            let sp = dewSpots[i]
-            s.position = f.local(u: sp.u, d: sp.d)
-            s.size = CGSize(width: sp.size, height: sp.size)
-        }
         placeFlowers()
         mirror.apply(rect: f.mirrorRect, towardCrease: f.dUnit)
         flood.size = layout.size
         flood.position = CGPoint(x: layout.size.width / 2, y: layout.size.height / 2)
         let fr = max(layout.size.width, layout.size.height) * 1.3
         floodRays.size = CGSize(width: fr, height: fr)
+    }
+
+    static let glintCount = 22
+
+    /// R2b: the ground for the current style and size (cached per style and size; a few recent ones are kept for
+    /// rotating and for going back to a world), and the glint spots that go with it.
+    private func applyGround() {
+        let f = gardenFrame
+        let depth = max(f.depth, 1)
+        let span = max(f.span, 1)
+        let style = groundStyle
+        groundNight.texture = GardenArt.ground(depth: depth, span: span, warm: false, style: style)
+        groundDawn.texture = GardenArt.ground(depth: depth, span: span, warm: true, style: style)
+        let keys = [GardenArt.groundKey(depth: depth, span: span, warm: false, style: style),
+                    GardenArt.groundKey(depth: depth, span: span, warm: true, style: style)]
+        groundKeys.removeAll { keys.contains($0) }
+        groundKeys.append(contentsOf: keys)
+        if groundKeys.count > 8 { groundKeys.removeFirst(groundKeys.count - 8) }
+        GardenArt.purge(prefix: "ground-", keeping: groundKeys)
+
+        // Glints: scattered dew on lawns and roofs; on the boardwalk, the puddles shine.
+        var dr = GardenRNG(seed: 0xDE_77)
+        dewSpots.removeAll(keepingCapacity: true)
+        if style == .harbour {
+            let puddles = GardenMath.puddles(depth: depth, span: span)
+            for i in 0..<GardenScene.glintCount {
+                guard !puddles.isEmpty else { break }
+                let pd = puddles[i % puddles.count]
+                let ox = dr.range(-0.5, 0.5) * pd.r
+                let oy = dr.range(-0.8, 0.8) * pd.r
+                dewSpots.append(DewSpot(u: pd.u + Double(oy / span), d: pd.d + Double(ox / depth),
+                                        phase: dr.range(0, 6.28), size: dr.range(12, 22)))
+            }
+        } else {
+            for _ in 0..<GardenScene.glintCount {
+                dewSpots.append(DewSpot(u: Double(dr.range(0.03, 0.97)), d: Double(dr.range(0.14, 0.84)),
+                                        phase: dr.range(0, 6.28), size: dr.range(9, 16)))
+            }
+        }
+        for (i, s) in dew.enumerated() {
+            guard i < dewSpots.count else {
+                s.isHidden = true
+                continue
+            }
+            let sp = dewSpots[i]
+            s.position = f.local(u: sp.u, d: sp.d)
+            s.size = CGSize(width: sp.size, height: sp.size)
+        }
+    }
+
+    /// R2b: the light's colours: warm sunlight, or Long Night's silver-gold moonlight (still warm enough to read).
+    private func applyLightPalette() {
+        if groundStyle.isMoonlit {
+            lightPool.setColor(GardenInk(hex: 0xF2DDA0).ui)
+            lightCore.setColor(GardenInk(hex: 0xF6F2E6).ui)
+            lightHalo.setColor(GardenInk(hex: 0xC8D4FF).ui)
+            lightBeam.setColor(GardenInk(hex: 0xD9D2B0).ui)
+            lightTrail.setColor(GardenInk(hex: 0xE0C88A).ui)
+        } else {
+            lightPool.setColor(GardenInk(hex: 0xFFC24A).ui)
+            lightCore.setColor(GardenInk(hex: 0xFFF4D6).ui)
+            lightHalo.setColor(GardenInk(hex: 0xFFB04A).ui)
+            lightBeam.setColor(GardenInk(hex: 0xFFC86A).ui)
+            lightTrail.setColor(GardenInk(hex: 0xFFB24A).ui)
+        }
+        mirror.setMoonlit(groundStyle.isMoonlit)
     }
 
     private func rebuildFlowers(count n: Int) {
@@ -708,6 +764,14 @@ final class GardenScene: SKScene {
         let dawn = GardenMath.dawn(s)
         let w = GardenMath.world(for: s.mode)
         if mirror.world != w { mirror.setWorld(w) }
+        // R2b: the world's ground (built on first use per world, then cached).
+        let style = GroundStyle.of(s.mode)
+        if style != groundStyle {
+            groundStyle = style
+            applyGround()
+            applyLightPalette()
+        }
+        mirror.moonDepth = GardenMath.nightDepth(s)
 
         framePopped.removeAll(keepingCapacity: true)
         frameScorched.removeAll(keepingCapacity: true)

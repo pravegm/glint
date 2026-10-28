@@ -229,7 +229,8 @@ final class GameController: ObservableObject, GardenDriver {
         guard canvas.width > 1, canvas.height > 1 else { return }
         let duo = AppRules.isDuo(window: canvas, hingeSeen: hingeSeen, demoFold: demoFold)
         if duo != isDuo { isDuo = duo }
-        let fresh = GardenLayout.make(size: canvas, isDuo: duo, swapHalves: settings.swapHalves)
+        // Swap halves is a Duo setting (hidden on phones, where it would also put the lever under the pause button).
+        let fresh = GardenLayout.make(size: canvas, isDuo: duo, swapHalves: duo && settings.swapHalves)
         let changed = fresh != layout || scene == nil
         if fresh != layout { layout = fresh }
         drag.layout = fresh
@@ -259,6 +260,7 @@ final class GameController: ObservableObject, GardenDriver {
 
     func setSystemReduceMotion(_ on: Bool) {
         systemReduceMotion = on
+        if settings.systemReduceMotion != on { settings.systemReduceMotion = on }
         refreshMotion()
     }
 
