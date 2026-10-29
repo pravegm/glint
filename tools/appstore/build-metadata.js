@@ -153,10 +153,10 @@ const meta = {
   leaderboards,
   screenshots,
   nomination: {
-    _comment: 'docs/appstore/featuring-nomination.md. notes = Helpful Details. submit: true presses Submit (a saved draft is not a nomination). Submit by Mon 23 Nov 2026 (3 weeks before the Tue 15 Dec launch); the tool submits it in runbook §3.',
+    _comment: 'docs/appstore/featuring-nomination.md. notes = Helpful Details. submit: false (R5): the tool saves it as a draft; the founder reads it and presses Submit in App Store Connect > Featuring > Nominations by Mon 23 Nov 2026 (3 weeks before launch). Set true to let the tool submit.',
     name: nomName, type: 'APP_LAUNCH', description: nomDesc, notes: nomNotes, publishStartDate: LAUNCH,
     deviceFamilies: ['IPHONE'], locales: ['en-GB', 'en-US'], supplementalMaterialsUris: [site],
-    hasInAppEvents: false, launchInSelectMarketsFirst: false, preOrderEnabled: false, submit: true
+    hasInAppEvents: false, launchInSelectMarketsFirst: false, preOrderEnabled: false, submit: false
   }
 };
 

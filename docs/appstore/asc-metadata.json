@@ -409,7 +409,7 @@
     ]
   },
   "nomination": {
-    "_comment": "docs/appstore/featuring-nomination.md. notes = Helpful Details. submit: true presses Submit (a saved draft is not a nomination). Submit by Mon 23 Nov 2026 (3 weeks before the Tue 15 Dec launch); the tool submits it in runbook §3.",
+    "_comment": "docs/appstore/featuring-nomination.md. notes = Helpful Details. submit: false (R5): the tool saves it as a draft; the founder reads it and presses Submit in App Store Connect > Featuring > Nominations by Mon 23 Nov 2026 (3 weeks before launch). Set true to let the tool submit.",
     "name": "Glint: Sun Mirror - App Launch - iPhone Duo light game",
     "type": "APP_LAUNCH",
     "description": "Glint turns the top half of iPhone Duo into a mirror. Open the phone and it catches the sunrise, throwing a band of light across the garden on the other half. The phone's angle is the aim: the wider you open it, the further the light reaches, smoothly and both ways, and shut means dark.\n\nShadow critters seep out of the crease towards five flowers. Light pops them in gold sparks and petals, and a sweep through a crowd climbs a rising scale of notes. Fireflies must be spared: they replant lost flowers. Five kinds of shadow each want a different move, from flocks of wisps to brutes that have to be followed.\n\n30 handmade sunrises in three worlds, with stars to earn, then an endless Long Night and a daily Today's Dawn for everyone. Every level starts with the phone shut; shutting it pauses. Other iPhones aim the light by dragging. Every sound is synthesized in the app. No ads, no in-app purchases, no data collected.",
@@ -428,6 +428,6 @@
     "hasInAppEvents": false,
     "launchInSelectMarketsFirst": false,
     "preOrderEnabled": false,
-    "submit": true
+    "submit": false
   }
 }

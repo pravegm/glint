@@ -2221,6 +2221,9 @@ final class Engine {
             }
             if n.submit && state == "DRAFT" { patch["submitted"] = true; lines.append("submitted: false → true (presses Submit)") }
             if patch.isEmpty { same("nomination \(short(name)) (\(state))"); return }
+            // Glint R5 (asc run 40926210238): Apple's PATCH needs `submitted` or `archived` every time ("At least one of
+            // parameters 'submitted or archived' is required"). Keep the current state when we're not submitting.
+            if patch["submitted"] == nil { patch["submitted"] = (state == "SUBMITTED") }
             try await update("nomination \(short(name)) (\(state))", "/v1/nominations/\(idOf(cur))", type: "nominations", id: idOf(cur), attributes: patch, lines: lines)
         } else {
             var a = n.attributes
