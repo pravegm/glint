@@ -51,3 +51,10 @@
 - Founder did the bundle ID, app record and 4 secrets (29 Oct ~13:00). **TestFlight 1.0 (2) uploaded** (run
   40878725064; archive unsigned + ad-hoc entitlements, Game Center entitlement in the App
   Store signature). Apple processing next.
+- R5 (founder device feedback: "slow in the beginning", "a little easy"): action within 1 s, empty field ≤ 2.3 s
+  (test-enforced), L1–5 35–50 s, ramp ~3 levels earlier. CI per-world: 0.3 wins 90 / 68 / 7 %, 0.6 100 / 100 / 90 %,
+  0.9 100 % (★★★ 100 / 98 / 88 %). QA sweep: 4 reviewers (design/QA-R5-*.md), ~60 findings fixed (save on sunrise,
+  cover pause without hinge, portrait-only phones, Mac as phone, VoiceOver light control, FX pools, audio interruption
+  repair…). 285 tests. iPhone SE fallback captures added to CI.
+- R5 regression caught by the Duo sim (40896758284: Duo locked onto drag; the hinge API's early nil) → fixed; Duo sim
+  40911325933 **7/7 PASS** for the first time. Store pipeline trial OK (9/10, empty-garden frames → busy freezes).
