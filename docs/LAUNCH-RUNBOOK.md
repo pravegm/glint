@@ -190,7 +190,7 @@ This one run fills in: the name, subtitle, description, keywords, promotional te
 | 11 | Turn the Duo sideways and hold it **like a book**; play a few seconds. Then Settings → **Swap halves**, and play again | Both poses play; the mirror and garden swap sides. Did one half of the screen blur for a moment when you started folding from flat? Which half, for how long? |
 | 12 | Open the phone **completely flat** during a level | Nothing bad: the light just stays at the far edge. No warning |
 | 13 | Flip the **silent switch on**, play a few seconds, then open **Settings** and try **Sound**, **Music**, **Haptics** and **Reduce motion** | Sound plays on silent (that's the plan). Do the switches work? With Reduce motion on, is the shimmer and shake gone? |
-| 14 | **On a regular iPhone** (or lend yours to someone): play Level 1 and Level 6 by **dragging** | "Drag down to let the light in". Dragging anywhere moves the light like a trackpad and a **brass lever** on the mirror follows. Is it as fun as on the Duo? Anything that only makes sense on a Duo? |
+| 14 | **On a regular iPhone** (or lend yours to someone): play Level 1 and Level 6 by **dragging** | "Drag down to let the light in". Dragging anywhere moves the light like a trackpad, and a **gold grip** on the brass rail at the garden's right edge shows where it is. Is it as fun as on the Duo? Anything that only makes sense on a Duo? |
 | 15 | Play **5 levels in a row**, any you like | Then note: is the Duo **warm**? Hands or wrists tired? Did you want "one more"? Was world 1 too easy? |
 
 **Send Claude this (copy, fill in, paste in chat), plus the recordings and any screenshots:**
@@ -209,7 +209,7 @@ Glint build NUMBER FROM TESTFLIGHT, iPhone Duo, iOS VERSION
 11 Book pose works: yes/no   Swap halves works: yes/no   Blur: left / right / none, for about N s
 12 Flat was fine: yes/no
 13 Sound on silent: yes/no   Switches work: yes/no   Reduce motion calmer: yes/no
-14 Regular iPhone drag fun 1-5:   Lever follows: yes/no   Anything Duo-only on the phone:
+14 Regular iPhone drag fun 1-5:   Grip follows: yes/no   Anything Duo-only on the phone:
 15 Warm after 5 levels: no / a little / hot   Want one more 1-5:   World 1 too easy: yes/no
 Best moment:
 Worst moment:
