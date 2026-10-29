@@ -296,10 +296,22 @@ enum AppRules {
 
     /// Wait for the hinge before starting (see `PlayStage.checking`).
     static func needsHingeCheck(hasHinge: Bool, pilotOrFixed: Bool, hingeSeen: Bool, duoLog: Bool,
-                                sinceLaunch: Double, unavailable: Bool = false) -> Bool {
-        // R5 (QA P2-4): once the hinge API has said "no hinge" this launch, never wait for it again.
-        guard !hasHinge, !pilotOrFixed, !unavailable else { return false }
-        return hingeSeen || duoLog || sinceLaunch < launchWindow
+                                sinceLaunch: Double, unavailable: Bool = false, duoShaped: Bool = false) -> Bool {
+        guard !hasHinge, !pilotOrFixed else { return false }
+        // R5 fix (Duo run 40896758284): a Duo-shaped inner display, a saved Duo flag or the Duo CI launch always
+        // waits for the first hinge sample: an early "no hinge" callback (sent before the first report) must not
+        // make a Duo choose drag.
+        if duoShaped || hingeSeen || duoLog { return true }
+        // R5 (QA P2-4): elsewhere, once the hinge API has said "no hinge" this launch, never wait for it again.
+        if unavailable { return false }
+        return sinceLaunch < launchWindow
+    }
+
+    /// R5 fix: the per-session source lock may UPGRADE drag → hinge when the first hinge sample arrives, as long as
+    /// the session is still waiting for its first light and the player hasn't dragged. Hinge → drag, or drag after a
+    /// drag, never switches.
+    static func mayUpgradeToHinge(phase: SessionPhase, dragMoved: Bool) -> Bool {
+        phase == .waiting && !dragMoved
     }
 
     /// Every level starts closed on a Duo: an open phone first shows "Close the phone to start".

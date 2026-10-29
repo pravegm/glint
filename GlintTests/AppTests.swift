@@ -1280,7 +1280,7 @@ struct R5Tests {
         #expect(!ProgressRules.hingeSeen(d, machine: "iPhone17,3"))
         d.hingeMachine = ""
         #expect(!ProgressRules.hingeSeen(d, machine: "iPhone19,9"))
-        #expect(!AppRules.needsHingeCheck(hasHinge: false, pilotOrFixed: false, hingeSeen: true, duoLog: false,
+        #expect(!AppRules.needsHingeCheck(hasHinge: false, pilotOrFixed: false, hingeSeen: false, duoLog: false,
                                           sinceLaunch: 0.2, unavailable: true))
     }
 
@@ -1376,5 +1376,84 @@ struct R5bTests {
         #expect(abs(DemoMode.stopDelay(for: .sweep) - 0.12) < 1e-9)
         #expect(abs(DemoMode.stopDelay(for: .eaten) - 0.3) < 1e-9)
         #expect(!DemoMode.Stop.busy.matches(.nightWins))
+    }
+}
+
+// MARK: - R5 fix: Duo run 40896758284 (drag locked before the first hinge report)
+
+struct DuoHingeRegressionTests {
+    @Test func aDuoAlwaysWaitsForItsHinge() {
+        // The early "no hinge" callback must not make a Duo-shaped canvas (or a saved flag, or duolog) skip the wait.
+        #expect(AppRules.needsHingeCheck(hasHinge: false, pilotOrFixed: false, hingeSeen: false, duoLog: false,
+                                         sinceLaunch: 100, unavailable: true, duoShaped: true))
+        #expect(AppRules.needsHingeCheck(hasHinge: false, pilotOrFixed: false, hingeSeen: false, duoLog: true,
+                                         sinceLaunch: 100, unavailable: true))
+        #expect(!AppRules.needsHingeCheck(hasHinge: false, pilotOrFixed: false, hingeSeen: false, duoLog: false,
+                                          sinceLaunch: 100, unavailable: true, duoShaped: false))
+        #expect(AppRules.mayUpgradeToHinge(phase: .waiting, dragMoved: false))
+        #expect(!AppRules.mayUpgradeToHinge(phase: .waiting, dragMoved: true))
+        #expect(!AppRules.mayUpgradeToHinge(phase: .playing, dragMoved: false))
+    }
+
+    /// The exact CI sequence: a fresh install (no stored flag), a 951 × 669 Duo canvas, `screen=play;level=8;duolog=1`,
+    /// an early "no hinge" callback, then the first hinge sample about a second later.
+    @Test @MainActor func freshInstallDuoReachesTheHinge() {
+        let store = ProgressStore(inMemory: ProgressData())
+        let c = GameController(store: store, settings: SettingsStore(defaults: nil),
+                               demo: DemoMode.parse("screen=play;level=8;duolog=1"))
+        c.canvasChanged(CGSize(width: 951, height: 669))
+        #expect(c.isDuo)
+        c.hingeUnavailable()
+        c.play(.level(8))
+        // No source chosen yet: no drag prompt, no session.
+        #expect(c.stage == .checking)
+        #expect(c.prompt == nil)
+        let t0 = CACurrentMediaTime()
+        c.hingeSample(angle: 156.1, time: t0)
+        #expect(c.hingeDriven)
+        #expect(c.stage == .closeFirst)
+        #expect(c.prompt == .closeToStart)
+        // Shut the phone: the level starts on the hinge, asking to open it.
+        for k in 1...20 { c.hingeSample(angle: 5, time: t0 + 0.05 * Double(k)) }
+        #expect(c.stage == .live)
+        #expect(c.hingeDriven)
+        #expect(c.prompt == .openToLight)
+        // The cover display pauses; coming back to the inner display clears it.
+        c.coverChanged(true)
+        #expect(c.pause.cover)
+        #expect(c.isPaused)
+        c.coverChanged(false)
+        #expect(!c.pause.cover)
+    }
+
+    /// A session that began on drag before the first report upgrades to the hinge (and goes back to "Close the phone
+    /// to start") if it's still waiting and nobody dragged.
+    @Test @MainActor func dragUpgradesToHingeWhileWaiting() {
+        let c = GameController(store: ProgressStore(inMemory: ProgressData()), settings: SettingsStore(defaults: nil),
+                               demo: DemoMode(raw: ""))
+        c.canvasChanged(CGSize(width: 402, height: 874))
+        c.hingeUnavailable()
+        c.play(.level(1))
+        #expect(c.stage == .live)
+        #expect(c.dragDriven)
+        c.hingeSample(angle: 150, time: CACurrentMediaTime())
+        #expect(c.hingeDriven)
+        #expect(c.stage == .closeFirst)
+    }
+
+    /// Once the player has dragged, the lock holds (no switch under their finger).
+    @Test @MainActor func noSwitchAfterTheFirstDrag() {
+        let c = GameController(store: ProgressStore(inMemory: ProgressData()), settings: SettingsStore(defaults: nil),
+                               demo: DemoMode(raw: ""))
+        c.canvasChanged(CGSize(width: 402, height: 874))
+        c.hingeUnavailable()
+        c.play(.level(1))
+        c.dragBegan(CGPoint(x: 200, y: 500))
+        c.dragMoved(CGPoint(x: 200, y: 640))
+        c.dragEnded()
+        c.hingeSample(angle: 150, time: CACurrentMediaTime())
+        #expect(c.dragDriven)
+        #expect(!c.hingeDriven)
+        #expect(c.stage == .live)
     }
 }

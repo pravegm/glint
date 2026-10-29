@@ -120,3 +120,25 @@ Nothing here has been compiled (CI is the compiler). Nothing is committed. Sourc
 - `pilotLag=<s>` (0…2): the demo pilot acts on the band it wanted `s` seconds ago, so more glooms build up; the skill
   is unchanged.
 - Tests: `R5bTests`.
+
+## R5 fix: Duo regression (run 40896758284)
+- **Cause.** On the Duo simulator the hinge API's early "no hinge" callback (it fires before the first report) set
+  R5's `hingeUnavailableSeen`. That skipped the 1.5 s hinge wait (QA P2-4), so the session started on drag. R5's
+  per-session lock then kept it on drag after the first report (`GLINT-H … 156.1`) arrived.
+- **Fix 1.** `needsHingeCheck` now always waits on a Duo-shaped inner display, a saved Duo flag, or `duolog=1`,
+  whatever an early "no hinge" says. Only other canvases skip the wait after "unavailable". An early nil on a
+  Duo-shaped canvas never clears the saved flag.
+- **Fix 2.** The source lock may upgrade drag (or a demo fallback source) to the hinge on the first report, while the
+  session is still `.waiting` and nobody has dragged (`AppRules.mayUpgradeToHinge`). The session is then dropped and
+  the level restarts at "Close the phone to start" (rule 1). Hinge → drag, or a switch after the player has dragged,
+  never happens. This is checked on every hinge sample and every play frame; it logs
+  `GLINT-T source hinge (upgraded from drag)`.
+- **A fresh install** reaches the hinge without any stored flag: the Duo shape alone makes it wait, and the first
+  report drives it.
+- **Tests: `DuoHingeRegressionTests`.**
+  - The exact CI sequence on a real `GameController`: 951×669, `duolog=1`, an early "no hinge", Play. It stays
+    `.checking` with no prompt. The 156° report gives `closeFirst` and "Close the phone to start". Shutting starts the
+    session on the hinge with "Open the phone to let the light in". The cover display pauses and resumes.
+  - Drag upgrades to the hinge while waiting.
+  - No switch after a drag.
+  - The pure rules.

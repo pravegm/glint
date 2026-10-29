@@ -109,7 +109,8 @@ jobs:
       - name: Collect the badges (IDs checked against the app, flattened to opaque RGB)
         run: |
           if [ -d "$RUNNER_TEMP/ci-shots/badges" ]; then
-            grep -h "GLINT-T badges" "$RUNNER_TEMP/ci-shots/logs/badges.txt" || echo "::warning::no GLINT-T badges line in logs/badges.txt"
+            # The scenario is named 20-badges in ci/scenarios.txt, so its log is logs/20-badges.txt.
+            grep -h "GLINT-T badges" "$RUNNER_TEMP"/ci-shots/logs/*badges*.txt 2>/dev/null || echo "::warning::no GLINT-T badges line in logs/*badges*.txt"
             xcrun swift tools/appstore/badges.swift --from "$RUNNER_TEMP/ci-shots/badges" --out tools/appstore/badges
           else
             # The app doesn't render its badges yet (docs/appstore/achievements.md "Images": screen=badges, one

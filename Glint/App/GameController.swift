@@ -343,14 +343,46 @@ final class GameController: ObservableObject, GardenDriver {
             refreshLayout()
         }
         refreshLever()
+        upgradeToHingeIfNeeded()
         checkGates()
+    }
+
+    /// The window looks like a Duo's inner display (never on a Mac).
+    private var duoShaped: Bool {
+        !onMac && AppRules.looksLikeDuoInner(canvas)
+    }
+
+    /// R5 fix (Duo run 40896758284): a session that began on drag before the hinge's first report switches to the
+    /// hinge when that report arrives, if it is still waiting for its first light and nobody has dragged. It goes
+    /// back to the level start, so the phone is closed first (rule 1).
+    private func upgradeToHingeIfNeeded() {
+        guard route == .play, stage == .live, let s = session, let locked = lockedSource, hinge.hasHinge,
+              !firmDemoSource else { return }
+        let replaceable = locked === drag || (pilotIsFallback && locked === playPilot)
+            || (fixedIsFallback && locked === fixedSource)
+        guard replaceable, AppRules.mayUpgradeToHinge(phase: s.snapshot.phase, dragMoved: drag.hasMoved) else { return }
+        AppTrace.note("source upgraded to hinge")
+        #if DEBUG
+        AppTrace.demo("GLINT-T source hinge (upgraded from drag)")
+        #endif
+        session = nil
+        lockedSource = nil
+        if AppRules.startsClosed(hingeDriven: true, isShut: hinge.isShut) {
+            stage = .closeFirst
+            setFeedbackPaused(true)
+            refreshPrompt()
+        } else {
+            beginSession()
+        }
+        refreshLever()
     }
 
     func hingeUnavailable() {
         AppTrace.note("hinge unavailable")
         hingeUnavailableSeen = true
         // R5 (QA P1-1): no hinge on this device (and none reported this launch): an old or restored Duo flag goes.
-        if !hinge.hasHinge && store.data.hingeSeen {
+        // R5 fix: never on a Duo-shaped inner display (an early nil comes before the first report there).
+        if !hinge.hasHinge && store.data.hingeSeen && !duoShaped {
             store.clearHingeSeen()
             if hingeSeen {
                 hingeSeen = false
@@ -566,7 +598,8 @@ final class GameController: ObservableObject, GardenDriver {
         let now = CACurrentMediaTime()
         if !onMac && AppRules.needsHingeCheck(hasHinge: hinge.hasHinge, pilotOrFixed: firmDemoSource,
                                               hingeSeen: hingeSeen, duoLog: demo?.duoLog ?? false,
-                                              sinceLaunch: now - launchTime, unavailable: hingeUnavailableSeen) {
+                                              sinceLaunch: now - launchTime, unavailable: hingeUnavailableSeen,
+                                              duoShaped: duoShaped) {
             stage = .checking
             checkUntil = now + AppRules.hingeWait
             setFeedbackPaused(true)
@@ -740,7 +773,7 @@ final class GameController: ObservableObject, GardenDriver {
                 } else {
                     beginSession()
                 }
-            } else if CACurrentMediaTime() >= checkUntil || firmDemoSource || hingeUnavailableSeen {
+            } else if CACurrentMediaTime() >= checkUntil || firmDemoSource || (hingeUnavailableSeen && !duoShaped) {
                 AppTrace.note("no hinge: drag")
                 beginSession()
             }
@@ -794,6 +827,7 @@ final class GameController: ObservableObject, GardenDriver {
     // MARK: - Frames
 
     private func playFrame(dt: Double, now: TimeInterval) -> (DawnSnapshot, [GameEvent]) {
+        upgradeToHingeIfNeeded()
         let source = playSource()
         let input = source.mirror(at: now)
         if stage != .live {
