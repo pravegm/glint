@@ -98,11 +98,17 @@ public struct GloomState: Equatable, Sendable {
     public var age: Double
     /// Hopper: 0…1 crouch before a hop (0 for other kinds). Splitter wisps: 1 while flung.
     public var tension: Double
+    /// R3 (REVIEW-2 P0-1): travelling under the ground from the crease to its surfacing depth: immune, drawn as eyes
+    /// and a ripple. False once it has surfaced (never goes back).
+    public var submerged: Bool
+    /// R3: where it surfaces (floor d). Meaningful while `submerged`.
+    public var surfaceD: Double
 
     public init(id: Int, kind: GloomKind, u: Double, d: Double, radius: Double, hp: Double, maxHP: Double,
-                lit: Double = 0, age: Double = 0, tension: Double = 0) {
+                lit: Double = 0, age: Double = 0, tension: Double = 0, submerged: Bool = false, surfaceD: Double = 0) {
         self.id = id; self.kind = kind; self.u = u; self.d = d; self.radius = radius; self.hp = hp; self.maxHP = maxHP
         self.lit = lit; self.age = age; self.tension = tension
+        self.submerged = submerged; self.surfaceD = surfaceD
     }
 }
 
@@ -193,6 +199,8 @@ public struct DawnSnapshot: Equatable, Sendable {
 public enum GameEvent: Equatable, Sendable {
     /// A gloom came out of the crease.
     case emerged(id: Int, kind: GloomKind, u: Double)
+    /// R3: a submerged gloom rose out of the ground at (u, d) and can now be lit.
+    case surfaced(id: Int, kind: GloomKind, u: Double, d: Double)
     /// A gloom popped. `chain` is the chain count after this pop (1 = first), `points` already includes the multiplier.
     case popped(id: Int, kind: GloomKind, u: Double, d: Double, chain: Int, points: Int)
     /// 3+ pops within `Tuning.sweepWindow`: fired once per sweep, when it reaches 3 (then again at each further pop

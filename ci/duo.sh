@@ -3,7 +3,7 @@
 # called by .github/workflows/duo.yml. Lean by design (the sister rigs grew to 900 lines; the lessons kept are: every
 # simctl/hinge call has a timeout, hinge sets are retried, wait ~2.5 s after a move before a shot, run alone).
 #
-# One launch: `-glintDemo "screen=play;level=1;duolog=1"` with the real HingeMirrorSource. Checks (from the app's DEBUG
+# One launch: `-glintDemo "screen=play;level=8;duolog=1"` with the real HingeMirrorSource. Checks (from the app's DEBUG
 # lines, design/ROUND-1.md + the App addendum):
 #   START-CLOSED  open at launch → `GLINT-T prompt close` (a level never starts open)
 #   COVER         shut (5°) → `GLINT-T screen cover`
@@ -81,7 +81,7 @@ probe_displays
 log "launch"
 to 30 xcrun simctl terminate "$UDID" "$BUNDLE" 2>/dev/null || true
 to 90 xcrun simctl launch --terminate-running-process --stdout="$LOG" --stderr="$LOG" "$UDID" "$BUNDLE" \
-  -glintDemo "screen=play;level=1;duolog=1" >/dev/null || log "WARN launch failed"
+  -glintDemo "screen=play;level=8;duolog=1" >/dev/null || log "WARN launch failed"
 sleep 8
 shot 01-open-at-start
 m=0

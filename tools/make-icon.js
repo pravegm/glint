@@ -1,6 +1,5 @@
 // Draws Glint's 1024 × 1024 app icon (opaque RGB PNG) with no dependencies: node tools/make-icon.js <out.png>
-// A dawn-blue tile, a tilted brass mirror top-left throwing a gold band of light diagonally across a dark garden, and
-// one cheeky shadow blob with white eyes squinting in the light. 3 × 3 supersampling for anti-aliasing.
+// R3: a round brass hand mirror catches the sun and throws a soft beam onto one squinting shadow blob.
 // The in-app AppIconArt (screen=icon) is the richer version; this one exists so a build always has an icon.
 'use strict';
 const fs = require('fs');
@@ -15,71 +14,94 @@ const smooth = (e0, e1, x) => { const t = clamp((x - e0) / (e1 - e0)); return t 
 const lerpC = (c1, c2, t) => [mix(c1[0], c2[0], t), mix(c1[1], c2[1], t), mix(c1[2], c2[2], t)];
 const over = (dst, src, a) => lerpC(dst, src, clamp(a));
 
-// Band axis: from the mirror (top-left) towards the bottom-right.
-const bx = 0.70, by = 0.72;            // unit direction
-const bl = Math.hypot(bx, by), dx = bx / bl, dy = by / bl;
-const ox = 0.30, oy = 0.30;            // band origin (mirror centre)
-
-function shade(x, y) { // x, y in 0…1
-  // Sky-to-garden background: deep indigo top, teal-blue bottom, a warm glow near the mirror.
-  let c = lerpC([22, 24, 64], [10, 54, 70], y);
-  const g = Math.hypot(x - 0.26, y - 0.24);
-  c = over(c, [255, 170, 110], 0.55 * Math.exp(-g * g / 0.05));
-
-  // Garden: darker grass in the lower-right two thirds, with soft dew speckle.
-  const garden = smooth(0.40, 0.48, x + y * 0.9 - 0.42);
-  c = over(c, [12, 60, 58], garden * 0.85);
-  const speck = (Math.sin(x * 211.3 + y * 97.1) * Math.sin(x * 57.7 - y * 173.9));
-  if (speck > 0.985) c = over(c, [180, 240, 230], garden * 0.5);
-
-  // The band of light: perpendicular distance to the axis through the mirror.
-  const px = x - ox, py = y - oy;
-  const along = px * dx + py * dy;
-  const across = Math.abs(-px * dy + py * dx);
-  const width = 0.085 + along * 0.06;
-  const bandA = along > 0 ? (1 - smooth(width * 0.55, width, across)) * smooth(0.0, 0.08, along) * (1 - smooth(1.05, 1.35, along)) : 0;
-  c = over(c, [255, 206, 92], bandA * 0.92);
-  c = over(c, [255, 244, 200], bandA * (1 - smooth(0, width * 0.45, across)) * 0.55);
-
-  // Brass mirror: a rotated rounded rectangle around (ox, oy).
-  const ang = -0.785;
-  const mx = (x - ox) * Math.cos(ang) - (y - oy) * Math.sin(ang);
-  const my = (x - ox) * Math.sin(ang) + (y - oy) * Math.cos(ang);
-  const rw = 0.20, rh = 0.075, rr = 0.03;
-  const qx = Math.abs(mx) - rw + rr, qy = Math.abs(my) - rh + rr;
-  const sd = Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - rr;
-  const frame = 1 - smooth(-0.002, 0.004, sd);
-  const glass = 1 - smooth(-0.022, -0.016, sd);
-  c = over(c, lerpC([196, 140, 60], [250, 214, 130], clamp(0.5 - my * 6)), frame);
-  c = over(c, lerpC([255, 236, 196], [150, 205, 235], clamp(0.5 + mx * 2.5)), glass);
-  // Glint star on the glass.
-  const sx = x - 0.235, sy = y - 0.215;
-  const star = Math.exp(-(sx * sx) / 0.00002 - (sy * sy) / 0.0012) + Math.exp(-(sy * sy) / 0.00002 - (sx * sx) / 0.0012);
-  c = over(c, [255, 255, 255], clamp(star) * glass);
-
-  // The shadow blob, sitting in the band's edge (bottom right), wobbly outline.
-  const cx = 0.70, cy = 0.73;
-  const a = Math.atan2(y - cy, x - cx);
-  const r = 0.155 * (1 + 0.05 * Math.sin(a * 5 + 0.6) + 0.03 * Math.sin(a * 3 - 1.1));
-  const d = Math.hypot(x - cx, (y - cy) * 1.08);
-  const body = 1 - smooth(r - 0.004, r + 0.004, d);
-  const rim = smooth(r - 0.03, r, d) * body * clamp(0.5 - (x - cx + y - cy) * 3); // lit from the band (top-left)
-  c = over(c, [38, 18, 60], body);
-  c = over(c, [255, 190, 110], rim * 0.8);
-  // Eyes: white ovals squinting (flattened top) with dark pupils looking up at the light.
-  for (const ex of [cx - 0.055, cx + 0.050]) {
-    const ey = cy - 0.025;
-    const e = Math.hypot((x - ex) / 0.040, (y - ey) / 0.032);
-    const lid = smooth(ey - 0.012, ey - 0.006, y); // squint: top cut off
-    const white = (1 - smooth(0.92, 1.02, e)) * lid;
-    c = over(c, [250, 248, 255], white);
-    const pe = Math.hypot((x - ex + 0.008) / 0.016, (y - ey + 0.004) / 0.016);
-    c = over(c, [20, 10, 30], (1 - smooth(0.85, 1.05, pe)) * white);
+// R3 (REVIEW-2 fix 8): a round brass hand mirror catching the sun (top right) and throwing a soft beam down onto
+// one squinting shadow (bottom right). One smooth gradient background, no hard edges, readable at 60 px.
+const SUN = [0.78, 0.20], SUN_R = 0.115;
+const MIR = [0.36, 0.40], MIR_R = 0.185;
+const GL = [0.66, 0.76];
+function shade(x, y) {
+  // Background: deep indigo at the top, warm dusk violet, then teal garden at the bottom, all smooth.
+  let c = lerpC([24, 22, 70], [92, 46, 104], smooth(0.0, 0.62, y));
+  c = lerpC(c, [14, 66, 72], smooth(0.55, 1.0, y));
+  // Sun glow and disc.
+  const ds = Math.hypot(x - SUN[0], y - SUN[1]);
+  c = over(c, [255, 170, 96], 0.75 * Math.exp(-ds * ds / 0.035));
+  c = over(c, lerpC([255, 236, 150], [255, 150, 60], clamp((y - SUN[1] + SUN_R) / (2 * SUN_R))),
+    1 - smooth(SUN_R - 0.004, SUN_R + 0.004, ds));
+  // The beam: a soft cone from the mirror towards the gloom (additive warm light, feathered edges).
+  const vx = GL[0] - MIR[0], vy = GL[1] - MIR[1], vl = Math.hypot(vx, vy), ux = vx / vl, uy = vy / vl;
+  const px = x - MIR[0], py = y - MIR[1];
+  const along = px * ux + py * uy, across = Math.abs(-px * uy + py * ux);
+  if (along > 0) {
+    const w = 0.07 + along * 0.22;
+    const a = (1 - smooth(w * 0.35, w, across)) * smooth(0.02, 0.18, along) * (1 - smooth(vl * 1.05, vl * 1.45, along));
+    c = [Math.min(255, c[0] + 220 * a), Math.min(255, c[1] + 175 * a), Math.min(255, c[2] + 40 * a)];
   }
-  // Sparks popping off the blob's lit side.
-  for (const [sx2, sy2, s] of [[0.53, 0.58, 0.012], [0.58, 0.53, 0.008], [0.50, 0.66, 0.007]]) {
+  // A pool of light on the ground under the gloom.
+  const pd = Math.hypot((x - GL[0]) / 1.6, (y - GL[1] - 0.10) / 0.7);
+  const pool = Math.exp(-pd * pd / 0.012) * 0.6;
+  c = [Math.min(255, c[0] + 180 * pool), Math.min(255, c[1] + 140 * pool), Math.min(255, c[2] + 60 * pool)];
+  // The mirror: handle (behind), a thick brass rim, then the glass reflecting the sun.
+  // Mirror frame in its own tilted, oval space (rotated -24°, 1.28 taller than wide).
+  const ca = Math.cos(-0.42), sa = Math.sin(-0.42);
+  const lx = (x - MIR[0]) * ca - (y - MIR[1]) * sa, ly = (x - MIR[0]) * sa + (y - MIR[1]) * ca;
+  // Handle: short and stout, with a collar and a round knob.
+  const hy0 = MIR_R * 1.28 - 0.01;
+  const hw = 0.034 + 0.010 * Math.sin(clamp((ly - hy0) / 0.16) * Math.PI * 2.2);
+  const handle = (1 - smooth(hw - 0.004, hw + 0.002, Math.abs(lx))) * smooth(hy0 - 0.01, hy0, ly) * (1 - smooth(hy0 + 0.15, hy0 + 0.16, ly));
+  const knob = 1 - smooth(0.040, 0.046, Math.hypot(lx, ly - (hy0 + 0.17)));
+  c = over(c, lerpC([140, 88, 36], [240, 196, 110], clamp(0.55 - lx * 10)), Math.max(handle, knob));
+  const dm = Math.hypot(lx, ly / 1.28);
+  const theta = Math.atan2(ly / 1.28, lx);
+  const scallop = MIR_R + 0.010 * Math.cos(theta * 14);
+  const rim = 1 - smooth(scallop - 0.004, scallop + 0.003, dm);
+  const rimShade = clamp(0.5 + (lx * -0.7 + ly * -0.5) * 4);
+  c = over(c, lerpC([160, 102, 40], [255, 224, 142], rimShade), rim);
+  // An inner groove line on the brass.
+  c = over(c, [120, 72, 28], (1 - smooth(0.0025, 0.006, Math.abs(dm - (MIR_R - 0.022)))) * 0.8);
+  const gr = MIR_R - 0.032;
+  const glass = 1 - smooth(gr - 0.003, gr + 0.003, dm);
+  // Reflection: sky, with the image of the sun towards the upper right of the glass.
+  let g = lerpC([255, 232, 190], [150, 120, 190], clamp((ly + gr * 1.28) / (2 * gr * 1.28)));
+  const ri = Math.hypot(lx - 0.045, ly + 0.07);
+  g = over(g, [255, 200, 100], 0.7 * Math.exp(-ri * ri / 0.006));
+  g = over(g, [255, 240, 170], 1 - smooth(0.040, 0.050, ri));
+  g = over(g, [255, 255, 255], 0.30 * (1 - smooth(0.0, 0.018, Math.abs(lx + ly * 0.7 + 0.05))));
+  c = over(c, g, glass);
+  // Glint: a small 4-point sparkle on the glass edge.
+  const sx = x - (MIR[0] + 0.085), sy = y - (MIR[1] - 0.095);
+  const star = Math.exp(-(sx * sx) / 0.00003 - (sy * sy) / 0.0016) + Math.exp(-(sy * sy) / 0.00003 - (sx * sx) / 0.0016);
+  c = over(c, [255, 255, 255], clamp(star));
+  // The gloom: wobbly inky blob, rim-lit from the beam side, squinting.
+  const cx = GL[0], cy = GL[1];
+  const an = Math.atan2(y - cy, x - cx);
+  const r = 0.16 * (1 + 0.045 * Math.sin(an * 5 + 0.6) + 0.03 * Math.sin(an * 3 - 1.1));
+  const d = Math.hypot(x - cx, (y - cy) * 1.1);
+  const body = 1 - smooth(r - 0.004, r + 0.004, d);
+  const lit = clamp(0.5 - ((x - cx) * ux + (y - cy) * uy) * 5);
+  c = over(c, lerpC([34, 16, 56], [70, 34, 92], clamp(0.5 - (y - cy) * 3)), body);
+  c = over(c, [255, 196, 120], smooth(r - 0.035, r - 0.002, d) * body * lit * 0.9);
+  for (const ex of [cx - 0.055, cx + 0.052]) {
+    const ey = cy - 0.02;
+    const e = Math.hypot((x - ex) / 0.042, (y - ey) / 0.034);
+    const lid = smooth(ey - 0.010, ey - 0.003, y);
+    const white = (1 - smooth(0.92, 1.03, e)) * lid;
+    c = over(c, [252, 250, 255], white);
+    const pe = Math.hypot((x - ex + 0.012) / 0.017, (y - ey + 0.002) / 0.017);
+    c = over(c, [22, 10, 32], (1 - smooth(0.85, 1.05, pe)) * white);
+    // Heavy brow on the squint, slanting down towards the middle.
+    const slope = ex < cx ? -0.28 : 0.28;
+    const brow = (1 - smooth(0.004, 0.009, Math.abs(y - (ey - 0.011 - (x - ex) * slope)))) * (1 - smooth(0.04, 0.05, Math.abs(x - ex)));
+    c = over(c, [18, 8, 28], brow);
+  }
+  // A small grimace.
+  const mx = x - cx, my = y - (cy + 0.055);
+  const mouth = (1 - smooth(0.004, 0.009, Math.abs(my - mx * mx * 6))) * (1 - smooth(0.03, 0.04, Math.abs(mx)));
+  c = over(c, [250, 240, 250], mouth * 0.9);
+  // Sparks where the light hits.
+  for (const [sx2, sy2, s2] of [[0.52, 0.62, 0.012], [0.57, 0.56, 0.008], [0.49, 0.70, 0.007], [0.80, 0.62, 0.009]]) {
     const dd = Math.hypot(x - sx2, y - sy2);
-    c = over(c, [255, 236, 160], 1 - smooth(s * 0.4, s, dd));
+    c = over(c, [255, 240, 170], 1 - smooth(s2 * 0.4, s2, dd));
   }
   return c;
 }
