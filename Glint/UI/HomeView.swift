@@ -83,7 +83,7 @@ struct HomeView: View {
             }
             ModeCard(title: "Long Night",
                      status: endlessOpen ? (data.endlessBest > 0 ? "Best \(AppRules.grouped(data.endlessBest))" : "Endless")
-                                         : "Win level \(ProgressRules.endlessLevel) or come back tomorrow",
+                                         : "Win level \(ProgressRules.endlessLevel)",  // R5: the long form truncated on an SE; the tap toast explains "or come back tomorrow"
                      locked: !endlessOpen, compact: compact,
                      art: AnyView(LongNightArt())) {
                 controller.playEndless()
