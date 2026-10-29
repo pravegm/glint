@@ -32,13 +32,13 @@ Snapjaw's compositor, recoloured for dawn (`ci/store-frame.swift`):
 
 ## A. iPhone 6.9" (1320 × 2868) and 6.3" (1206 × 2622): 10 frames, portrait
 
-Same frames and captions at both sizes. On these phones there is no hinge, so the brass lever shows on the mirror and the hints say "Drag…" where they speak about the control; no Duo-only words appear inside a capture. Demo args are copied from `ci/store-scenarios.txt` (which wins).
+Same frames and captions at both sizes. On these phones there is no hinge, so a gold grip on a brass rail at the garden's edge shows the light's position and the hints say "Drag…" where they speak about the control; no Duo-only words appear inside a capture. Demo args are copied from `ci/store-scenarios.txt` (which wins).
 
 | # (file) | Story beat (in-game moment) | Headline (count) / sub-line | Demo args (`ci/store-scenarios.txt`) |
 |---|---|---|---|
 | **P01** `P01-hero` | **The mirror.** Book composite of D01: the sun in the mirror page, the band across the garden page, a pop in gold sparks | **Your phone is a *mirror*** (22) / Best on iPhone Duo. Plays on other iPhones too. | frame `book:D01-hero` (fallback capture `screen=play;level=6;t=18;skill=0.8;progress=mid`) |
 | **P02** `P02-sweep` | **The pop cascade.** A wisp flock caught mid-Sweep: pops bursting, "Sweep!" floating, the chain | **Sweep the light. *Pop!*** (21) / Every pop climbs a rising scale. | `screen=play;level=3;skill=0.9;freezeOn=sweep;progress=mid` (freezes 0.3 s after the Sweep) |
-| **P03** `P03-reach` | **The aim.** The band out in the garden; the brass lever on the mirror tilted to match | **Aim the *sunlight*** (16) / Drag anywhere. The lever follows. | `screen=play;level=2;t=20;skill=0.8;progress=mid` |
+| **P03** `P03-reach` | **The aim.** The band out in the garden; the gold grip on the rail at its edge | **Aim the *sunlight*** (16) / Drag anywhere. A gold grip follows. | `screen=play;level=2;t=20;skill=0.8;progress=mid` |
 | **P04** `P04-fireflies` | **Spare them.** Fireflies drifting near the band, the hint line "Spare the fireflies" | **Spare the *fireflies*** (19) / They replant lost flowers. | `screen=play;level=4;t=12;skill=0.6;hint=spareTheFireflies;progress=mid` |
 | **P05** `P05-brute` | **Tracking.** A brute steaming and shrinking inside the band, wisps behind | **Follow the *big ones*** (19) / Keep the light on a brute as it creeps. | `screen=play;level=6;t=25;skill=0.8;progress=mid` |
 | **P06** `P06-worlds` | **Progress.** The level map, Meadow tab: sun medallions on a winding path, most starred, the next glowing | **30 *sunrises*, 3 worlds** (21) / Meadow, Rooftops and Harbour. | `screen=levels;progress=mid` |
@@ -52,14 +52,14 @@ Same frames and captions at both sizes. On these phones there is no hinge, so th
 **Caption notes (truth; eyeball each on the first store run):**
 - **No `band=` pins:** the light in every frame is the light the pilot made, so lit shadows and the band agree.
 - **P02:** a Sweep is 3+ pops within 0.35 s (GAME-DESIGN §5) and the pops really do climb a pentatonic ladder (§9).
-- **P03:** "The lever follows" is the phone fallback's brass lever; the Duo has no lever, so D03 has its own caption.
+- **P03:** "A gold grip follows" is the phone fallback's grip on the brass rail (R3); the Duo has none, so D03 has its own caption.
 - **P04:** "They replant lost flowers" needs a firefly in view; if the seed shows none, retime `t=` or change the sub-line to "Keep the light off them."
 - **P08:** "will cost you petals" needs at least one eaten flower on screen at t=40; if not, retime.
 - **One progress state:** every frame uses `progress=mid`, so the set reads as one player.
 
 ## B. iPhone Duo, inner display (2853 × 2007, book pose): 10 frames
 
-The same beats as A, captured on the Duo simulator by `ci/duo-store.sh` with the hinge held open at **125°** (the 7th column of `ci/duo-store-scenarios.txt`) so the inner display is up and the layout folded, and the pilot driving the light. Mirror on the left page, garden on the right (the default; reserve R1 shows Swap halves). No lever on the Duo.
+The same beats as A, captured on the Duo simulator by `ci/duo-store.sh` with the hinge held open at **125°** (the 7th column of `ci/duo-store-scenarios.txt`) so the inner display is up and the layout folded, and the pilot driving the light. Mirror on the left page, garden on the right (the default; reserve R1 shows Swap halves). No grip or rail on the Duo.
 
 | # (file) | Headline (count) / sub-line where it differs from A |
 |---|---|
@@ -71,7 +71,7 @@ The same beats as A, captured on the Duo simulator by `ci/duo-store.sh` with the
 
 Every Duo frame must log the folded inner canvas (`GLINT-T canvas <W>x<H> fold=1`) and be 2853 × 2007, so a cover-display capture is FLAGGED, never uploaded.
 
-Reserves (not uploaded unless a frame above fails): Duo `R1-swap` **Any way *round*** (13) / Swap the halves in Settings. (garden on the left, so the light comes from the left); phone `R2-results` **Save every *flower*** (17) / Five flowers kept, three stars. A laptop-pose set (mirror on top) needs a way to turn the Duo simulator; not in 1.0.
+Reserves (not uploaded unless a frame above fails): Duo `R1-swap` **Any way *round*** (13) / Swap the halves in Settings. (garden on the left, so the light comes from the left); phone `R2-results` **Save every *flower*** (17) / All five, plus the score: three stars. A laptop-pose set (mirror on top) needs a way to turn the Duo simulator; not in 1.0.
 
 ## Truthfulness rules (check every frame before upload)
 
@@ -82,9 +82,9 @@ Reserves (not uploaded unless a frame above fails): Duo `R1-swap` **Any way *rou
 - [ ] **No "kill", "burn", "lid" or "Fold to …" anywhere,** in captions or in any in-game text visible in a frame.
 - [ ] **Shadows pop, never splat** (`metadata.md` §11 ask 1): gold sparks and petals, no gore (P02 especially).
 - [ ] **Seeded states are reachable states:** `mid` progress, a score a real player gets. Never seed all 90 stars or an impossible score.
-- [ ] **The iPhone frames have no Duo-only line inside the capture** ("Close the phone…"); the Duo frames have no lever.
+- [ ] **The iPhone frames have no Duo-only line inside the capture** ("Close the phone…"); the Duo frames have no grip or rail.
 - [ ] **Nothing important in the crease band** on the Duo frames, except the crease glow, which is the point.
-- [ ] **No prices, "#1", Apple logos or the "Made for iPhone Duo" badge** drawn into a frame (Guideline 2.3.7; Apple adds its own badge).
+- [ ] **No prices, "#1", Apple logos or any Apple badge** drawn into a frame (Guideline 2.3.7; Apple adds its own badge). Our own wording is "Best on iPhone Duo", never "Made for iPhone…" (Apple's MFi mark).
 - [ ] **Exact size, PNG, no alpha** (MANIFEST says `slot yes`, `alpha no`). Captions readable at 25 % zoom.
 
 ## Running it, and handing it to the App Store Connect tool

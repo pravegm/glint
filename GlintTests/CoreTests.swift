@@ -323,7 +323,7 @@ struct CoreTests {
     @Test func levelOneIsGentle() {
         let l: LevelSpec = LevelBook.level(1)
         #expect(l.title == "First Light")
-        #expect(abs(l.duration - 60) < 1e-12)
+        #expect(abs(l.duration - 35) < 1e-9)   // R5: was 60 s (founder: "slow in the beginning")
         // R5: a short, busy first sunrise: its murks plus the opener, which starts below 0.25 at t = 0.
         let recipe: LevelRecipe = LevelBook.recipes[0]
         #expect(l.duration <= 50)

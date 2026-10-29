@@ -20,12 +20,12 @@
 | Sort order | High to Low | High to Low | High to Low |
 | Score submission | Best score | Best score | Best score |
 | Score range (optional) | 0 – 10,000,000 | 0 – 10,000,000 | 0 – 90 |
-| Recurring settings | — | Start **Mon 9 Nov 2026, 00:00 UTC**; duration **1 day**; repeats every **1 day** | — |
+| Recurring settings | — | Start **Tue 15 Dec 2026, 00:00 UTC** (launch day); duration **1 day**; repeats every **1 day** | — |
 | What the app submits | the score of every finished **Long Night** run (`PlayMode.endless`) | the score of every finished **Today's Dawn** run of the (UTC) day (`PlayMode.daily(day:)`); best of the day is kept by Game Center | the player's **total stars** across all 30 levels (`ProgressStore`), after every level result and on each Game Center sign-in. It only grows, so "best score" is the current total |
 
 **Why the ranges:** Long Night never ends and the chain reaches ×4, so 10 million leaves room; total stars are 30 levels × 3 = **90**. **Never submit** attract-mode (`PilotSource`) or demo scores.
 
-**Why Today's Dawn starts on Mon 9 Nov:** a few days after the tool first creates Game Center (runbook §3), so TestFlight testers (Game Center sandbox) see the board for weeks before launch. If the tool runs after 8 Nov, Claude moves the start date to the next day before pushing (whether App Store Connect accepts a start date in the past is unconfirmed: the sister games' note).
+**Why Today's Dawn starts on launch day (Tue 15 Dec):** the start date must not fall before the tool creates Game Center (runbook §3; QA R5), and whether App Store Connect accepts a recurring start already in the past is unconfirmed. Launch day is safely after any push and is when real players arrive. The cost: TestFlight testers see an empty Today's Dawn board until then (the classic boards work at once). If the launch moves, move the date with it (`build-metadata.js` and this line), before the tool creates the board; once created, the start is fixed. (asc.swift's past-date warning still names this note by its old title, Mon 9 Nov.)
 
 **Today's Dawn runs on the UTC date.** `DailySeed.day(for:)` is "days since 2026-01-01 UTC" (`design/ARCHITECTURE.md`): keep it UTC everywhere, so the board and the seed change at the same moment for everyone (00:00 UTC: midnight in the UK in winter, 4 pm Pacific).
 
@@ -79,12 +79,12 @@ public enum Achievements {
 Rough reach from GAME-DESIGN §6 (to be confirmed by `BalanceTests`' `GLINT-BAL` table, skills 0.3 / 0.6 / 0.9):
 - **First session:** First Light (level 1 is made to be won), Clean Sweep (wisp flocks from level 3), The Bigger They Come (brutes from level 5), Firefly Gardener (fireflies from level 4, once a flower has been lost).
 - **First week:** Early Riser (Today's Dawn opens after level 3), Four Times Bright, Over the Rooftops.
-- **The long tail:** Harbour Lights (world 3 is properly hard), Night Watch, Ninety Suns (every level with all five flowers).
+- **The long tail:** Harbour Lights (world 3 is properly hard), Night Watch, Ninety Suns (every level with all five flowers and its score target).
 
 **Checks before the tool creates them** (descriptions and triggers can still change then; ids never):
 - `Night Watch`: 20,000 in Long Night (raised from 10,000 in R2: the 0.6 pilot median is ~17,400) should be above the 0.6 pilot's median and at or below the 0.9 pilot's. If not, change the number in both descriptions and the trigger together (the title stays).
 - `Four Times Bright`: the 0.6 pilot should reach chain 13 in some levels of world 2; if the chain window makes 13 near-impossible, lower it to the ×3 point (chain 9) and retitle "Three Times Bright" before creation.
-- `Ninety Suns`: three stars on every Harbour level must be possible for the 0.9 pilot on most seeds; otherwise it's a grind, not a goal.
+- `Ninety Suns`: three stars (all five flowers AND the level's score target, from level 4) on every Harbour level must be possible for the 0.9 pilot on most seeds; otherwise it's a grind, not a goal.
 - Every trigger is reachable with drag only.
 
 If the harness shows a step is far off, change the **description and trigger** before the achievement is created, never after: changing what an earned achievement meant is unfair.

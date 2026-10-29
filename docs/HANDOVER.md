@@ -17,7 +17,7 @@ no data collected, rated 4+.
 - **30 levels** in three worlds (Meadow lawn, Rooftops tiles, Harbour boardwalk), each a sunrise. Stars: all five
   flowers plus a score target for the third star. **Long Night** (endless, moonlit) and **Today's Dawn** (daily, with
   a streak). Game Center: 3 leaderboards, 10 achievements with drawn badges.
-- **Every iPhone plays.** Without a hinge you drag to aim the light (a brass rail and grip show where it is).
+- **Other iPhones play too (iOS 18 or later).** Without a hinge you drag to aim the light (a brass rail and grip show where it is).
 
 ## Why this idea
 `research/01-market.md`: no Duo app (or any hinge/lid app) uses the fold to aim light. The hinge angle is a precise,

@@ -32,7 +32,7 @@
 | **Price** | £1.99 / $1.99 / €1.99 one-off. No ads, no in-app purchases. Family Sharing on |
 | **Age rating** | 4+ |
 | **Modes** | 30 sunrises in 3 worlds (Meadow, Rooftops, Harbour) with stars · Long Night (endless, one best score) · Today's Dawn (one sunrise a day, the same for everyone) |
-| **Features** | The phone's angle is where the light lands, continuously, both ways · every level starts with the phone shut; shutting it pauses · five shadow kinds (murk, wisp, brute, splitter, hopper) · fireflies to spare, who replant lost flowers · chains up to ×4 and Sweeps · five flowers as lives · no forced tutorial · Swap halves · Game Center (Long Night, Today's Dawn, Total Stars, 10 achievements) |
+| **Features** | The phone's angle is where the light lands, continuously, both ways · every level starts with the phone shut; shutting it pauses · five shadow kinds (murk, wisp, brute, splitter, hopper) · fireflies to spare, who replant lost flowers · chains up to ×4 and Sweeps · five flowers as lives · no forced tutorial · Swap halves (book pose) · Game Center (Long Night, Today's Dawn, Total Stars, 10 achievements) |
 | **Sound** | Every sound synthesised live in the app: the sizzle, a pentatonic pop ladder that climbs with the chain, Sweep chords, birdsong at sunrise; no recordings or licensed assets |
 | **Accessibility** | Drag to aim on other iPhones · fireflies and shadows told apart by shape, not just colour · sound and haptics carry the state · Sound, Music and Haptics switches, Reduce motion, Swap halves |
 | **Privacy** | Data Not Collected. No accounts, no tracking, no third-party SDKs |
@@ -46,15 +46,15 @@
 ## Key features (for writers who want bullets)
 
 - **The phone is the mirror.** One half of the Duo's inner screen is a brass-framed mirror with the dawn sky in it; the other is a garden seen from above. Shut the phone and the mirror is shut: dark. Open it and the light pools in the crease, then lifts out and sweeps across the garden.
-- **Reach is the aim.** The opening angle *is* where the light lands, smoothly, in both directions, all the time. Open to chase a shadow outwards, close a little to catch the next one at the crease. No other Duo game we know of uses the hinge like this.
+- **Reach is the aim.** The opening angle *is* where the light lands, smoothly, in both directions, all the time. Open to chase a shadow outwards, close a little to bring the light back and meet the next one as it surfaces. No other Duo game we know of uses the hinge like this.
 - **Shadows never stand still.** Parking the light gives each shadow only a short dose, so the skill is tracking: opening the phone at the pace a big one creeps.
 - **The pop cascade.** Pops burst into gold sparks and petals with a crisp tick in your hands; each pop in a chain plays the next note up a pentatonic scale, and three in one sweep is a "Sweep!" with a chord.
 - **Spare the fireflies.** They drift out of the crease too. Hold the light on one too long and it fizzles (and your chain breaks); let it reach the flowers and it replants a lost one.
 - **Five kinds of shadow.** Murks creep; wisps come in quick flocks; brutes are big and slow and must be followed; splitters pop into two wisps flung further out; hoppers crouch and jump, and the first touch of light makes them hop at once.
-- **30 sunrises, 3 worlds.** Each level is one sunrise, about a minute, with the sun climbing in the mirror. Keep five flowers for three stars. It gets properly hard by the Harbour.
+- **30 sunrises, 3 worlds.** Each level is one sunrise, 35 to 95 seconds, with shadows from the first second and the sun climbing in the mirror. Three stars take all five flowers and, from level 4, the level's score. It gets properly hard by the Harbour.
 - **Long Night and Today's Dawn.** An endless night that keeps escalating, and one seeded sunrise a day for everyone.
 - **Kind to the hinge.** Play lives between about a right angle and well open, the range where the Duo's hinge holds its position, so you never lay it flat and there's nothing to gain by rushing. No pause or warning near 90°.
-- **Every iPhone.** On phones without a hinge, drag anywhere to aim the light, and a brass lever on the mirror follows your finger.
+- **Other iPhones too.** On iPhones without a hinge (iOS 18 or later), drag anywhere to aim the light, and a gold grip on a brass rail at the garden's edge follows it.
 
 ## Founder quote (placeholder; founder writes it)
 
@@ -131,7 +131,7 @@ Plain text, under 150 words, clip link in the first two lines, never attach vide
 >
 > Glint is a £1.99/$1.99 game with no ads, no IAP and no timers to pay off, where the top half of the iPhone Duo is a mirror and the opening angle aims a band of sunlight.
 >
-> - Shadows never stand still, so the skill is tracking: open the phone at the pace a brute creeps, close a little for the wisps at the crease.
+> - Shadows never stand still, so the skill is tracking: open the phone at the pace a brute creeps, close a little to meet the wisps as they surface.
 > - The pop cascade: chains up to ×4 climb a pentatonic scale, and three pops in one sweep is a Sweep.
 > - 30 sunrises across the Meadow, Rooftops and Harbour (properly hard by world 3), an endless Long Night, a daily Today's Dawn; drag to aim on other iPhones.
 >

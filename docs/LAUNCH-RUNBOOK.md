@@ -187,7 +187,7 @@ This one run fills in: the name, subtitle, description, keywords, promotional te
 | 8 | Mid-level, move the phone around a **right angle (about 90°)** for 10 seconds, back and forth | **No pause, no warning, no card** near 90°. Just the light moving |
 | 9 | **Start recording.** Level 5 or 6 (brutes). Follow a brute across the garden by opening the phone at its pace | Can you keep the light on it smoothly? Does it steam and shrink? Is it satisfying when it finally pops? Did your wrist get tired? |
 | 10 | Level 4 (fireflies). Let one firefly drift through the light quickly, then try to keep the light **off** another until it reaches the flowers | A quick pass is safe. Holding the light on one makes it flicker, then fizzle (a sad blip). One that makes it home **replants** a lost flower or blooms for points. Was it clear which dots are fireflies? |
-| 11 | Turn the Duo sideways and hold it **like a book**; play a few seconds. Then Settings → **Swap halves**, and play again | Both poses play; the mirror and garden swap sides. Did one half of the screen blur for a moment when you started folding from flat? Which half, for how long? |
+| 11 | Turn the Duo sideways and hold it **like a book**; play a few seconds. Then Settings → **Swap halves** (it shows in book pose only), and play again | Both poses play; the mirror and garden swap sides. Did one half of the screen blur for a moment when you started folding from flat? Which half, for how long? |
 | 12 | Open the phone **completely flat** during a level | Nothing bad: the light just stays at the far edge. No warning |
 | 13 | Flip the **silent switch on**, play a few seconds, then open **Settings** and try **Sound**, **Music**, **Haptics** and **Reduce motion** | Sound plays on silent (that's the plan). Do the switches work? With Reduce motion on, is the shimmer and shake gone? |
 | 14 | **On a regular iPhone** (or lend yours to someone): play Level 1 and Level 6 by **dragging** | "Drag down to let the light in". Dragging anywhere moves the light like a trackpad, and a **gold grip** on the brass rail at the garden's right edge shows where it is. Is it as fun as on the Duo? Anything that only makes sense on a Duo? |
@@ -300,7 +300,7 @@ IDs can never be changed once created. These are the exact values (the same as `
 | Leaderboard ID | Type | Reference name | Display name | Score format | Suffix | Sort | Submission |
 |---|---|---|---|---|---|---|---|
 | `glint.endless` | **Classic** | Long Night | Long Night | Integer | ` point` / ` points` | High to Low | Best score |
-| `glint.daily` | **Recurring**: start **Mon 9 Nov 2026 at 00:00 UTC**, lasts **1 day**, repeats every **1 day** | Today's Dawn | Today's Dawn | Integer | ` point` / ` points` | High to Low | Best score |
+| `glint.daily` | **Recurring**: start **Tue 15 Dec 2026 at 00:00 UTC** (launch day; testers see it empty until then), lasts **1 day**, repeats every **1 day** | Today's Dawn | Today's Dawn | Integer | ` point` / ` points` | High to Low | Best score |
 | `glint.stars` | **Classic** (range 0–90) | Total stars | Total Stars | Integer | ` star` / ` stars` | High to Low | Best score |
 
 **Achievements** (none hidden, none can be earned more than once, each with its 1024 × 1024 badge drawn by the app):

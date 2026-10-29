@@ -21,14 +21,14 @@ Thanks for reviewing Glint: Sun Mirror, a paid game with no ads, no in-app purch
 1. TESTING ON A REGULAR iPHONE (start here)
 You don't need an iPhone Duo. The whole game plays on any iPhone (iOS 18 or later) and in the Simulator. Portrait is best.
 - The top of the screen is a brass-framed mirror; the bottom is the garden. The line between them is the crease.
-- Control: drag anywhere, up or down, like a trackpad. A band of gold light moves across the garden and a brass lever on the mirror follows. Drag down to send the light further from the crease, up to bring it back.
-- Quickest look (about a minute): Home > Play starts Level 1. The hint says "Drag down to let the light in". Shadows (inky blobs with eyes) creep out of the crease towards five flowers at the far edge. Keep the light on a shadow and it sizzles and pops. At sunrise (about 60 s) the level ends with 1 to 3 stars.
+- Control: drag anywhere, up or down, like a trackpad. A band of gold light moves across the garden; a gold grip on a rail at its edge follows. Drag down to send the light further out, up to bring it back.
+- Quickest look (about a minute): Home > Play starts Level 1. The hint says "Drag down to let the light in". Shadows (inky blobs with eyes) creep out of the crease towards five flowers at the far edge. Keep the light on a shadow and it sizzles and pops. At sunrise (35 s on Level 1) the level ends with 1 to 3 stars.
 - Fireflies (small glowing dots) drift out too: light held on one too long makes it fizzle; one that reaches the flowers replants a lost flower.
 - A shadow that reaches the edge eats a flower. All five gone: "The night won" and Retry.
 
 2. HOW THE HINGE IS USED (iPhone Duo)
 Glint reads the hinge angle only through the public iOS 27.1 API (SwiftUI onHingeChange), behind an availability check. No private API. The angle is used only while playing; it is never stored or sent.
-a) One half of the inner display is the mirror, the other the garden; the fold is the crease. Any pose works, like a laptop (mirror on top) or like a book. Settings > Swap halves flips the halves.
+a) One half of the inner display is the mirror, the other the garden; the fold is the crease. Any pose works, laptop (mirror on top) or book. In book pose, Settings > Swap halves flips them.
 b) The opening angle is the aim. Shut is dark. As the phone opens, light pools in the crease; from about 80 degrees the band lifts out and moves across the garden, reaching the far edge at about 135 degrees. Opening further changes nothing, so the phone never needs to lie flat.
 c) Every level starts with the phone shut: if it is open, the game says "Close the phone to start", then "Open the phone to let the light in".
 d) Closing the phone (below about 15 degrees for a quarter of a second) pauses the level, and the outer display shows "Paused" with the score. Opening it again resumes after a short grace.
@@ -67,8 +67,8 @@ Optional, never required. 3 leaderboards (Long Night, Today's Dawn, Total Stars)
 | Claim in the block | Source in the code (expected) | Code | RC |
 |---|---|---|---|
 | No sign-in anywhere; Home has a **Play** button that starts Level 1 | `UI/HomeView.swift` | [ ] exact label | [ ] |
-| Drag anywhere (relative) moves the band; a brass lever follows; "Drag down to let the light in" on a new level | `Input/DragMirrorSource.swift`, `GardenScene.showsLever`, App hint line | [ ] exact wording | [ ] |
-| Level 1 about 60 s, gentle, won by anyone who moves the light; 1–3 stars | `LevelBook` level 1 (12 murks, 60 s), `BalanceTests` (skill 0.3 wins) | [ ] | [ ] |
+| Drag anywhere (relative) moves the band; a gold grip on a brass rail at the garden's edge follows; "Drag down to let the light in" on a new level | `Input/DragMirrorSource.swift`, the rail and grip in `GardenScene`, App hint line | [ ] exact wording | [ ] |
+| Level 1 is 35 s, gentle, won by anyone who moves the light; 1–3 stars | `LevelBook` level 1 (35 s; L2–5 38/42/45/50 s), `BalanceTests` (skill 0.3 wins) | [ ] | [ ] |
 | Fireflies fizzle when held in light; delivered ones replant | `DawnSession` firefly rules | [ ] | [ ] |
 | "The night won" and Retry | `UI/ResultsView.swift` | [ ] exact wording | [ ] |
 | Public `onHingeChange` only, behind `#available(iOS 27.1, *)`; the angle is never stored or sent | `Input/HingeReader.swift`; `Persistence/` has no angle (grep) | [ ] grep | [ ] |
@@ -77,7 +77,7 @@ Optional, never required. 3 leaderboards (Long Night, Today's Dawn, Total Stars)
 | Pause below 15° for 0.25 s; cover display shows "Paused" and the score; resume with grace | `Tuning.shutAngle` / `shutDwell`, `CoverView` | [ ] | [ ] |
 | No pause or warning near 90° | GAME-DESIGN §8 | [ ] | [ ] |
 | Never uses `status == .closed` in play (it turns on at about 85° on hardware) | grep `Glint/` | [ ] | [ ] |
-| Settings **"Swap halves"**, **"Sound"** | `UI/SettingsView.swift` | [ ] exact labels | [ ] |
+| Settings **"Swap halves"** (book pose only: `AppRules.swapAllowed`), **"Sound"** | `UI/SettingsView.swift` | [ ] exact labels | [ ] |
 | Today's Dawn opens after level 3; Long Night after level 5 or a day after first launch | unlock rules (GAME-DESIGN §6) | [ ] | [ ] |
 | Today's Dawn is 90 s, seeded by the UTC day, best of the day kept | `LevelBook.daily(day:)`, `DailySeed` | [ ] | [ ] |
 | Pops are sparks and petals; no blood or injury | `Scene/` FX (`metadata.md` §11 ask 1) | [ ] | [ ] |

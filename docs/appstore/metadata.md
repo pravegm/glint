@@ -65,7 +65,7 @@ Spare the fireflies. They drift out of the crease too, and a firefly that reache
 No ads. No in-app purchases. No accounts. No data collected. Pay once and it's yours.
 
 THE LIGHT IS YOUR AIM
-• The phone's angle is where the light lands, smoothly, both ways. Open wider to chase a shadow outwards, close a little to catch the next one at the crease
+• The phone's angle is where the light lands, smoothly, both ways. Open wider to chase a shadow outwards, close a little to bring the light back and meet the next one as it surfaces
 • Shadows never stand still, so a light left in one place only gives each a short dose. Follow the big ones as they creep
 • Quick pops build a chain, up to ×4. Three or more in one sweep is a Sweep, with a bonus
 • Light held on a firefly too long makes it fizzle and breaks your chain. A quick pass over one is safe
@@ -75,7 +75,7 @@ FIVE KINDS OF SHADOW
 Murks creep. Wisps come in quick little flocks. Brutes are big, slow and grumpy, and have to be followed. Splitters pop into two wisps flung further out. Hoppers crouch and jump, and the first touch of light makes them hop at once.
 
 30 SUNRISES, 3 WORLDS
-Every level is one sunrise, about a minute long, with the sun climbing in the mirror as the clock runs. At sunrise every shadow left melts away. Keep all five flowers for three stars. Stars open the next world: the Meadow, the Rooftops and the Harbour, where it gets properly hard.
+Every level is one sunrise, from 35 seconds to a minute and a half, with shadows from the first second and the sun climbing in the mirror as the clock runs. At sunrise every shadow left melts away. Keep all five flowers, and from level 4 beat the level's score too, for three stars. Stars open the next world: the Meadow, the Rooftops and the Harbour, where it gets properly hard.
 
 LONG NIGHT
 Endless waves that never let up, and one best score to beat.
@@ -87,7 +87,7 @@ NO TUTORIAL TO SIT THROUGH
 Level 1 teaches as you play, one line at a time: close the phone to start, open it to let the light in, light the shadows.
 
 MADE FOR THE FOLD. PLAYS ON OTHER iPhone MODELS TOO.
-On iPhone Duo, hold it however you like, as a laptop or as a book: one half is the mirror, the other is the garden. Play lives between about a right angle and well open, so you never lay the phone flat or rush the hinge. Every sunrise starts with the phone shut, and shutting it mid-level pauses the game. Settings can swap the halves. On any other iPhone, drag anywhere to aim the light, and a brass lever on the mirror follows your finger.
+On iPhone Duo, hold it however you like, as a laptop or as a book: one half is the mirror, the other is the garden. Play lives between about a right angle and well open, so you never lay the phone flat or rush the hinge. Every sunrise starts with the phone shut, and shutting it mid-level pauses the game. In book pose, Settings can swap the halves. On any other iPhone, drag anywhere to aim the light, and a gold grip on a brass rail at the garden's edge follows it.
 
 SOUND AND FEEL
 A sizzle that swells with everything in the light, a bright pluck for every pop that climbs the scale as your chain grows, a chord for every Sweep, birdsong at sunrise. All synthesised live in the app. You feel the sizzle in your hands and a crisp tick for every pop. Sound, music, haptics and Reduce motion each have a setting.
@@ -115,7 +115,7 @@ Spare the fireflies. They drift out of the crease too, and a firefly that reache
 No ads. No in-app purchases. No accounts. No data collected. Pay once and it's yours.
 
 THE LIGHT IS YOUR AIM
-• The phone's angle is where the light lands, smoothly, both ways. Open wider to chase a shadow outwards, close a little to catch the next one at the crease
+• The phone's angle is where the light lands, smoothly, both ways. Open wider to chase a shadow outwards, close a little to bring the light back and meet the next one as it surfaces
 • Shadows never stand still, so a light left in one place only gives each a short dose. Follow the big ones as they creep
 • Quick pops build a chain, up to ×4. Three or more in one sweep is a Sweep, with a bonus
 • Light held on a firefly too long makes it fizzle and breaks your chain. A quick pass over one is safe
@@ -125,7 +125,7 @@ FIVE KINDS OF SHADOW
 Murks creep. Wisps come in quick little flocks. Brutes are big, slow and grumpy, and have to be followed. Splitters pop into two wisps flung further out. Hoppers crouch and jump, and the first touch of light makes them hop at once.
 
 30 SUNRISES, 3 WORLDS
-Every level is one sunrise, about a minute long, with the sun climbing in the mirror as the clock runs. At sunrise every shadow left melts away. Keep all five flowers for three stars. Stars open the next world: the Meadow, the Rooftops and the Harbour, where it gets properly hard.
+Every level is one sunrise, from 35 seconds to a minute and a half, with shadows from the first second and the sun climbing in the mirror as the clock runs. At sunrise every shadow left melts away. Keep all five flowers, and from level 4 beat the level's score too, for three stars. Stars open the next world: the Meadow, the Rooftops and the Harbour, where it gets properly hard.
 
 LONG NIGHT
 Endless waves that never let up, and one best score to beat.
@@ -137,7 +137,7 @@ NO TUTORIAL TO SIT THROUGH
 Level 1 teaches as you play, one line at a time: close the phone to start, open it to let the light in, light the shadows.
 
 MADE FOR THE FOLD. PLAYS ON OTHER iPhone MODELS TOO.
-On iPhone Duo, hold it however you like, as a laptop or as a book: one half is the mirror, the other is the garden. Play lives between about a right angle and well open, so you never lay the phone flat or rush the hinge. Every sunrise starts with the phone shut, and shutting it mid-level pauses the game. Settings can swap the halves. On any other iPhone, drag anywhere to aim the light, and a brass lever on the mirror follows your finger.
+On iPhone Duo, hold it however you like, as a laptop or as a book: one half is the mirror, the other is the garden. Play lives between about a right angle and well open, so you never lay the phone flat or rush the hinge. Every sunrise starts with the phone shut, and shutting it mid-level pauses the game. In book pose, Settings can swap the halves. On any other iPhone, drag anywhere to aim the light, and a gold grip on a brass rail at the garden's edge follows it.
 
 SOUND AND FEEL
 A sizzle that swells with everything in the light, a bright pluck for every pop that climbs the scale as your chain grows, a chord for every Sweep, birdsong at sunrise. All synthesized live in the app. You feel the sizzle in your hands and a crisp tick for every pop. Sound, music, haptics and Reduce motion each have a setting.
@@ -152,11 +152,11 @@ No accounts, no tracking, no data collected. Your progress stays on your iPhone.
 Copy rules this text keeps:
 - **Mirror first, reach second, pop third.** "The wider you open it, the further the light reaches" is in the first two lines: that's the difference from every other Duo game (and from Hush, which is about how *slowly* you open).
 - **Duo first, then "plays on other iPhone models too"** (not "every iPhone": the deployment target is iOS 18). The drag control is described plainly in one sentence, after the fold. The store page may talk about the Duo; the *app* never shows a Duo line on a non-Duo iPhone.
-- **No pose demand** (founder rule 2): "however you like, as a laptop or as a book". Never "hold it like a book" alone, never "lay it flat", never "close it fully" except the honest "every sunrise starts with the phone shut", which is the game's own rule 1.
+- **No pose demand** (founder rule 2): "however you like, as a laptop or as a book". Never "hold it like a book" alone, never "lay it flat", never "catch them at the crease" (the R2 crease shade: the light does nothing right at the crease; shadows surface further out), never "close it fully" except the honest "every sunrise starts with the phone shut", which is the game's own rule 1.
 - **Kind to the hinge** (rule 3): "between about a right angle and well open" is GAME-DESIGN §2's 80°–135°; "you never lay the phone flat or rush the hinge". No "fast", "quick snap" or "slam". "Quick" appears about the wisps and the pops, never about moving the phone.
 - **Nothing is hurt.** Shadows "pop" into sparks and petals; flowers are "eaten" and come back as a firefly "replants" them; the level is lost with "the night wins". Never kill, die, burn or zap (keeps the 4+ honest, §8).
 - **"iPhone Duo" is used only referentially**, never in the name, subtitle or keywords, and "iPhone" keeps its exact form even in a capitalised heading (Apple trademark guidelines).
-- **Numbers are the design's, and only the design's** (to be ticked against `Glint/Core/Tuning.swift` and `LevelBook`): 5 flowers, 5 shadow kinds, chain to ×4, a Sweep at 3+, 30 levels in 3 worlds, about a minute per sunrise (45–95 s), 10 achievements, 3 leaderboards. If Core moves one, this text moves with it.
+- **Numbers are the design's, and only the design's** (to be ticked against `Glint/Core/Tuning.swift` and `LevelBook`): 5 flowers, 5 shadow kinds, chain to ×4, a Sweep at 3+, 30 levels in 3 worlds, 35–95 s per sunrise (levels 1–5: 35, 38, 42, 45, 50 s), three stars = five flowers plus the score target from level 4, 10 achievements, 3 leaderboards. If Core moves one, this text moves with it.
 
 ## 5. Keywords (limit 100 bytes, comma-separated, no spaces)
 
@@ -269,15 +269,15 @@ Why each risky item is None:
 | Every sunrise starts shut: "Close the phone to start", then "Open the phone to let the light in" (Duo only) | `GameController` level flow (ROUND-1 App 3) | [ ] exact labels | [ ] |
 | Shutting mid-level pauses (≤ 15° for 0.25 s); the cover display shows "Paused · open the phone to carry on" and the score; resume at ≥ 25° with 0.6 s grace | `Tuning.shutDwell`, `CoverView`, pause rules (GAME-DESIGN §8) | [ ] | [ ] |
 | No pause or warning near 90° | GAME-DESIGN §8; no hint keyed to an angle in 60°–120° | [ ] | [ ] |
-| Any pose: laptop or book; Settings "Swap halves" | `GardenLayout.make(size:isDuo:swapHalves:)`, `SettingsStore` | [ ] exact label | [ ] |
-| Other iPhones: drag anywhere (relative), a brass lever on the mirror follows; "Drag down to let the light in" / "Drag to aim the light" | `DragMirrorSource`, `GardenScene.showsLever`, hint copy | [ ] exact labels | [ ] |
+| Any pose: laptop or book; Settings "Swap halves" (shown in book pose only) | `GardenLayout.make(size:isDuo:swapHalves:)`, `SettingsStore` | [ ] exact label | [ ] |
+| Other iPhones: drag anywhere (relative), a gold grip on a brass rail at the garden's edge follows the light; "Drag down to let the light in" / "Drag to aim the light" | `DragMirrorSource`, the R3 rail and grip (`GardenScene`), hint copy | [ ] exact labels | [ ] |
 | Five flowers are the lives; a shadow at the edge eats the flower in its lane (else the nearest); all five gone = "the night wins" | `Tuning.flowerCount` 5, `DawnSession` eating rule, `.nightWins` | [ ] | [ ] |
 | Five shadow kinds with the behaviours named (murk creeps; wisps in flocks; brutes big and slow; splitters pop into two wisps flung out; hoppers hop, skittish at first light) | `GloomKind`, `Tuning` kind table (GAME-DESIGN §4) | [ ] | [ ] |
 | "Shadows never stand still" (a parked light only gives a short dose) | `DawnSession`: glooms keep moving in light | [ ] | [ ] |
 | Chain: pops within 1.6 s; multiplier up to ×4; Sweep at 3+ pops within 0.35 s with a bonus | `Tuning.chainWindow`, `chainCap`, `sweepWindow`; `.swept` | [ ] | [ ] |
 | Fireflies: light held too long fizzles one and breaks the chain; a quick pass is safe; one that reaches the flowers replants a lost flower (or blooms for points) | `Tuning.fireflyScorch*`, `.fireflyScorched`, `.fireflyDelivered(replanted:)` | [ ] | [ ] |
-| 30 levels in 3 worlds named Meadow, Rooftops, Harbour; each "about a minute" (45–95 s); the sun rises in the mirror; at sunrise every shadow left melts away | `LevelBook.count` 30, world names, durations; `snapshot.sun`; `.sunrise` | [ ] | [ ] |
-| Stars by flowers kept (5 = ★★★, 3–4 = ★★, 1–2 = ★); stars open the next world | `LevelBook.stars(flowersLeft:)`, unlock rules (GAME-DESIGN §6) | [ ] | [ ] |
+| 30 levels in 3 worlds named Meadow, Rooftops, Harbour; "from 35 seconds to a minute and a half" (35–95 s; L1–5 35/38/42/45/50 s), shadows from the first second; the sun rises in the mirror; at sunrise every shadow left melts away | `LevelBook.count` 30, world names, durations; `snapshot.sun`; `.sunrise` | [ ] | [ ] |
+| Stars by flowers kept (5 = ★★★, 3–4 = ★★, 1–2 = ★), and from level 4 ★★★ also needs the level's score target; stars open the next world | `DawnSession.stars(flowersLeft:score:starScore:)` (L4 2,150 … L30 9,050), unlock rules (GAME-DESIGN §6) | [ ] | [ ] |
 | "Properly hard" by the Harbour | `BalanceTests` `GLINT-BAL`: world-3 levels cost a decent pilot 1–2 flowers (ROUND-1 Core 3) | [ ] | [ ] |
 | Long Night: endless, escalating, one best score | `PlayMode.endless`, `DawnSession` endless waves | [ ] | [ ] |
 | Today's Dawn: one seeded sunrise a day, the same for everyone, best of the day kept; a new one at 00:00 UTC | `LevelBook.daily(day:)`, `DailySeed.day(for:)` (UTC) | [ ] | [ ] |

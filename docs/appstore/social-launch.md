@@ -64,7 +64,7 @@ Count each with the real link before posting (X and Mastodon count a link as 23 
 **Title:** [Dev] The Duo's top half is a mirror that catches the sun: Glint is out
 > Developer here, so this is self-promo. Glint uses the hinge as a continuous aim: one half of the inner screen is a mirror, the other a garden, and the opening angle is where a band of sunlight lands. Shut is dark; from about 80° the light lifts out of the crease, and it reaches the far edge at about 135°. So it plays in the hinge's comfortable range, never flat, and there's no pause or warning anywhere near 90°.
 >
-> Every level starts with the phone shut, and shutting it mid-level pauses (the cover screen shows your score). Laptop or book pose both work, and Settings → Swap halves flips which half is the mirror, handy if your Duo blurs one side as a fold starts from flat.
+> Every level starts with the phone shut, and shutting it mid-level pauses (the cover screen shows your score). Laptop or book pose both work, and in book pose Settings → Swap halves flips which half is the mirror, handy if your Duo blurs one side as a fold starts from flat.
 >
 > 30 handmade sunrises across three worlds, an endless Long Night and a daily Today's Dawn with a leaderboard. £1.99/$1.99, no ads, no IAP, no data collected.
 >
@@ -89,8 +89,8 @@ Count each with the real link before posting (X and Mastodon count a link as 23 
 | 0.0–2.5 | Cold open: the phone shut on the table. A hand lifts the top half slowly; the crease starts to glow | **Your Duo is a mirror.** | a soft dawn pad |
 | 2.5–5.5 | Opening past a right angle: the band lifts out of the crease and slides across the garden. The sun is low in the mirror | **Open wider…** | a faint air tone |
 | 5.5–8.5 | The band reaches a crowd of wisps near the flowers: Sweep! Sparks and petals | **…the light reaches further.** | rising plucks, the Sweep chord |
-| 8.5–11.0 | Closing a little to catch a murk at the crease; a firefly drifts past untouched | **Pop the shadows. Spare the fireflies.** | sizzle, pop, a little bell |
-| 11.0–13.0 | Sunrise: the sun fills the mirror, every shadow left melts away, three stars | **Catch the sun.** | the sunrise chord, birdsong |
+| 8.5–11.0 | Closing a little to bring the light back to a murk as it surfaces; a firefly drifts past untouched | **Pop the shadows. Spare the fireflies.** | sizzle, pop, a little bell |
+| 11.0–13.0 | Sunrise: the sun fills the mirror, every shadow left melts away, three stars (all five flowers and the score) | **Catch the sun.** | the sunrise chord, birdsong |
 | 13.0–15.0 | End card over Home: "Glint" wordmark, "Catch the sun. Pop the shadows.", "Out now on the App Store" | **Glint · out now** | one last glint chime |
 
 Rules: no price in the video (it goes in the post text); calm, slow hinge moves only; never flat, never slammed, never flapped. Export H.264, ≤ 60 MB (fits X, Bluesky, Mastodon, Threads, TikTok).

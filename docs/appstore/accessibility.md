@@ -18,7 +18,7 @@ Common tasks for Glint:
 - **Words for every outcome:** "Sweep!", "×n" on chains of 3+, the hint line, "The night won", stars as star shapes.
 - **Sound and haptics carry the state:** the sizzle swells with how much is in the light (sound and a haptic texture), each pop is a tick and a rising note, a flower lost is a crunch and a heavy thud. A player who can't see the edge of the band well can still hear and feel when it's on something.
 - **Reduce motion:** a setting (ROUND-1: `reduceMotion` turns off the band's shimmer and any shake). **Ask (App engineer, `metadata.md` §11 ask 8):** default it to the iOS setting (`UIAccessibility.isReduceMotionEnabled`) and say so in the row.
-- **Swap halves:** puts the garden on whichever half the player sees best (and away from the half iOS blurs when a fold starts from flat).
+- **Swap halves** (book pose only): puts the garden on whichever half the player sees best (and away from the half iOS blurs when a fold starts from flat).
 - **Gentle input:** play needs small, slow movements of the hinge or the finger; nothing needs speed or force.
 
 ## The answer, at a glance
