@@ -132,6 +132,19 @@ jobs:
           fi
           [ "${ICON_DARK:-0}" = 1 ] && exit 1 || exit 0
 
+      - name: Capture the small-phone fallback (iPhone SE size)
+        # R5 (founder: "fallbacks if the phone is not a Duo"): the tightest regular iPhone (375 × 667) runs the
+        # phone scenarios too (Home, levels, play, results, settings), so the drag fallback is checked where space is
+        # scarcest. Non-fatal: frames are evidence. Lands in ci-screens/se/.
+        if: success() && inputs.filter != 'none'
+        continue-on-error: true
+        timeout-minutes: 40
+        env:
+          DEVICE: "iPhone SE (3rd generation)|auto:SE|screen:750x1334"
+          OUT: ci-screens/se
+          SCENARIO_FILTER: "^(01|02|04|05|06|07|12|13|16|19|21|22)-"
+        run: bash ci/screenshots.sh
+
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v4
