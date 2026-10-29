@@ -17,8 +17,8 @@
 11-play-swap-laptop|screen=play;level=8;t=20;skill=0.8;fold=1;swap=1|25|Swap halves asked for in laptop pose (a portrait split): ignored, the mirror stays on top (Swap is book-pose only)|GLINT-T freeze
 12-results-won|screen=results;results=won;level=4|6|Results, won: the player's own garden at sunrise (five flowers), three stars already landed, score, "New best!", achievements as one row of small medallions (tap for names), Next sunrise / Retry and Levels / Home pills all on screen|GLINT-T screen results
 13-results-lost-brutes|screen=results;results=lost;level=13;ignore=brute;progress=mid|10|Results, lost to brutes (a built fixture, always lost): "The night won", five greyed flowers, "0 flowers saved · 41 shadows popped", 1,120, the brute tip "Follow the big ones as they walk.", every button on screen|GLINT-T result level-13 won=0
-14-endless|screen=play;mode=endless;t=60;skill=0.8|70|Long Night at 60 s: score with "Chain n · Wave n" (the wave always shows), the moon in the mirror|GLINT-T freeze
-15-daily|screen=play;mode=daily;t=20;skill=0.8|30|Today's Dawn: the date chip ("Thu 29 Oct") centred at the mirror's top, below the score and pause|GLINT-T freeze
+14-endless|screen=play;mode=endless;t=60;skill=0.8|70|Long Night at 60 s: score with "×n · Wave n" (the multiplier, never the chain count; the wave always shows), the moon in the mirror|GLINT-T freeze
+15-daily|screen=play;mode=daily;t=20;skill=0.8|30|Today's Dawn: the date chip (the local date of the run) between the score and pause plates, overlapping neither|GLINT-T freeze
 16-settings|screen=settings|6|Settings: title at the top safe area, Sound, Music, Haptics, Reduce motion (no Swap halves on a phone), Game Center, About|GLINT-T screen settings
 17-about|screen=about|6|About: credits ("Designed and built with Claude", "© 2026 pravegm"), "Glint collects no data", version|GLINT-T screen about
 18-cover|screen=cover;fold=1;progress=mid;streak=3|6|The Duo's cover display: the brass mirror, Glint, "Open the phone to play", "Today: 2,140 · streak 3"|GLINT-T screen cover
@@ -27,4 +27,4 @@
 21-play-rooftops|screen=play;level=16;t=30;skill=0.7|35|Rooftops level 16: roof-tile ground, splitters and hoppers, a cloud gap in the light|GLINT-T freeze
 22-lost-hoppers|screen=results;results=lost;level=18;ignore=hopper;progress=mid|10|Results, lost to hoppers (built fixture): 41 popped, 1,120, the hopper tip "Catch hoppers after they land.", every button on screen|GLINT-T result level-18 won=0
 23-home-streak|screen=home;progress=mid;streak=3|6|Home with a 3-day Today's Dawn streak: the card reads "✓ Day 3 streak"|GLINT-T screen home
-24-cover-paused|screen=cover;fold=1;level=6;t=18;skill=0.8;progress=mid|28|The cover display over a paused level: "Paused · open the phone to carry on", the score and the flowers left|GLINT-T screen cover
+24-cover-paused|screen=cover;fold=1;level=6;t=18;skill=0.8;progress=mid|28|The cover display over a level paused from its menu: "Paused" / "Open the phone to see the pause menu" on two lines, the score and the flowers left|GLINT-T screen cover

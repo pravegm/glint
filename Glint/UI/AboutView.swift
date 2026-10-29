@@ -32,11 +32,11 @@ struct AboutView: View {
             } bottom: {
                 VStack(spacing: c ? 14 : 18) {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Made for iPhone Duo")
+                        // R5: "Made for iPhone" is Apple's MFi wording (store F4); phones never get a Duo line.
+                        Text(AboutView.heading)
                             .font(GlintType.headline(c))
                             .foregroundStyle(GlintTheme.cream)
-                        Text("The top half of your phone is a mirror. Open it to catch the sunrise and pop the shadows "
-                             + "creeping out of the crease. On other iPhones, drag to aim the light.")
+                        Text(AboutView.blurb(isDuo: canvas.isDuo))
                             .font(GlintType.body(c))
                             .foregroundStyle(GlintTheme.mist)
                             .fixedSize(horizontal: false, vertical: true)
@@ -86,6 +86,18 @@ struct AboutView: View {
             }
         }
         .frame(width: canvas.size.width, height: canvas.size.height)
+    }
+
+    static let heading = "Best on iPhone Duo"
+
+    /// R5 (player QA #10): the Duo's own words on a Duo, the drag words on every other iPhone. Pure; tested.
+    static func blurb(isDuo: Bool) -> String {
+        if isDuo {
+            return "One half of your phone is a mirror. Open it to catch the sunrise and pop the shadows creeping out "
+                + "of the crease."
+        }
+        return "Plays on every iPhone by dragging. The mirror catches the sunrise: drag anywhere to aim the light and "
+            + "pop the shadows creeping out of the crease."
     }
 
     /// No personal names in the binary (founder, R2).

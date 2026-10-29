@@ -33,6 +33,9 @@ final class FeedbackDirector {
     static let idleDelay: Double = 3
     /// Seconds without a `frame` or `ambience` call after which the continuous layers fade by themselves.
     static let staleAfter: Double = 0.25
+    /// R5 (QA-R5 P2-6): play-screen frames keep the engines awake (waiting for first light, the "Open the phone" card,
+    /// a pause), so first light and resume never wake them; a pause longer than this lets them idle (battery).
+    nonisolated static let pauseHold: Double = 20
     /// Throttles for the frequent quiet cues (s).
     static let emergeGap: Double = 0.15
     static let hopGap: Double = 0.1
@@ -94,6 +97,15 @@ final class FeedbackDirector {
 
     /// True while `setPaused(true)` holds.
     private(set) var paused = false
+    /// R5: when the current pause began.
+    private var pausedSince: CFTimeInterval = -Double.infinity
+    /// R5: a heal is queued (it runs on its own task, never inside a frame).
+    private var healPending = false
+    /// R5: a prepare is queued.
+    private var preparePending = false
+
+    /// R5 (QA-R5 P2-11): the dawn pad is heard only with Music on and none of the player's own audio playing.
+    var padAllowed: Bool { musicOn && !audio.otherAudioPlaying }
 
     private let audio = FeelAudioEngine()
     private let haptics = FeelHaptics()
@@ -148,6 +160,9 @@ final class FeedbackDirector {
         audio.enabled = soundOn || musicOn
         haptics.enabled = profile != .off
         if profile != .off { haptics.profile = profile }
+        audio.onOtherAudioChange = { [weak self] _ in
+            self?.otherAudioChanged()
+        }
         audio.start()
         haptics.start()
         activationObserver = NotificationCenter.default.addObserver(
@@ -157,6 +172,25 @@ final class FeedbackDirector {
                 self?.audio.resume()
                 self?.haptics.resume()
             }
+        }
+    }
+
+    /// R5 (QA-R5 P2-6): wake the audio and haptic engines now, on their own task (never inside a frame), so first light
+    /// finds them running. `ui(.levelStart)` calls it; the App may also call it when the "Close the phone to start"
+    /// card appears. Cheap when they are already awake; repeated calls share one task.
+    func prepare() {
+        let now = CACurrentMediaTime()
+        lastActive = now
+        guard !preparePending else { return }
+        preparePending = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.preparePending = false
+            self.ensureStarted()
+            self.lastActive = CACurrentMediaTime()
+            self.refreshIdle(now: self.lastActive)
+            self.audio.prepare()
+            self.haptics.resume()
         }
     }
 
@@ -277,7 +311,8 @@ final class FeedbackDirector {
         lastFrame = now
         let advancing = dt.isFinite && dt > 0
         let live = advancing && !paused && snapshot.phase == .playing
-        if live { lastActive = now }
+        // R5: any play-screen frame (waiting for first light, held, or a pause under `pauseHold`) keeps the engines up.
+        if Self.keepsAwake(paused: paused, pausedFor: now - pausedSince) { lastActive = now }
         refreshIdle(now: now)
         heal(now: now)
 
@@ -285,7 +320,7 @@ final class FeedbackDirector {
         lastPhase = snapshot.phase
         if now - lastBedSend >= 1.0 / 60 || phaseChanged {
             lastBedSend = now
-            var bed = FeelSoundBook.playBed(snapshot: snapshot, sound: soundOn, music: musicOn, paused: paused,
+            var bed = FeelSoundBook.playBed(snapshot: snapshot, sound: soundOn, music: padAllowed, paused: paused,
                                             advancing: advancing)
             if phaseChanged { bed.glide = FeelSoundBook.fadeGlide }
             if bed.pad > 0 { lastPadBright = bed.padBright }
@@ -311,9 +346,10 @@ final class FeedbackDirector {
         guard paused != self.paused else { return }
         self.paused = paused
         let now = CACurrentMediaTime()
+        pausedSince = paused ? now : -Double.infinity
         if paused {
             var bed = FeelSoundBook.idleBed(master: master, glide: FeelSoundBook.fadeGlide)
-            if musicOn {
+            if padAllowed {
                 bed.pad = Float(FeelSoundBook.pausedPadShare)
                 bed.padBright = lastPadBright
             }
@@ -338,7 +374,7 @@ final class FeedbackDirector {
         heal(now: now)
         if now - lastBedSend >= 1.0 / 30 {
             lastBedSend = now
-            audio.setBed(FeelSoundBook.menuBed(sun: sun, master: master, music: musicOn))
+            audio.setBed(FeelSoundBook.menuBed(sun: sun, master: master, music: padAllowed))
             continuousLive = true
         }
         haptics.quiet(now: now)
@@ -365,6 +401,26 @@ final class FeedbackDirector {
         refreshIdle(now: now)
         playSound(FeelSoundBook.ui(cue, dice: &dice))
         playHaptic(FeelHapticBook.ui(cue))
+        // R5: a level is starting: bring the engines up before first light.
+        if cue == .levelStart { prepare() }
+    }
+
+    /// R5: whether a play-screen frame counts as activity (keeps the engines awake). Pure.
+    nonisolated static func keepsAwake(paused: Bool, pausedFor: Double) -> Bool {
+        guard paused else { return true }
+        return pausedFor.isFinite && pausedFor < pauseHold
+    }
+
+    /// R5: the player's own audio started or stopped: the pad follows on the next bed (now, if paused or in menus).
+    private func otherAudioChanged() {
+        lastBedSend = -Double.infinity
+        guard paused else { return }
+        var bed = FeelSoundBook.idleBed(master: master, glide: FeelSoundBook.fadeGlide)
+        if padAllowed {
+            bed.pad = Float(FeelSoundBook.pausedPadShare)
+            bed.padBright = lastPadBright
+        }
+        audio.setBed(bed)
     }
 
     // MARK: - Helpers
@@ -380,7 +436,8 @@ final class FeedbackDirector {
 
     private func playHaptic(_ cue: FeelHapticCue) {
         guard profile != .off else { return }
-        haptics.play(FeelHapticBook.adapt(cue, to: profile))
+        // R5 (QA-R5 P2-12): on Bluetooth the sound arrives late; hold the touch back to land with it.
+        haptics.play(FeelHapticBook.delayed(FeelHapticBook.adapt(cue, to: profile), by: audio.hapticDelay))
     }
 
     private func refreshAudioEnabled() {
@@ -397,11 +454,17 @@ final class FeedbackDirector {
         haptics.enabled = newProfile != .off
     }
 
+    /// About once a second: repair the engines, on its own task (R5: a restart never runs inside the frame).
     private func heal(now: CFTimeInterval) {
-        guard now - lastHeal > 1 else { return }
+        guard now - lastHeal > 1, !healPending else { return }
         lastHeal = now
-        if !audioIdle { audio.heal() }
-        if !hapticIdle { haptics.heal() }
+        healPending = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.healPending = false
+            if !self.audioIdle { self.audio.heal() }
+            if !self.hapticIdle { self.haptics.heal() }
+        }
     }
 
     /// Menus (`idle`) or a long quiet idle the engines.

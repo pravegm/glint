@@ -28,10 +28,10 @@ enum Achievements {
     }
 
     static let firstLight = def("firstlight", "First Light", "Win your first sunrise.", 10)
-    static let sweep = def("sweep", "Clean Sweep", "Pop 3 shadows or more in one Sweep.", 10)
+    static let sweep = def("sweep", "Clean Sweep", "Pop 3 or more shadows in one Sweep.", 10)
     static let brute = def("brute", "The Bigger They Come", "Pop a brute.", 25)
     static let firefly = def("firefly", "Firefly Gardener", "Let a firefly replant a lost flower.", 25)
-    static let chain4 = def("chain4", "Four Times Bright", "Reach a x4 chain: pop 13 shadows in a row.", 50)
+    static let chain4 = def("chain4", "Four Times Bright", "Reach a ×4 multiplier: 13 pops in a row.", 50)
     static let rooftops = def("rooftops", "Over the Rooftops", "Win all 10 Rooftops sunrises.", 50)
     static let harbour = def("harbour", "Harbour Lights", "Win all 10 Harbour sunrises.", 100)
     static let allStars = def("allstars", "Ninety Suns", "Earn all 90 stars.", 100)

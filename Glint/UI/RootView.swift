@@ -51,7 +51,7 @@ struct RootView: View {
             controller.refreshMotion()
         }
         .onChange(of: settings.swapHalves) { _, _ in
-            controller.refreshLayout()
+            controller.swapChanged()
         }
         .preferredColorScheme(.dark)
         .statusBarHidden(true)
@@ -70,7 +70,7 @@ struct RootView: View {
         let canvas = AppCanvas(size: size, insets: insets, layout: controller.layout, isDuo: controller.isDuo)
         ZStack {
             GlintTheme.night
-            gameLayer(size)
+            gameLayer(size, cover: cover)
             if !cover {
                 screens(canvas)
             }
@@ -99,9 +99,12 @@ struct RootView: View {
 
     /// The garden: always in the hierarchy (it keeps stepping on the cover display, so closing the phone is seen).
     @ViewBuilder
-    private func gameLayer(_ size: CGSize) -> some View {
+    private func gameLayer(_ size: CGSize, cover: Bool) -> some View {
         if let scene = controller.scene {
-            SpriteView(scene: scene, preferredFramesPerSecond: 120)
+            // R5 (QA P2-5): 120 fps only for the level itself; 30 behind the menus; stopped under the cover view
+            // (the 4 Hz ticker and the hinge samples still run the close-first gate there).
+            SpriteView(scene: scene, isPaused: cover && !controller.forcedCover,
+                       preferredFramesPerSecond: controller.route.showsSession ? 120 : 30)
                 .frame(width: size.width, height: size.height)
                 .allowsHitTesting(controller.route == .play)
                 .accessibilityHidden(true)

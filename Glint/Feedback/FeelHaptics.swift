@@ -87,6 +87,17 @@ enum FeelHapticBook {
         return FeelHapticCue(notes: notes, curve: cue.curve)
     }
 
+    /// R5 (QA-R5 P2-12): the cue held back by `delay` s (every note and curve point), so on a Bluetooth route a pop is
+    /// felt when it is heard. Non-positive or non-finite delays return the cue unchanged.
+    static func delayed(_ cue: FeelHapticCue, by delay: Double) -> FeelHapticCue {
+        guard delay.isFinite, delay > 0.0005 else { return cue }
+        var notes = cue.notes
+        for index in notes.indices { notes[index].time += delay }
+        var curve = cue.curve
+        for index in curve.indices { curve[index].time += delay }
+        return FeelHapticCue(notes: notes, curve: curve)
+    }
+
     // MARK: The continuous sizzle texture (what's burning, under your fingers)
 
     /// The texture's intensity for a sizzle level (`FeelSoundBook.sizzleLevel`): nothing under 0.02, then
@@ -319,6 +330,12 @@ final class FeelHaptics {
     private var sizzlePlayer: CHHapticAdvancedPatternPlayer?
     private var alarmPlayer: CHHapticAdvancedPatternPlayer?
     private var isRunning = false
+    /// R5: an asynchronous start is in flight.
+    private var starting = false
+    /// R5: the last cue asked for while the engine was starting (played on start if under `pendingLife` s old).
+    private var pendingCue: FeelHapticCue?
+    private var pendingAt: CFTimeInterval = 0
+    static let pendingLife: Double = 0.2
     private var wantsStart = false
     private var lastRecovery: CFTimeInterval = 0
     private var lastSend: CFTimeInterval = 0
@@ -389,27 +406,49 @@ final class FeelHaptics {
         restart()
     }
 
+    /// R5 (QA-R5 P2-6): the engine starts **asynchronously** (`start(completionHandler:)`), so a wake never blocks the
+    /// frame that asked for it; the looping players are built when it reports back, on their own main-actor turn.
     private func restart() {
-        guard enabled, let engine else { return }
-        do {
-            try engine.start()
-            isRunning = true
-        } catch {
+        guard enabled, let engine, !starting else { return }
+        starting = true
+        engine.start(completionHandler: { [weak self] (error: Error?) in
+            guard let self else { return }
+            Task { @MainActor in
+                self.didStart(error: error)
+            }
+        })
+    }
+
+    private func didStart(error: Error?) {
+        starting = false
+        guard enabled, engine != nil else {
+            pendingCue = nil
+            return
+        }
+        if let error {
             isRunning = false
+            pendingCue = nil
             record("Couldn't start the haptic engine", error)
             return
         }
+        isRunning = true
         sizzlePlayer = nil
         alarmPlayer = nil
         // Menus have nothing burning: no looping players to keep the hardware awake.
-        if idle { return }
-        do {
-            sizzlePlayer = try makeLoopingPlayer(sharpness: 0.4)
-            alarmPlayer = try makeLoopingPlayer(sharpness: 0.9)
-            lastSizzle = 0
-            lastAlarm = 0
-        } catch {
-            record("Couldn't build the continuous haptics", error)
+        if !idle {
+            do {
+                sizzlePlayer = try makeLoopingPlayer(sharpness: 0.4)
+                alarmPlayer = try makeLoopingPlayer(sharpness: 0.9)
+                lastSizzle = 0
+                lastAlarm = 0
+            } catch {
+                record("Couldn't build the continuous haptics", error)
+            }
+        }
+        // A moment asked for while the engine was coming up plays now, if it is still fresh.
+        if let cue = pendingCue {
+            pendingCue = nil
+            if CACurrentMediaTime() - pendingAt <= Self.pendingLife { play(cue) }
         }
     }
 
@@ -520,14 +559,18 @@ final class FeelHaptics {
             playFallback(cue)
             return
         }
-        if !isRunning || engine == nil {
+        if !isRunning || engine == nil || starting {
+            // R5: the engine comes up asynchronously; keep this cue to play when it does (if still fresh).
             let now = CACurrentMediaTime()
+            pendingCue = cue
+            pendingAt = now
             if now - lastRecovery > 0.5 {
                 lastRecovery = now
                 resume()
             }
+            return
         }
-        guard let engine, isRunning else { return }
+        guard let engine else { return }
         do {
             let player = try engine.makePlayer(with: try Self.pattern(for: cue))
             try player.start(atTime: CHHapticTimeImmediate)

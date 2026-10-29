@@ -120,7 +120,11 @@ final class GardenScene: SKScene {
 
     /// Menus behind glass: softer, no floating words, no shake.
     var attract: Bool = false {
-        didSet { applyMood() }
+        didSet {
+            // R5 (QA P2-1): play → menus is a new session even when both sides are Long Night (gloom ids restart).
+            if attract != oldValue { reset() }
+            applyMood()
+        }
     }
 
     /// No shimmer, no shake, gentler idle motion, fewer particles.
@@ -154,6 +158,7 @@ final class GardenScene: SKScene {
     private let lightWash: GardenLightLayer
     private let lightLine: GardenLightLayer
     private var lightPieces: [LightPiece] = []
+    private var lightBreaks: [Double] = []
     /// R2: the crease shade (light does nothing for d < `Tuning.creaseShade`) and its cool rim.
     private let shadeStrip = SKSpriteNode()
     private let shadeRim = SKSpriteNode()
@@ -216,7 +221,7 @@ final class GardenScene: SKScene {
     private var frameEatenLanes: [Int] = []
     private var frameEvaporate = false
     private var recentPops: [(CGPoint, CGFloat)] = []
-    private var sweepSlot = -1
+    private var sweepSlot = GardenLabels.Handle.none
     private var hasSnapshot = false
     private var lastUpdate: TimeInterval?
     private var animTime: CGFloat = 0
@@ -296,6 +301,17 @@ final class GardenScene: SKScene {
     func gloomLook(id: Int) -> CGVector? { glooms[id]?.lookDir }
     /// R3: gloom `id` is popping up out of the ground (`.surfaced`).
     func gloomPoppingUp(id: Int) -> Bool { glooms[id]?.isPoppingUp ?? false }
+    /// R5: gloom `id`'s eyes as drawn (opacity, openness).
+    func gloomEyes(id: Int) -> (opacity: CGFloat, openness: CGFloat)? {
+        guard let n = glooms[id] else { return nil }
+        return (opacity: n.eyeOpacity, openness: n.eyeOpenness)
+    }
+    /// R5: the light's pieces this frame and the pool layer's sprite pairs (it grows to fit).
+    var lightPieceCount: Int { lightPieces.count }
+    var lightPoolCapacity: Int { lightPool.capacity }
+    /// R5: the floating words' frames as drawn and the rect they must stay in.
+    var floatingFrames: [CGRect] { labels.visibleFrames }
+    var floatingBounds: CGRect { labels.bounds }
     /// R3: the dots in firefly `id`'s trail drawn now.
     func fireflyTrailDots(id: Int) -> Int { fireflies[id]?.trailDotsShowing ?? 0 }
 
@@ -356,7 +372,7 @@ final class GardenScene: SKScene {
         snapshot = DawnSnapshot(mode: .level(1))
         mirror = GardenMirror()
         fx = GardenFX()
-        labels = GardenLabels(capacity: 8)
+        labels = GardenLabels(capacity: 12)
         // R2 (REVIEW-1 P0-2): reflected sunlight, additive, the grass showing through.
         lightHalo = GardenLightLayer(.halo, color: GardenInk(hex: 0xFFB04A).ui)
         lightBeam = GardenLightLayer(.beam, color: GardenInk(hex: 0xFFC86A).ui)
@@ -377,6 +393,9 @@ final class GardenScene: SKScene {
         scaleMode = .aspectFill
         anchorPoint = .zero
         backgroundColor = GardenPalette.backdrop.ui
+        // R5: cached grounds are only dropped when iOS asks for memory.
+        NotificationCenter.default.addObserver(self, selector: #selector(memoryWarning),
+                                               name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
 
         // Every texture the frame loop can ask for, built now (never mid-play).
         CreatureArt.warmGlooms()
@@ -412,7 +431,7 @@ final class GardenScene: SKScene {
         let lightRoots: [SKNode] = [lightWash.root, lightBeam.root, lightHalo.root, lightTrail.root, lightPool.root,
                                     lightCore.root, lightLine.root]
         for n in lightRoots { garden.addChild(n) }
-        for _ in 0..<3 {
+        for _ in 0..<GardenScene.maxShades {
             let t = SKSpriteNode(texture: GardenArt.shadeTint)
             t.colorBlendFactor = 1
             t.color = GardenInk(hex: 0x233F73).ui
@@ -534,6 +553,11 @@ final class GardenScene: SKScene {
     func apply(layout newLayout: GardenLayout) {
         let old = gardenFrame
         layout = newLayout
+        // R5 (QA P1-2): a drag in the old coordinates would jump the band: end it.
+        if dragTouch != nil {
+            dragTouch = nil
+            driver?.dragEnded()
+        }
         applyLayoutNow()
         let f = gardenFrame
         if old.layout.foldVertical == f.layout.foldVertical && old.layout.gardenAfter == f.layout.gardenAfter {
@@ -555,10 +579,15 @@ final class GardenScene: SKScene {
         hasSnapshot = false
     }
 
+    @objc private func memoryWarning() {
+        GardenArt.purgeGrounds(keeping: groundKeys)
+    }
+
     private func applyMood() {
         var k: CGFloat = attract ? 0.6 : 1
         if reduceMotion { k *= 0.5 }
         fx.density = k
+        labels.calm = reduceMotion
         if attract { labels.clear() }
         if attract || reduceMotion {
             shakeAmp = 0
@@ -603,8 +632,9 @@ final class GardenScene: SKScene {
         // R3: the lever's rail runs along d at the grip's u, from the crease (d 0) to just above the flower row.
         let gu = gripU
         let top = max(railTopD, 0.2)
-        railRange = 0...top
-        let z = f.scene(u: gu, d: 0)
+        let bottom = min(railStartD, top - 0.05)
+        railRange = bottom...top
+        let z = f.scene(u: gu, d: bottom - Double(GardenScene.gripHalfLength / max(f.depth, 1)))
         let e = f.scene(u: gu, d: top)
         railEnds = (z, e)
         let railAngle = atan2(-f.dUnit.dx, f.dUnit.dy)
@@ -612,12 +642,15 @@ final class GardenScene: SKScene {
         railGarden.position = CGPoint(x: (z.x + e.x) / 2, y: (z.y + e.y) / 2)
         railGarden.size = CGSize(width: railW, height: max(GardenFrame.distance(z, e), 1))
         railGarden.zRotation = railAngle
-        grip.size = CGSize(width: 44, height: 20)
-        grip.zRotation = atan2(f.uUnit.dy, f.uUnit.dx)
+        grip.size = CGSize(width: GardenScene.gripHalfLength * 2, height: 20)
+        // R5: the pill lies along the rail (along d).
+        grip.zRotation = atan2(f.dUnit.dy, f.dUnit.dx)
         gripGlow.size = CGSize(width: 96, height: 64)
         gripGlow.zRotation = grip.zRotation
         placeFlowers()
         mirror.apply(rect: f.mirrorRect, towardCrease: f.dUnit)
+        // R5 (QA P2-3): floating words stay wholly on the garden, by their measured size.
+        labels.bounds = f.gardenRect.insetBy(dx: 6, dy: 6)
         flood.size = layout.size
         flood.position = CGPoint(x: layout.size.width / 2, y: layout.size.height / 2)
         let fr = max(layout.size.width, layout.size.height) * 1.3
@@ -655,10 +688,10 @@ final class GardenScene: SKScene {
         groundDawn.texture = GardenArt.ground(depth: full, span: span, warm: true, style: style, inset: ins)
         let keys = [GardenArt.groundKey(depth: full, span: span, warm: false, style: style, inset: ins),
                     GardenArt.groundKey(depth: full, span: span, warm: true, style: style, inset: ins)]
-        groundKeys.removeAll { keys.contains($0) }
-        groundKeys.append(contentsOf: keys)
-        if groundKeys.count > 8 { groundKeys.removeFirst(groundKeys.count - 8) }
-        GardenArt.purge(prefix: "ground-", keeping: groundKeys)
+        // R5 (QA P2-5): no LRU eviction; every world for this size is drawn in the background now, so nothing is
+        // drawn in the frame loop later (world change, rotation, resume, cover hand-off). A memory warning purges.
+        groundKeys = keys
+        GardenArt.prewarmGrounds(depth: full, span: span, inset: ins, styles: GroundStyle.allCases)
 
         // Glints: scattered dew on lawns and roofs; on the boardwalk, the puddles shine.
         var dr = GardenRNG(seed: 0xDE_77)
@@ -769,8 +802,14 @@ final class GardenScene: SKScene {
     /// R2: glooms 15 % bigger on phones.
     private var gloomScale: CGFloat { GardenMath.gloomArtScale(layout: layout) }
 
-    /// R2: the phone grip's lane: 30 pt in from the u = 1 edge.
-    private var gripU: Double { Double(1 - 30 / max(gardenFrame.span, 60)) }
+    /// R2/R5: the phone grip's lane: R5 (player QA #11): 13 pt in from the u = 1 edge, so it sits on the garden's
+    /// margin (where the light fades out) rather than over lane 5's shadows.
+    private var gripU: Double { Double(1 - 13 / max(gardenFrame.span, 60)) }
+
+    /// R5: the grip's half-length along d (it lies along the rail) and the rail's start: clear of the crease line and
+    /// the mirror frame's corner bolt.
+    static let gripHalfLength: CGFloat = 22
+    private var railStartD: Double { Double((GardenScene.gripHalfLength + 8) / max(gardenFrame.depth, 1)) }
 
     /// R4: the least d a submerged gloom is drawn at (points `radius` art): its top stays below the crease line.
     nonisolated static func submergedMinD(radius r: CGFloat, depth: CGFloat) -> Double {
@@ -817,7 +856,18 @@ final class GardenScene: SKScene {
         return max(d * gardenFrame.depth * gloomScale, 6)
     }
 
-    /// Keeps a floating word inside the garden.
+    /// R5 (player QA #8): the multiplier for a chain as the floating word shows it: "×1.5", "×2.25", "×4".
+    nonisolated static func multiplierText(chain: Int) -> String {
+        let m = Tuning.multiplier(chain: chain)
+        if abs(m - m.rounded()) < 0.001 { return "×\(Int(m.rounded()))" }
+        var s = String(format: "%.2f", m)
+        while s.hasSuffix("0") { s.removeLast() }
+        if s.hasSuffix(".") { s.removeLast() }
+        return "×" + s
+    }
+
+    /// Keeps a floating word's anchor roughly inside the garden (the label pool then clamps by the word's measured
+    /// size, R5).
     private func clampLabel(_ p: CGPoint) -> CGPoint {
         let g = gardenFrame.gardenRect.insetBy(dx: labelSize * 1.6, dy: labelSize * 0.9)
         guard g.width > 0, g.height > 0 else { return p }
@@ -861,7 +911,7 @@ final class GardenScene: SKScene {
         fx.clear()
         labels.clear()
         recentPops.removeAll()
-        sweepSlot = -1
+        sweepSlot = .none
         shakeAmp = 0
         world.position = .zero
         sunriseAge = s.phase == .won ? 10 : -1
@@ -985,9 +1035,11 @@ final class GardenScene: SKScene {
                 recordPop(p)
                 if kind == .brute && !reduceMotion && !attract { shakeAmp = max(shakeAmp, 3.5) }
                 if chain >= 3 && !attract {
-                    // R2: the chain count springs in, a little bigger with each step.
+                    // R2: it springs in, a little bigger with each step. R5 (player QA #8): it shows the MULTIPLIER
+                    // ("×2.5", capped ×4 as the store says), not the chain count.
                     let grow = 0.72 + 0.04 * CGFloat(min(chain - 3, 8))
-                    labels.show("×\(chain)", at: clampLabel(CGPoint(x: p.x, y: p.y + r * 1.3)), size: labelSize * grow,
+                    labels.show(GardenScene.multiplierText(chain: chain),
+                                at: clampLabel(CGPoint(x: p.x, y: p.y + r * 1.3)), size: labelSize * grow,
                                 color: GardenPalette.goldHot, rise: 34, life: 0.85, bouncy: true)
                 }
             case .swept(let count, _):
@@ -997,7 +1049,8 @@ final class GardenScene: SKScene {
                 fx.rings.spawn(at: c, fromRadius: 10, toRadius: labelSize * 4, life: 0.55, color: GardenPalette.gold.ui,
                                alpha: 0.9)
                 if !attract {
-                    let text = count > 3 ? "Sweep ×\(count)!" : "Sweep!"
+                    // (R5: no "×" here: that sign means the multiplier.)
+                    let text = count > 3 ? "Sweep of \(count)!" : "Sweep!"
                     if !labels.retext(sweepSlot, text, size: labelSize, color: GardenPalette.gold) {
                         sweepSlot = labels.show(text, at: clampLabel(CGPoint(x: c.x, y: c.y + labelSize)),
                                                 size: labelSize, color: GardenPalette.gold, rise: 40, life: 1.1)
@@ -1133,7 +1186,8 @@ final class GardenScene: SKScene {
                 }
             }
             if g.lit > 0.02 && dt > 0 {
-                let lit = CGFloat(g.lit)
+                // R5 (QA P1-1): a whole lit flock shares the steam budget (it can't flood the pool on its own).
+                let lit = CGFloat(g.lit) / max(CGFloat(s.telemetry.litCount), 1).squareRoot()
                 node.steamClock += dt * lit * 14 * fx.density
                 while node.steamClock >= 1 {
                     node.steamClock -= 1
@@ -1302,7 +1356,7 @@ final class GardenScene: SKScene {
         let x = band * depth
         // At bandMin (−0.2) every layer is still inside the crease, under the mirror.
         let visible = band > CGFloat(GardenMath.bandMin) + 0.001
-        GardenLightMath.pieces(shades: s.shades, into: &lightPieces)
+        GardenLightMath.pieces(shades: s.shades, into: &lightPieces, scratch: &lightBreaks)
         bandSwell = bandSwell > 0.01 ? bandSwell * exp(-dt * 4.5) : 0
         // R3: the warm trail settles in about 0.4 s.
         trailBand = GardenMath.approach(trailBand, band, rate: 7.5, dt: dt)
@@ -1373,8 +1427,12 @@ final class GardenScene: SKScene {
 
         // The lawn warms from night teal to dawn gold; a night veil lifts as the light comes in.
         groundDawn.alpha = GardenMath.smooth(0.05, 0.95, dawn)
+        // R5 (QA P2-8): no overdraw: the night lawn under an opaque dawn lawn, or an invisible layer, is not drawn.
+        groundDawn.isHidden = groundDawn.alpha < 0.005
+        groundNight.isHidden = groundDawn.alpha > 0.995
         let lightLevel = max(glowIn, band >= 0 ? 1 : 0)
         nightVeil.alpha = 0.4 * (1 - lightLevel * 0.55) * (1 - 0.8 * dawn)
+        nightVeil.isHidden = nightVeil.alpha < 0.005
 
         // Dew glints where the band crosses the drops.
         for (i, sp) in dewSpots.enumerated() {
@@ -1409,27 +1467,35 @@ final class GardenScene: SKScene {
         let f = gardenFrame
         let sun = mirror.sunPoint
         let behind = -((sun.x - f.origin.x) * f.dUnit.dx + (sun.y - f.origin.y) * f.dUnit.dy)
-        var centers: [CGPoint] = []
-        var widths: [CGFloat] = []
-        var strengths: [CGFloat] = []
-        for sh in s.shades.prefix(3) {
+        // R5 (QA P2-2/P2-7): up to `maxShades` clouds; scratch arrays reused (no allocation per frame).
+        cloudCenters.removeAll(keepingCapacity: true)
+        cloudWidths.removeAll(keepingCapacity: true)
+        cloudStrengths.removeAll(keepingCapacity: true)
+        for sh in s.shades.prefix(GardenScene.maxShades) {
             guard sh.u.isFinite, sh.halfWidth.isFinite else { continue }
             let c = f.scene(u: sh.u, d: 0)
-            centers.append(CGPoint(x: c.x - f.dUnit.dx * behind, y: c.y - f.dUnit.dy * behind))
-            widths.append(CGFloat(max(sh.halfWidth, 0)) * 2 * f.span * 1.15)
-            strengths.append(CGFloat(sh.strength.isFinite ? sh.strength : 0))
+            cloudCenters.append(CGPoint(x: c.x - f.dUnit.dx * behind, y: c.y - f.dUnit.dy * behind))
+            cloudWidths.append(CGFloat(max(sh.halfWidth, 0)) * 2 * f.span * 1.15)
+            cloudStrengths.append(CGFloat(sh.strength.isFinite ? sh.strength : 0))
         }
-        mirror.placeShadeClouds(centers: centers, widths: widths, strengths: strengths)
+        mirror.placeShadeClouds(centers: cloudCenters, widths: cloudWidths, strengths: cloudStrengths)
     }
+
+    /// R5: cloud shades drawn at once (Core caps live clouds at 4; the art takes 6).
+    static let maxShades = 6
+    private var cloudCenters: [CGPoint] = []
+    private var cloudWidths: [CGFloat] = []
+    private var cloudStrengths: [CGFloat] = []
 
     /// R2/R3 (REVIEW-1 P0-4, REVIEW-2 P1-5): one control on phones. The grip sits on the band's edge at d = band
     /// exactly while the band is on the rail (d 0 … the top of the flower row), parks at the rail's ends beyond it, and
     /// pulses until the band first moves.
     private func drawLever(_ s: DawnSnapshot, motion: CGFloat) {
         let show = showsLever && !attract
-        let parts: [SKSpriteNode] = [railMirror, railGarden, gripGlow, grip]
         railMirror.isHidden = true
-        for n in parts where n !== railMirror { n.isHidden = !show }
+        railGarden.isHidden = !show
+        gripGlow.isHidden = !show
+        grip.isHidden = !show
         guard show else {
             gripPulsing = false
             return
@@ -1483,15 +1549,35 @@ final class GardenScene: SKScene {
 
     // MARK: Touches (the drag fallback; the App ignores them on a Duo)
 
+    // R5 (QA P1-3): multi-touch. The newest finger takes over the drag (the drag is relative, so a handover never jumps
+    // the band): a resting thumb can't block the other hand. When the dragging finger lifts and another is still down,
+    // the next one that moves picks the drag up.
+
+    override func didMove(to view: SKView) {
+        super.didMove(to: view)
+        view.isMultipleTouchEnabled = true
+    }
+
+    /// Fingers down now (scene's own record).
+    private var liveTouches: Set<ObjectIdentifier> = []
+
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard dragTouch == nil, let t = touches.first else { return }
-        dragTouch = ObjectIdentifier(t)
-        driver?.dragBegan(swiftUIPoint(fromScene: t.location(in: self)))
+        for t in touches { liveTouches.insert(ObjectIdentifier(t)) }
+        // The newest touch wins.
+        guard let t = touches.first else { return }
+        beginDrag(ObjectIdentifier(t), at: swiftUIPoint(fromScene: t.location(in: self)))
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard let id = dragTouch, let t = touches.first(where: { ObjectIdentifier($0) == id }) else { return }
-        driver?.dragMoved(swiftUIPoint(fromScene: t.location(in: self)))
+        if let id = dragTouch, let t = touches.first(where: { ObjectIdentifier($0) == id }) {
+            driver?.dragMoved(swiftUIPoint(fromScene: t.location(in: self)))
+            return
+        }
+        // No drag (its finger lifted, or the layout changed): a finger still down that moves takes it up.
+        guard dragTouch == nil, let t = touches.first(where: { liveTouches.contains(ObjectIdentifier($0)) }) else {
+            return
+        }
+        beginDrag(ObjectIdentifier(t), at: swiftUIPoint(fromScene: t.location(in: self)))
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -1502,11 +1588,22 @@ final class GardenScene: SKScene {
         finishTouch(touches)
     }
 
+    /// Starts (or hands over) the drag to touch `id` at SwiftUI point `p`.
+    func beginDrag(_ id: ObjectIdentifier, at p: CGPoint) {
+        if dragTouch != nil { driver?.dragEnded() }
+        dragTouch = id
+        driver?.dragBegan(p)
+    }
+
     private func finishTouch(_ touches: Set<UITouch>) {
+        for t in touches { liveTouches.remove(ObjectIdentifier(t)) }
         guard let id = dragTouch, touches.contains(where: { ObjectIdentifier($0) == id }) else { return }
         dragTouch = nil
         driver?.dragEnded()
     }
+
+    /// A drag is in progress (tests).
+    var isDragging: Bool { dragTouch != nil }
 
     // MARK: Helpers
 

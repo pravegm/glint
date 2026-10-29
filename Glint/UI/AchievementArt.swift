@@ -361,14 +361,21 @@ enum BadgeExport {
         let directory = documents.appendingPathComponent("badges", isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         var written = 0
+        // R5 (store F5): the very first ImageRenderer pass came out empty (First Light was a flat #1B2349 PNG). Warm
+        // the renderer with a throwaway badge, then never write a flat image: retry, and log it if it stays flat.
+        _ = render(key: BadgeBook.keys.first ?? "firstlight")
         for id in ids {
-            let renderer = ImageRenderer(content: AchievementBadge(key: BadgeBook.key(of: id), side: side))
-            renderer.proposedSize = ProposedViewSize(width: side, height: side)
-            renderer.scale = 1
-            renderer.isOpaque = true
-            guard let image = renderer.cgImage, let data = OpaquePNG.encode(image, background: background) else {
+            var picked: CGImage?
+            for _ in 0..<3 {
+                if let image = render(key: BadgeBook.key(of: id)), !isFlat(image) {
+                    picked = image
+                    break
+                }
+            }
+            guard let image = picked, let data = OpaquePNG.encode(image, background: background) else {
+                AppTrace.note("badge flat \(id)")
                 #if DEBUG
-                AppTrace.demo("GLINT-T badges failed \(id): no image")
+                AppTrace.demo("GLINT-T badge flat \(id)")
                 #endif
                 continue
             }
@@ -385,5 +392,19 @@ enum BadgeExport {
         #if DEBUG
         AppTrace.demo("GLINT-T badges done \(written)")
         #endif
+    }
+
+    private static func render(key: String) -> CGImage? {
+        let renderer = ImageRenderer(content: AchievementBadge(key: key, side: side))
+        renderer.proposedSize = ProposedViewSize(width: side, height: side)
+        renderer.scale = 1
+        renderer.isOpaque = true
+        return renderer.cgImage
+    }
+
+    /// A badge with fewer than 16 colours on a 64 px sample is a failed render (a real one has hundreds). Pure given
+    /// the image.
+    nonisolated static func isFlat(_ image: CGImage) -> Bool {
+        IconPainter.stats(image).colours < 16
     }
 }

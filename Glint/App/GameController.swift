@@ -15,6 +15,8 @@ struct HUDState: Equatable {
     var sun = 0.0
     var phase: SessionPhase = .waiting
     var wave = 0
+    /// R5: the band (d), for VoiceOver's adjustable "Light" element.
+    var band = -0.2
 }
 
 @MainActor
@@ -46,6 +48,8 @@ final class HUDModel: ObservableObject {
 
 /// What the Results screen shows.
 struct ResultSummary: Equatable {
+    /// R5 (QA P1-3): unique per result, so the card's count-up and chimes run once (not again after the cover).
+    var id: Int = 0
     var mode: PlayMode
     var title: String
     var won: Bool
@@ -60,6 +64,8 @@ struct ResultSummary: Equatable {
     var tip: String?
     /// R2: achievement ids earned by this run (named on the card; banners held until now).
     var newAchievements: [String] = []
+    /// R5 (QA P1-4): a world's last level won while the next world is shut: what it needs.
+    var worldGate: String?
 }
 
 // MARK: - The controller
@@ -93,6 +99,12 @@ final class GameController: ObservableObject, GardenDriver {
     /// R3: the level's 3rd-star target on the start card ("★★★ 1,400"); nil for endless / daily.
     @Published private(set) var startStarLine: String?
     @Published private(set) var reduceMotion = false
+    /// R5 (QA P0-1): the level is over (won or lost): the pause button goes, the result is already saved.
+    @Published private(set) var levelOver = false
+    /// R5: when this run started (Today's Dawn's chip shows the player's local date of it).
+    @Published private(set) var runStart = Date()
+    /// R5 (QA P1-3): the result whose card has already animated.
+    private(set) var animatedResultID = -1
 
     let hud: HUDModel
     let store: ProgressStore
@@ -101,6 +113,8 @@ final class GameController: ObservableObject, GardenDriver {
     let hinge: HingeMirrorSource
     let drag: DragMirrorSource
     let demoFold: Bool
+    /// R5: an iPhone app on a Mac ("Designed for iPhone") behaves as a phone: drag, no Duo layout, no cover.
+    let onMac: Bool
 
     // Sessions and sources
     private var session: DawnSession?
@@ -142,6 +156,19 @@ final class GameController: ObservableObject, GardenDriver {
     private var launchTime: TimeInterval = CACurrentMediaTime()
     /// `PlayStage.checking`: when to give up waiting for the hinge.
     private var checkUntil: TimeInterval = 0
+    /// R5 (QA P2-4): the hinge API said "no hinge" this launch.
+    private var hingeUnavailableSeen = false
+    /// R5 (QA P2-3): the light source is locked for each session (no mid-level switch).
+    private var lockedSource: (any MirrorSource)?
+    /// R5 (QA P0-1): the finished session's result, saved the moment it ended.
+    private var recordedSummary: ResultSummary?
+    private var resultCounter = 0
+    /// R5 (QA P2-6): when the app went inactive (a long spell returns to the pause menu).
+    private var inactiveSince: TimeInterval?
+    /// R5 (QA P2-12): the last play() (double taps).
+    private var lastPlayAt: TimeInterval = -10
+    /// R5 (player QA #25): Swap halves waits until the player leaves Settings.
+    private var pendingSwap = false
 
     // Demo state
     private var demoFrozen = false
@@ -149,6 +176,9 @@ final class GameController: ObservableObject, GardenDriver {
     private var freezeTag = ""
     private var fixedStep = false
     private var demoTarget: Double?
+    /// R5b: the last pop (session time) and when `freezeOn=` started watching.
+    private var lastDemoPopTime: Double?
+    private var watchStart: Double?
 
     init(store: ProgressStore, settings: SettingsStore, demo: DemoMode?) {
         self.store = store
@@ -158,7 +188,9 @@ final class GameController: ObservableObject, GardenDriver {
         self.hinge = HingeMirrorSource()
         self.drag = DragMirrorSource()
         self.demoFold = demo?.fold ?? false
-        self.hingeSeen = store.data.hingeSeen
+        let mac = ProcessInfo.processInfo.isiOSAppOnMac
+        self.onMac = mac
+        self.hingeSeen = !mac && ProgressRules.hingeSeen(store.data, machine: GameController.machineName())
         self.attractPilot = PilotSource(skill: 0.85, seed: demo?.seed ?? 11)
         self.layout = GardenLayout.make(size: CGSize(width: 390, height: 844), isDuo: false, swapHalves: false)
     }
@@ -175,6 +207,7 @@ final class GameController: ObservableObject, GardenDriver {
 
     /// The light source in play right now.
     private func playSource() -> any MirrorSource {
+        if let locked = lockedSource, stage == .live, session != nil { return locked }
         if let p = playPilot, !(pilotIsFallback && hinge.hasHinge) { return p }
         if let f = fixedSource, !(fixedIsFallback && hinge.hasHinge) { return f }
         if hinge.hasHinge { return hinge }
@@ -192,7 +225,7 @@ final class GameController: ObservableObject, GardenDriver {
     }
 
     /// Drags move the light (phones, and a Duo whose hinge has never reported).
-    private var dragDriven: Bool {
+    var dragDriven: Bool {
         playSource() === drag
     }
 
@@ -236,11 +269,13 @@ final class GameController: ObservableObject, GardenDriver {
     /// Rebuilds the layout from the canvas, the Duo flag and Swap halves; pushes it to the scene and the drag source.
     func refreshLayout() {
         guard canvas.width > 1, canvas.height > 1 else { return }
-        let duo = AppRules.isDuo(window: canvas, hingeSeen: hingeSeen, demoFold: demoFold)
+        let duo = AppRules.isDuo(window: canvas, hingeSeen: hingeSeen, demoFold: demoFold, onMac: onMac)
         if duo != isDuo { isDuo = duo }
+        // R5: phones portrait only, a Duo any way round (decided on the first canvas, then on every change).
+        OrientationRules.update(isDuo: duo)
         // Swap halves is a Duo setting (hidden on phones, where it would also put the lever under the pause button).
         // R3 (REVIEW-2 fix 12): only in book pose on a Duo (in laptop pose it would lay the mirror on the table).
-        let swap = AppRules.swapAllowed(isDuo: duo, size: canvas) && settings.swapHalves
+        let swap = AppRules.swapAllowed(isDuo: duo, size: canvas) && appliedSwap
         let fresh = GardenLayout.make(size: canvas, isDuo: duo, swapHalves: swap)
         let changed = fresh != layout || scene == nil
         if fresh != layout { layout = fresh }
@@ -260,11 +295,24 @@ final class GameController: ObservableObject, GardenDriver {
         }
     }
 
+    /// Swap halves as the layout uses it (R5: a change made in Settings applies when the player leaves Settings).
+    private lazy var appliedSwap: Bool = settings.swapHalves
+
+    /// RootView: Settings › Swap halves changed.
+    func swapChanged() {
+        if route == .settings {
+            pendingSwap = true
+        } else {
+            appliedSwap = settings.swapHalves
+            refreshLayout()
+        }
+    }
+
     private func makeScene(_ layout: GardenLayout) {
         let s = GardenScene(layout: layout)
         s.driver = self
         s.attract = !route.showsSession
-        s.showsLever = AppRules.showsLever(route: route, hasHinge: hinge.hasHinge, isDuo: isDuo)
+        s.showsLever = AppRules.showsLever(route: route, dragDriven: route == .play && dragDriven)
         s.reduceMotion = reduceMotion
         scene = s
     }
@@ -285,9 +333,10 @@ final class GameController: ObservableObject, GardenDriver {
 
     func hingeSample(angle: Double, time: TimeInterval) {
         hinge.ingest(angleDegrees: angle, at: time)
+        if onMac { return }
         if !hingeSeen {
             hingeSeen = true
-            store.noteHingeSeen()
+            store.noteHingeSeen(machine: Self.machineName())
             // The Duo's Taptic Engine is weak: Strong haptics (Feel NEEDS).
             FeedbackDirector.shared.deviceHasFold = true
             AppTrace.note("hinge seen \(AppTrace.fixed(angle, 1))")
@@ -299,6 +348,15 @@ final class GameController: ObservableObject, GardenDriver {
 
     func hingeUnavailable() {
         AppTrace.note("hinge unavailable")
+        hingeUnavailableSeen = true
+        // R5 (QA P1-1): no hinge on this device (and none reported this launch): an old or restored Duo flag goes.
+        if !hinge.hasHinge && store.data.hingeSeen {
+            store.clearHingeSeen()
+            if hingeSeen {
+                hingeSeen = false
+                refreshLayout()
+            }
+        }
     }
 
     /// The cover display came or went (RootView).
@@ -307,6 +365,14 @@ final class GameController: ObservableObject, GardenDriver {
         coverShown = shown
         // iOS may go silent after a display hand-off: re-subscribe to the hinge (Hush QA-5).
         hingeRefresh &+= 1
+        // R5 (player QA #2): on the cover display the phone is shut: play pauses, hinge or no hinge. Opening it again
+        // resumes after the grace (a pause-button pause stays on its menu).
+        if route == .play {
+            var f = pause
+            f.cover = shown
+            setPause(f)
+            if !shown && !f.isPaused { graceLeft = Tuning.resumeGrace }
+        }
         if shown {
             AppTrace.note("cover shown")
             #if DEBUG
@@ -324,7 +390,9 @@ final class GameController: ObservableObject, GardenDriver {
         switch phase {
         case .active:
             hinge.reset()
-            let r = PauseRules.activated(pause, wentToBackground: wentBackground,
+            let longInactive = inactiveSince.map { CACurrentMediaTime() - $0 > 1.0 } ?? false
+            inactiveSince = nil
+            let r = PauseRules.activated(pause, wentToBackground: wentBackground || longInactive,
                                          phase: session?.snapshot.phase ?? .waiting,
                                          hingeShut: hingeDriven && hinge.isShut)
             wentBackground = false
@@ -332,6 +400,7 @@ final class GameController: ObservableObject, GardenDriver {
             if r.grace > 0 { graceLeft = r.grace }
             AppTrace.note("phase active")
         case .inactive:
+            if inactiveSince == nil { inactiveSince = CACurrentMediaTime() }
             if route == .play { setPause(PauseRules.deactivated(pause)) }
             AppTrace.note("phase inactive")
         case .background:
@@ -341,7 +410,14 @@ final class GameController: ObservableObject, GardenDriver {
         @unknown default:
             break
         }
-        UIApplication.shared.isIdleTimerDisabled = route == .play
+        refreshIdle()
+    }
+
+    /// R5 (QA P1-2): the screen sleeps unless a level is really being played.
+    private func refreshIdle() {
+        let awake = AppRules.keepAwake(route: route, stage: stage, phase: session?.snapshot.phase,
+                                       paused: pause.isPaused)
+        if UIApplication.shared.isIdleTimerDisabled != awake { UIApplication.shared.isIdleTimerDisabled = awake }
     }
 
     // MARK: - Routes
@@ -350,8 +426,12 @@ final class GameController: ObservableObject, GardenDriver {
         if route != next { route = next }
         refreshLever()
         scene?.attract = !next.showsSession
-        // On a Duo nobody touches the screen in play: keep it awake there.
-        UIApplication.shared.isIdleTimerDisabled = next == .play
+        refreshIdle()
+        if pendingSwap && next != .settings {
+            pendingSwap = false
+            appliedSwap = settings.swapHalves
+            refreshLayout()
+        }
         // R2: achievement banners wait while a level is on screen (they land with the Results card).
         GameCenterManager.shared.setHoldBanners(next == .play)
         logScreen()
@@ -359,7 +439,7 @@ final class GameController: ObservableObject, GardenDriver {
 
     /// The phone lever: play only, drag only, never on a Duo split layout (R2 addendum).
     private func refreshLever() {
-        let on = AppRules.showsLever(route: route, hasHinge: hinge.hasHinge, isDuo: isDuo)
+        let on = AppRules.showsLever(route: route, dragDriven: route == .play && dragDriven)
         if scene?.showsLever != on { scene?.showsLever = on }
     }
 
@@ -421,7 +501,7 @@ final class GameController: ObservableObject, GardenDriver {
                 let missing = ProgressRules.starsMissing(toOpen: w, store.data)
                 showToast("\(missing) more ★ in \(LevelBook.worldName(w - 1)) to open \(LevelBook.worldName(w))")
             } else {
-                showToast("Win level \(n - 1) to open this sunrise")
+                showToast("Win level \(n - 1) to open this level")
             }
             return
         }
@@ -431,7 +511,7 @@ final class GameController: ObservableObject, GardenDriver {
     func playEndless() {
         guard ProgressRules.endlessUnlocked(store.data, now: Date()) else {
             FeedbackDirector.shared.ui(.back)
-            showToast("Win level \(ProgressRules.endlessLevel) to open Long Night")
+            showToast("Win level \(ProgressRules.endlessLevel) (or come back tomorrow) to open Long Night")
             return
         }
         play(.endless)
@@ -448,7 +528,15 @@ final class GameController: ObservableObject, GardenDriver {
 
     /// Starts `mode`: on a Duo with the phone open, "Close the phone to start" first (no session until shut is seen).
     func play(_ mode: PlayMode) {
+        // R5 (QA P2-12): a double tap during the fade starts one run, not two.
+        let tapAt = CACurrentMediaTime()
+        if route == .play && tapAt - lastPlayAt < 0.3 { return }
+        lastPlayAt = tapAt
         if route == .play { recordPartialIfNeeded() }
+        lockedSource = nil
+        recordedSummary = nil
+        levelOver = false
+        runStart = Date()
         FeedbackDirector.shared.ui(.tap)
         playMode = mode
         summary = nil
@@ -476,9 +564,9 @@ final class GameController: ObservableObject, GardenDriver {
             return
         }
         let now = CACurrentMediaTime()
-        if AppRules.needsHingeCheck(hasHinge: hinge.hasHinge, pilotOrFixed: firmDemoSource,
-                                    hingeSeen: hingeSeen, duoLog: demo?.duoLog ?? false,
-                                    sinceLaunch: now - launchTime) {
+        if !onMac && AppRules.needsHingeCheck(hasHinge: hinge.hasHinge, pilotOrFixed: firmDemoSource,
+                                              hingeSeen: hingeSeen, duoLog: demo?.duoLog ?? false,
+                                              sinceLaunch: now - launchTime, unavailable: hingeUnavailableSeen) {
             stage = .checking
             checkUntil = now + AppRules.hingeWait
             setFeedbackPaused(true)
@@ -504,8 +592,12 @@ final class GameController: ObservableObject, GardenDriver {
         } else {
             s = DawnSession(mode: playMode, seed: seed)
         }
+        lockedSource = nil
         session = s
         stage = .live
+        // R5 (QA P2-3): this session keeps the source it starts with.
+        lockedSource = playSource()
+        refreshLever()
         drag.layout = layout
         // A fresh level: band in the crease, finger forgotten, hasMoved cleared ("Drag … to let the light in" again).
         drag.reset(band: Tuning.bandMin)
@@ -524,7 +616,8 @@ final class GameController: ObservableObject, GardenDriver {
     /// Endless / daily left early: the score so far still counts as a run (bests keep the larger).
     private func recordPartialIfNeeded() {
         guard let s = session, !s.isFinished, !playMode.isLevel, s.snapshot.score > 0 else { return }
-        let outcome = store.record(mode: playMode, won: false, stars: 0, score: s.snapshot.score, now: Date())
+        let outcome = store.record(mode: playMode, won: false, stars: 0, score: s.snapshot.score, now: Date(),
+                                   finished: false)
         reportGameCenter(mode: playMode, score: s.snapshot.score, outcome: outcome)
         // A Long Night left early still counts for Night Watch (Core reads the score from the stats).
         _ = recordAchievements(stats: s.stats, phase: s.snapshot.phase)
@@ -532,6 +625,8 @@ final class GameController: ObservableObject, GardenDriver {
 
     private func leavePlay() {
         recordPartialIfNeeded()
+        lockedSource = nil
+        levelOver = false
         session = nil
         stage = .live
         graceLeft = 0
@@ -557,7 +652,7 @@ final class GameController: ObservableObject, GardenDriver {
     // MARK: - Pause buttons (always a way back to Home)
 
     func pauseTapped() {
-        guard route == .play else { return }
+        guard route == .play, !levelOver else { return }
         FeedbackDirector.shared.ui(.tap)
         var f = pause
         f.menu = true
@@ -593,6 +688,12 @@ final class GameController: ObservableObject, GardenDriver {
             AppTrace.demo("GLINT-T paused menu")
             #endif
         }
+        if next.cover && !before.cover {
+            AppTrace.note("paused cover")
+            #if DEBUG
+            AppTrace.demo("GLINT-T paused cover")
+            #endif
+        }
         if next.inactive && !before.inactive {
             AppTrace.note("paused inactive")
             #if DEBUG
@@ -606,6 +707,7 @@ final class GameController: ObservableObject, GardenDriver {
             #endif
         }
         setFeedbackPaused(PauseRules.isFrozen(next, grace: graceLeft) || route != .play)
+        refreshIdle()
     }
 
     private func setFeedbackPaused(_ paused: Bool) {
@@ -638,7 +740,7 @@ final class GameController: ObservableObject, GardenDriver {
                 } else {
                     beginSession()
                 }
-            } else if CACurrentMediaTime() >= checkUntil || firmDemoSource {
+            } else if CACurrentMediaTime() >= checkUntil || firmDemoSource || hingeUnavailableSeen {
                 AppTrace.note("no hinge: drag")
                 beginSession()
             }
@@ -671,7 +773,15 @@ final class GameController: ObservableObject, GardenDriver {
     }
 
     func dragMoved(_ p: CGPoint) {
-        guard dragging, route == .play, dragDriven else { return }
+        guard route == .play, dragDriven else { return }
+        if !dragging {
+            // R5 (Scene NEEDS): a finger that landed while paused / on a menu and now moves in play starts a drag
+            // here (anchored at this point: the light never jumps).
+            guard !pause.isPaused else { return }
+            dragging = true
+            drag.dragBegan(p)
+            return
+        }
         drag.dragMoved(p)
     }
 
@@ -778,26 +888,29 @@ final class GameController: ObservableObject, GardenDriver {
         setFeedbackPaused(PauseRules.isFrozen(pause, grace: graceLeft) || demoFrozen)
     }
 
-    private func handleEvents(_ events: [GameEvent], snapshot: DawnSnapshot, now: TimeInterval) {
+    func handleEvents(_ events: [GameEvent], snapshot: DawnSnapshot, now: TimeInterval) {
         guard !events.isEmpty else { return }
         for e in events {
             if let h = hint, !hintForced, HintRules.isDone(h, by: e) { hint = nil }
             switch e {
             case .started:
                 AppTrace.note("started")
+                refreshIdle()
             case let .hint(id):
                 offerHint(id, now: now)
             case let .sunrise(stars, _):
                 sunriseStars = stars
+                // R5 (QA P0-1): saved now; only the route change waits.
+                recordFinish(snapshot: snapshot)
                 if finishAt == nil { finishAt = now + 2.2 }
             case .nightWins:
+                recordFinish(snapshot: snapshot)
                 if finishAt == nil { finishAt = now + 1.8 }
             case let .waveUp(n):
+                // R5 (player QA #19): the Scene draws the wave label; the pill's second line keeps it.
                 var s = hud.state
                 s.wave = n
                 hud.update(s)
-                hud.setBanner("Wave \(n)")
-                bannerUntil = now + 2.0
             default:
                 break
             }
@@ -916,6 +1029,7 @@ final class GameController: ObservableObject, GardenDriver {
         s.flowersLeft = snap.flowersLeft
         s.sun = snap.sun
         s.phase = snap.phase
+        s.band = snap.band
         // R3: the wave comes from the session itself (a fast-forward skips the .waveUp events).
         if let session, case .endless = playMode { s.wave = session.wave }
         hud.update(s)
@@ -938,8 +1052,29 @@ final class GameController: ObservableObject, GardenDriver {
     // MARK: - Results
 
     private func showResults() {
-        guard let s = session else { return }
-        let snap = s.snapshot
+        if recordedSummary == nil, let s = session { recordFinish(snapshot: s.snapshot, force: true) }
+        guard let result = recordedSummary else { return }
+        summary = result
+        hint = nil
+        if prompt != nil {
+            prompt = nil
+            logPrompt()
+        }
+        setFeedbackPaused(true)
+        #if DEBUG
+        AppTrace.demo("GLINT-T result \(AppRules.modeName(result.mode)) won=\(result.won ? 1 : 0) stars=\(result.stars) "
+                      + "score=\(result.score) flowers=\(result.flowersLeft) pops=\(result.pops)")
+        #endif
+        go(.results)
+    }
+
+    /// R5 (QA P0-1): files a finished session (stars, best, unlocks, achievements, Game Center) the moment it ends,
+    /// whatever the player taps next. Once per session. Internal for tests.
+    func recordFinish(snapshot snap: DawnSnapshot, force: Bool = false) {
+        guard recordedSummary == nil else { return }
+        // `force`: a demo run capped before its end still gets a card (filed as not won).
+        guard force || snap.phase == .won || snap.phase == .lost else { return }
+        let stats = session?.stats ?? DawnStats()
         let won = snap.phase == .won
         var stars = 0
         if won && playMode.isLevel {
@@ -947,26 +1082,27 @@ final class GameController: ObservableObject, GardenDriver {
                                                        starScore: Self.starScore(for: playMode) ?? 0)
         }
         let outcome = store.record(mode: playMode, won: won, stars: stars, score: snap.score, now: Date())
-        let fresh = recordAchievements(stats: s.stats, phase: snap.phase)
+        let fresh = recordAchievements(stats: stats, phase: snap.phase)
+        resultCounter += 1
         var result = ResultSummary(mode: playMode, title: AppRules.modeTitle(playMode), won: won, stars: stars,
                                    score: snap.score, flowersLeft: snap.flowersLeft, pops: snap.pops, outcome: outcome)
+        result.id = resultCounter
         result.flowers = snap.flowers
-        result.tip = playMode.isLevel ? TipRules.tip(won: won, stats: s.stats) : nil
+        result.tip = playMode.isLevel ? TipRules.tip(won: won, stats: stats) : nil
         result.newAchievements = fresh
-        summary = result
-        reportGameCenter(mode: playMode, score: snap.score, outcome: outcome)
-        hint = nil
-        if prompt != nil {
-            prompt = nil
-            logPrompt()
+        if won, outcome.nextLevel == nil, case let .level(n) = playMode {
+            result.worldGate = AppRules.worldGateNote(level: n, data: store.data)
         }
-        setFeedbackPaused(true)
+        recordedSummary = result
+        reportGameCenter(mode: playMode, score: snap.score, outcome: outcome)
+        levelOver = true
+        refreshIdle()
         AppTrace.note("result \(AppRules.modeName(playMode)) won=\(won ? 1 : 0) stars=\(stars) score=\(snap.score)")
-        #if DEBUG
-        AppTrace.demo("GLINT-T result \(AppRules.modeName(playMode)) won=\(won ? 1 : 0) stars=\(stars) "
-                      + "score=\(snap.score) flowers=\(snap.flowersLeft) pops=\(snap.pops)")
-        #endif
-        go(.results)
+    }
+
+    /// The Results card animated this result (once only).
+    func markAnimated(_ id: Int) {
+        animatedResultID = id
     }
 
     /// R2: Core's `Achievements.earned` for this finished session and the saved progress; files the new ones and
@@ -1017,7 +1153,19 @@ final class GameController: ObservableObject, GardenDriver {
     }
 
     func retryTapped() {
-        play(playMode)
+        // R5 (QA P2-2): Retry after UTC midnight plays the new day's dawn, not yesterday's.
+        if case .daily = playMode {
+            play(.daily(day: DailySeed.day(for: Date())))
+        } else {
+            play(playMode)
+        }
+    }
+
+    /// R5: VoiceOver's adjustable "Light" (phones): swipe up / down moves the band ±0.1.
+    func nudgeLight(_ delta: Double) {
+        guard route == .play, dragDriven, !pause.isPaused else { return }
+        let next = min(max(drag.band + delta, Tuning.bandMin), 1)
+        drag.setBand(next)
     }
 
     // MARK: - Game Center, toasts, diagnostics
@@ -1034,6 +1182,7 @@ final class GameController: ObservableObject, GardenDriver {
 
     func showToast(_ text: String) {
         toast = text
+        UIAccessibility.post(notification: .announcement, argument: text)
         toastTask?.cancel()
         toastTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 2_600_000_000)
@@ -1081,7 +1230,7 @@ final class GameController: ObservableObject, GardenDriver {
         return lines.joined(separator: "\n")
     }
 
-    private static func machineName() -> String {
+    static func machineName() -> String {
         var info = utsname()
         uname(&info)
         let name: String = withUnsafePointer(to: &info.machine) { pointer in
@@ -1142,6 +1291,7 @@ final class GameController: ObservableObject, GardenDriver {
             fixedIsFallback = false
         } else if demo.forcesPilot || (demo.wantsFallbackPilot && demo.pinBand == nil) {
             playPilot = PilotSource(skill: demo.pilotSkill, seed: seed)
+            playPilot?.lag = demo.pilotLag ?? 0
             pilotIsFallback = demo.wantsFallbackPilot
         } else if let b = demo.pinBand {
             fixedSource = FixedBandSource(band: b)
@@ -1200,10 +1350,25 @@ final class GameController: ObservableObject, GardenDriver {
             return
         }
         let afterOK = demo.holdAfter.map { snap.time >= $0 } ?? true
+        if events.contains(where: { if case .popped = $0 { return true }; return false }) { lastDemoPopTime = snap.time }
         if let tag = demo.stopOn {
-            if afterOK && events.contains(where: { tag.matches($0) }) {
-                freezeAt = now + DemoMode.stopDelay
-                freezeTag = tag.rawValue
+            if watchStart == nil { watchStart = snap.time }
+            switch tag {
+            case .busy:
+                // R5b: the first frame with a busy field (or a timeout, so a capture never waits for ever).
+                let since = lastDemoPopTime.map { snap.time - $0 }
+                if afterOK && DemoBusy.isBusy(snap, sinceLastPop: since) {
+                    freeze("busy")
+                } else if snap.time - (watchStart ?? snap.time) >= DemoBusy.timeout {
+                    freeze("busy-timeout")
+                }
+            case .firefly:
+                if afterOK && DemoBusy.fireflyNearBand(snap) { freeze("firefly") }
+            default:
+                if afterOK && events.contains(where: { tag.matches($0) }) {
+                    freezeAt = now + DemoMode.stopDelay(for: tag)
+                    freezeTag = tag.rawValue
+                }
             }
         } else if let after = demo.holdAfter, snap.time >= after {
             freeze("after")
@@ -1277,6 +1442,10 @@ final class GameController: ObservableObject, GardenDriver {
                                    flowersLeft: 0, pops: stats.pops, outcome: outcome)
         result.flowers = Array(repeating: false, count: Tuning.flowerCount)
         result.tip = mode.isLevel ? TipRules.tip(won: false, stats: stats) : nil
+        resultCounter += 1
+        result.id = resultCounter
+        recordedSummary = result
+        levelOver = true
         summary = result
         demoFrozen = true
         setFeedbackPaused(true)

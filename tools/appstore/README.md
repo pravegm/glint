@@ -63,7 +63,7 @@ The copyright is `© 2026 pravegm` (the public GitHub handle, `metadata.md` §9)
 | `build` | Only with `build`: attaches that processed build to 1.0. Never submits |
 | `localizations` | Description, keywords, promotional text, support and marketing URLs (en-GB and en-US) |
 | `review` | Review notes (they open with "NO LOGIN"; validate fails over 4,000 bytes), "no sign-in", and the contact (inherited) |
-| `gamecenter` | Enables Game Center for the app and version 1.0. Creates the 10 achievements (`glint.ach.*`, 435 points, none hidden, none repeatable) with en-GB and en-US text and a badge each. Creates 3 leaderboards: `glint.endless` (classic, "Long Night"), `glint.daily` (recurring daily from Mon 9 Nov 2026 00:00 UTC, "Today's Dawn") and `glint.stars` (classic, "Total Stars", range 0–90, suffix " star" / " stars"); the first two are Integer, High to Low, best score, range 0–10,000,000, suffix " point" / " points". All from `achievements.md` via the metadata |
+| `gamecenter` | Enables Game Center for the app and version 1.0. Creates the 10 achievements (`glint.ach.*`, 435 points, none hidden, none repeatable) with en-GB and en-US text and a badge each. Creates 3 leaderboards: `glint.endless` (classic, "Long Night"), `glint.daily` (recurring daily from Tue 15 Dec 2026 00:00 UTC, launch day, "Today's Dawn") and `glint.stars` (classic, "Total Stars", range 0–90, suffix " star" / " stars"); the first two are Integer, High to Low, best score, range 0–10,000,000, suffix " point" / " points". All from `achievements.md` via the metadata |
 | `attach` | Adds every achievement and leaderboard version to the draft iOS review submission. It never adds the build and never submits |
 | `screenshots` | 6.9" (1320 × 2868, `store-69`): P01–P10. 6.3" (1206 × 2622, `store-63`), which goes in Apple's required "Dynamic Island, medium" class, the tool's `APP_IPHONE_61` key: P01–P10. iPhone Duo inner (2853 × 2007, `store-duo`, book pose): D01–D10, only if the API offers a Duo placement group (`check` says). The iPhone sets are **portrait**; the names are the ones `asc-metadata.json` lists. A set whose MANIFEST isn't `flagged 0 missing 0` is refused. Library images can take minutes each to process: the tool waits up to 20 minutes per image, then says to re-run (it resumes) |
 | `placements` | Only with `placements_run`: the product page header (`header-3840x1646.png`) and the search results art (`search-3840x2560.png`) from that run's `store-placements` artifact, placed on the en-GB and en-US 1.0 localizations. It refuses an artifact whose `MANIFEST.txt` reports problems. Without `placements_run` it changes nothing (a gap) |
@@ -102,7 +102,7 @@ The tool is complete; these are inputs it reads from the app's repo. Until each 
 
 ## Notes
 
-- **The daily leaderboard start** (Mon 9 Nov 2026 00:00 UTC): create it with `push --only gamecenter` before then. Whether App Store Connect accepts a start date already in the past is unconfirmed; once that date passes `validate` warns, and the fix is to move `recurrence.startDate` to the next day.
+- **The daily leaderboard start** (Tue 15 Dec 2026 00:00 UTC, launch day, so it is never before the Game Center push; QA R5). Create it with `push --only gamecenter` any time before then; testers see the board empty until launch. Whether App Store Connect accepts a start date already in the past is unconfirmed; once that date passes `validate` warns, and the fix is to move `recurrence.startDate` to the next day.
 
 ## Files
 

@@ -786,28 +786,70 @@ enum GardenArt {
     /// end (book layouts): the play area (crease → flowers) is `depth − inset` and the ground carries on under the thumb.
     static func ground(depth: CGFloat, span: CGFloat, warm: Bool, style: GroundStyle = .meadow,
                        inset: CGFloat = 0) -> SKTexture {
-        let w = (max(depth, 8) / 4).rounded() * 4
-        let h = (max(span, 8) / 4).rounded() * 4
-        let scale: CGFloat = min(1.5, 1800 / max(w, h))
-        let ins = min(max(inset, 0), w * 0.5)
         let key = groundKey(depth: depth, span: span, warm: warm, style: style, inset: inset)
-        return make(key, size: CGSize(width: w, height: h), scale: scale) { ctx, s in
-            switch style {
-            case .meadow:
-                drawGround(ctx, s, warm ? GroundPalette.dawn : GroundPalette.night, inset: ins)
-            case .moonlit:
-                drawGround(ctx, s, warm ? GroundPalette.moonSilver : GroundPalette.moon, inset: ins)
-            case .rooftops:
-                GroundWorlds.drawRooftops(ctx, s, warm: warm, inset: ins)
-            case .harbour:
-                GroundWorlds.drawHarbour(ctx, s, warm: warm, inset: ins)
+        if let t = cache[key] { return t }
+        // Not prewarmed yet: draw it now (the same renderer the background prewarm uses).
+        let spec = GroundSpec(depth: depth, span: span, warm: warm, style: style, inset: inset)
+        let t: SKTexture
+        if let img = GroundRender.image(spec) {
+            t = SKTexture(cgImage: img)
+        } else {
+            t = SKTexture()
+        }
+        t.filteringMode = .linear
+        cache[key] = t
+        builds += 1
+        return t
+    }
+
+    // MARK: R5 (QA P2-5): grounds are prewarmed off the main thread and kept
+
+    /// Ground textures currently being drawn in the background.
+    private static var inFlight: Set<String> = []
+    /// Grounds that arrived from the background (tests, diagnostics).
+    private(set) static var prewarmed: Int = 0
+    /// Tests may turn the background prewarm off.
+    static var prewarmEnabled = true
+
+    /// Draws every ground in `styles` (night and dawn) for this garden size in the background, so a world change, a
+    /// rotation, a resume or the cover hand-off never draws one in the frame loop. They stay cached until a memory
+    /// warning (`purgeGrounds`).
+    static func prewarmGrounds(depth: CGFloat, span: CGFloat, inset: CGFloat, styles: [GroundStyle]) {
+        guard prewarmEnabled else { return }
+        for style in styles {
+            for warm in [false, true] {
+                let key = groundKey(depth: depth, span: span, warm: warm, style: style, inset: inset)
+                if cache[key] != nil || inFlight.contains(key) { continue }
+                inFlight.insert(key)
+                let spec = GroundSpec(depth: depth, span: span, warm: warm, style: style, inset: inset)
+                DispatchQueue.global(qos: .utility).async {
+                    let img = GroundRender.image(spec)
+                    Task { @MainActor in
+                        GardenArt.finishPrewarm(key, img)
+                    }
+                }
             }
         }
     }
 
+    static func finishPrewarm(_ key: String, _ img: CGImage?) {
+        inFlight.remove(key)
+        guard cache[key] == nil, let image = img else { return }
+        let t = SKTexture(cgImage: image)
+        t.filteringMode = .linear
+        cache[key] = t
+        prewarmed += 1
+    }
+
+    /// Memory warning: drop every ground except `keeping` (the ones on screen).
+    static func purgeGrounds(keeping: [String]) {
+        purge(prefix: "ground-", keeping: keeping)
+    }
+
     /// Paints the lawn. Both palettes use the same seed, so the night and dawn lawns line up exactly and crossfade.
-    /// `inset`: the strip beyond the play depth (the flower bed carries on under the thumb).
-    static func drawGround(_ ctx: CGContext, _ s: CGSize, _ p: GroundPalette, inset: CGFloat = 0) {
+    /// `inset`: the strip beyond the play depth (the flower bed carries on under the thumb). Nonisolated (R5): the
+    /// background prewarm paints with it.
+    nonisolated static func drawGround(_ ctx: CGContext, _ s: CGSize, _ p: GroundPalette, inset: CGFloat = 0) {
         let w = s.width
         let h = s.height
         let pw = max(w - inset, 1)

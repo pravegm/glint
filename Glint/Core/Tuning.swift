@@ -47,6 +47,8 @@ enum Tuning {
     static let surfaceMin: Double = 0.15
     static let surfaceMaxGentle: Double = 0.35
     static let surfaceMax: Double = 0.60
+    /// R5b: never more than this many cloud shadows on the band at once, in any mode (Scene draws up to 4).
+    static let maxLiveClouds: Int = 4
     /// R2: a cloud shadow's soft edge (u units, centred on its half-width).
     static let cloudEdge: Double = 0.03
 

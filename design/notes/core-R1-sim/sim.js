@@ -221,7 +221,7 @@ class Session {
         this.ffs.push({ id: this.nextId++, u: e.u, baseU: e.u, d: -T.ffRadius, scorch: 0, lit: 0, age: 0, speed: T.ffSpeed * e.s, phase: e.phase, dart: -1, wasLit: false });
       } else this.spawn(e.kind, e.u, e.startD, e.s, false, e.sd, ev);
     }
-    while (this.ci < this.cloudQ.length && this.cloudQ[this.ci].time <= now) {
+    while (this.ci < this.cloudQ.length && this.cloudQ[this.ci].time <= now && this.shades.length < 4) {
       const c = this.cloudQ[this.ci++];
       this.shades.push({ id: this.nextId++, u: c.fromLeft ? -c.halfWidth : 1 + c.halfWidth, hw: c.halfWidth, dir: c.fromLeft ? 1 : -1, speed: c.speed, strength: c.strength });
     }

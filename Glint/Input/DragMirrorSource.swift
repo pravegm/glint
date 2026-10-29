@@ -21,8 +21,15 @@ final class DragMirrorSource: MirrorSource {
     /// The longest frame step credited (s): a hitch never teleports the band.
     nonisolated static let maxStep: Double = 0.1
 
-    /// Set by the App whenever the canvas changes.
-    var layout: GardenLayout
+    /// Set by the App whenever the canvas changes. R5 (QA-R5 P1-2): a real change (rotation, swap, resize) forgets the
+    /// finger's last point, which is in the old coordinates: the drag carries on from the next move with no jump, and
+    /// the band and its target stay where they were.
+    var layout: GardenLayout {
+        didSet {
+            guard layout != oldValue else { return }
+            lastPoint = nil
+        }
+    }
 
     /// Where the band is now (d units).
     private(set) var band: Double

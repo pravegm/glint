@@ -26,7 +26,7 @@ struct SettingsView: View {
                         SettingRow(symbol: "speaker.wave.2.fill", title: "Sound", detail: "Pops, sizzle and chimes",
                                    isOn: $settings.soundOn, compact: c)
                         divider
-                        SettingRow(symbol: "music.note", title: "Music", detail: "The dawn pad",
+                        SettingRow(symbol: "music.note", title: "Music", detail: "A soft dawn soundtrack",
                                    isOn: $settings.musicOn, compact: c)
                         divider
                         SettingRow(symbol: "hand.tap.fill", title: "Haptics", detail: "Feel every pop",
@@ -40,7 +40,7 @@ struct SettingsView: View {
                         }
                         divider
                         SettingRow(symbol: "sparkles", title: "Reduce motion",
-                                   detail: "Calmer light, no shimmer. Follows iOS until you change it",
+                                   detail: "Calmer light and no shimmer. Matches iOS until you change it.",
                                    isOn: $settings.reduceMotionShown, compact: c)
                     }
                     .padding(.vertical, 6)

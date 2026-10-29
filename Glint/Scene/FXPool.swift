@@ -49,6 +49,9 @@ final class GardenFXPool {
 
     var capacity: Int { parts.count }
 
+    /// The life left of every live particle (tests: eviction takes the one nearest its end).
+    var liveLives: [CGFloat] { parts.filter { $0.active }.map { $0.life } }
+
     var activeCount: Int {
         var n = 0
         for p in parts where p.active { n += 1 }
@@ -120,7 +123,15 @@ final class GardenFXPool {
                 break
             }
         }
-        if slot < 0 { slot = cursor }
+        if slot < 0 {
+            // R5 (QA P1-1): full: take the particle nearest its end, never one mid-life.
+            var least = CGFloat.greatestFiniteMagnitude
+            for k in 0..<n where parts[k].life < least {
+                least = parts[k].life
+                slot = k
+            }
+            if slot < 0 { slot = cursor }
+        }
         cursor = (slot + 1) % n
         var q = p
         q.active = true
@@ -152,10 +163,13 @@ final class GardenRingPool {
     private var flat: [CGFloat] = []
     private var cursor = 0
 
+    private let ringTexture: SKTexture
+
     init(capacity: Int) {
+        ringTexture = GardenArt.ring
         for _ in 0..<max(capacity, 1) {
             flat.append(1)
-            let s = SKSpriteNode(texture: GardenArt.ring, size: CGSize(width: 2, height: 2))
+            let s = SKSpriteNode(texture: ringTexture, size: CGSize(width: 2, height: 2))
             s.blendMode = .add
             s.colorBlendFactor = 1
             s.isHidden = true
@@ -201,10 +215,18 @@ final class GardenRingPool {
                 break
             }
         }
-        if slot < 0 { slot = cursor }
+        if slot < 0 {
+            // R5: full: replace the ring nearest its end.
+            var least = CGFloat.greatestFiniteMagnitude
+            for k in 0..<n where life[k] < least {
+                least = life[k]
+                slot = k
+            }
+            if slot < 0 { slot = cursor }
+        }
         cursor = (slot + 1) % n
         let s = sprites[slot]
-        let tex = texture ?? GardenArt.ring
+        let tex = texture ?? ringTexture
         if s.texture !== tex { s.texture = tex }
         s.size = CGSize(width: 2, height: 2)
         s.color = color
@@ -250,13 +272,27 @@ final class GardenLabels {
     private var rise: [CGFloat] = []
     private var base: [CGPoint] = []
     private var bounce: [Bool] = []
+    /// R5 (QA P2-4): bumped each time a slot is reused, so a stale handle can't re-word someone else's label.
+    private var generation: [Int] = []
     private var cursor = 0
     /// The largest scale any bouncing label reached (tests: the chain text overshoots).
     private(set) var peakBounceScale: CGFloat = 0
+    /// R5 (QA P2-9): Reduce Motion: no springy overshoot, a plain fade in.
+    var calm = false
+    /// R5 (QA P2-3): words are kept wholly inside this rect (scene points), by their measured size.
+    var bounds: CGRect = .null
+
+    /// A label's handle: its slot and that slot's generation when shown.
+    struct Handle: Equatable {
+        var slot: Int
+        var generation: Int
+        static let none = Handle(slot: -1, generation: -1)
+    }
 
     init(capacity: Int) {
         for _ in 0..<max(capacity, 1) {
             bounce.append(false)
+            generation.append(0)
             let l = SKLabelNode()
             l.horizontalAlignmentMode = .center
             l.verticalAlignmentMode = .center
@@ -315,10 +351,10 @@ final class GardenLabels {
         return NSAttributedString(string: text, attributes: attrs)
     }
 
-    /// Shows `text` at `p` (scene points); returns its slot.
+    /// Shows `text` at `p` (scene points), kept inside `bounds`; returns its handle.
     @discardableResult
     func show(_ text: String, at p: CGPoint, size: CGFloat, color: GardenInk, rise r: CGFloat = 46,
-              life l: CGFloat = 1.0, bouncy: Bool = false) -> Int {
+              life l: CGFloat = 1.0, bouncy: Bool = false) -> Handle {
         let n = labels.count
         var slot = -1
         for k in 0..<n {
@@ -328,28 +364,71 @@ final class GardenLabels {
                 break
             }
         }
-        if slot < 0 { slot = cursor }
+        if slot < 0 {
+            // R5: all busy: reuse the one nearest its end.
+            var least = CGFloat.greatestFiniteMagnitude
+            for k in 0..<n where life[k] < least {
+                least = life[k]
+                slot = k
+            }
+            if slot < 0 { slot = cursor }
+        }
         cursor = (slot + 1) % n
+        generation[slot] += 1
         let label = labels[slot]
         label.attributedText = GardenLabels.attributed(text, size: size, color: color)
         life[slot] = max(l, 0.05)
         maxLife[slot] = max(l, 0.05)
         rise[slot] = r
-        base[slot] = p
-        bounce[slot] = bouncy
-        label.position = p
-        label.setScale(0.4)
-        label.alpha = 1
+        bounce[slot] = bouncy && !calm
+        base[slot] = clamped(p, label: label, rise: r, peak: bounce[slot] ? 1.45 : 1.08)
+        label.position = base[slot]
+        label.setScale(calm ? 1 : 0.4)
+        label.alpha = calm ? 0 : 1
         label.isHidden = false
-        return slot
+        return Handle(slot: slot, generation: generation[slot])
     }
 
-    /// Re-words a label still on screen (a sweep that keeps growing) and pops it again. False if it has gone.
-    func retext(_ slot: Int, _ text: String, size: CGFloat, color: GardenInk) -> Bool {
-        guard slot >= 0, slot < labels.count, life[slot] > 0 else { return false }
-        labels[slot].attributedText = GardenLabels.attributed(text, size: size, color: color)
-        life[slot] = maxLife[slot]
+    /// `p` moved so the label (at its largest scale `peak`, over its whole rise) stays inside `bounds`.
+    private func clamped(_ p: CGPoint, label: SKLabelNode, rise r: CGFloat, peak: CGFloat) -> CGPoint {
+        guard !bounds.isNull, bounds.width > 0, bounds.height > 0 else { return p }
+        label.setScale(1)
+        let halfW = label.frame.width * peak / 2 + 4
+        let halfH = label.frame.height * peak / 2 + 2
+        var x = p.x
+        var y = p.y
+        if bounds.width > 2 * halfW {
+            x = min(max(x, bounds.minX + halfW), bounds.maxX - halfW)
+        } else {
+            x = bounds.midX
+        }
+        let top = bounds.maxY - halfH - max(r, 0)
+        let bottom = bounds.minY + halfH
+        if top > bottom { y = min(max(y, bottom), top) } else { y = bounds.midY }
+        return CGPoint(x: x, y: y)
+    }
+
+    /// The label behind `h` is still on screen showing what `h` was given.
+    func isLive(_ h: Handle) -> Bool {
+        h.slot >= 0 && h.slot < labels.count && life[h.slot] > 0 && generation[h.slot] == h.generation
+    }
+
+    /// Re-words a label still on screen (a sweep that keeps growing) and pops it again. False if it has gone (or its
+    /// slot now shows something else).
+    func retext(_ h: Handle, _ text: String, size: CGFloat, color: GardenInk) -> Bool {
+        guard isLive(h) else { return false }
+        let label = labels[h.slot]
+        label.attributedText = GardenLabels.attributed(text, size: size, color: color)
+        base[h.slot] = clamped(base[h.slot], label: label, rise: rise[h.slot], peak: bounce[h.slot] ? 1.45 : 1.08)
+        life[h.slot] = maxLife[h.slot]
         return true
+    }
+
+    /// The frame of every label on screen now, at its drawn scale (tests: nothing pokes out of `bounds`).
+    var visibleFrames: [CGRect] {
+        var out: [CGRect] = []
+        for i in 0..<labels.count where life[i] > 0 { out.append(labels[i].frame) }
+        return out
     }
 
     func update(_ dt: CGFloat) {
@@ -362,7 +441,9 @@ final class GardenLabels {
                 continue
             }
             let t = 1 - life[i] / maxLife[i]
-            if bounce[i] {
+            if calm {
+                l.setScale(1)
+            } else if bounce[i] {
                 // A springy pop: in fast, overshoot to ~1.45, settle.
                 let age = maxLife[i] - life[i]
                 let inK = min(1, age / 0.03)
@@ -375,7 +456,8 @@ final class GardenLabels {
                 l.setScale(0.4 + 0.6 * pop)
             }
             l.position = CGPoint(x: base[i].x, y: base[i].y + rise[i] * GardenMath.easeOut(t))
-            l.alpha = t < 0.7 ? 1 : max(0, 1 - (t - 0.7) / 0.3)
+            let fadeOut: CGFloat = t < 0.7 ? 1 : max(0, 1 - (t - 0.7) / 0.3)
+            l.alpha = calm ? min(1, t / 0.12) * fadeOut : fadeOut
         }
     }
 }
@@ -399,11 +481,20 @@ final class GardenFX {
         }
     }
 
+    /// R5 (QA P2-7): the three petal textures, looked up once (not a string key per particle).
+    private let petalTextures: [SKTexture]
+
+    private func petalTexture(_ i: Int) -> SKTexture {
+        petalTextures[((i % petalTextures.count) + petalTextures.count) % petalTextures.count]
+    }
+
     init() {
-        glow = GardenFXPool(capacity: 84, texture: GardenArt.sparkle, blend: .add)
-        soft = GardenFXPool(capacity: 64, texture: GardenArt.soft, blend: .alpha)
-        // R3: more rings (submerged glooms trail a soft ripple each).
-        rings = GardenRingPool(capacity: 24)
+        // R5 (QA P1-1): room for the hero moments (a 7-pop cascade, sunrise with a full field). Hidden sprites cost
+        // almost nothing; when full, the particle nearest its end is replaced.
+        glow = GardenFXPool(capacity: 192, texture: GardenArt.sparkle, blend: .add)
+        soft = GardenFXPool(capacity: 160, texture: GardenArt.soft, blend: .alpha)
+        rings = GardenRingPool(capacity: 48)
+        petalTextures = [GardenArt.petal(0), GardenArt.petal(1), GardenArt.petal(2)]
         soft.root.zPosition = 0
         glow.root.zPosition = 1
         rings.root.zPosition = 2
@@ -475,7 +566,7 @@ final class GardenFX {
             q.shrink = false
             q.alphaScale = 0.95
             let c = GardenPalette.petals[(i + Int(rng.unit() * 5)) % GardenPalette.petals.count]
-            soft.spawn(q, size: rng.range(9, 14), color: c.ui, texture: GardenArt.petal(i), rotation: a)
+            soft.spawn(q, size: rng.range(9, 14), color: c.ui, texture: petalTexture(i), rotation: a)
         }
         let flecks = soft.scaled(big ? 5 : 3)
         for _ in 0..<flecks {
@@ -691,7 +782,7 @@ final class GardenFX {
             q.swayPhase = rng.range(0, 6)
             q.shrink = false
             let c = colors[i % colors.count]
-            soft.spawn(q, size: rng.range(9, 15), color: c.ui, texture: GardenArt.petal(i), rotation: a)
+            soft.spawn(q, size: rng.range(9, 15), color: c.ui, texture: petalTexture(i), rotation: a)
         }
     }
 
@@ -711,7 +802,7 @@ final class GardenFX {
             q.shrink = false
             q.fadeIn = true
             let c = GardenPalette.petals[i % GardenPalette.petals.count]
-            soft.spawn(q, size: rng.range(10, 16), color: c.ui, texture: GardenArt.petal(i), rotation: rng.range(0, 6))
+            soft.spawn(q, size: rng.range(10, 16), color: c.ui, texture: petalTexture(i), rotation: rng.range(0, 6))
         }
         for _ in 0..<glow.scaled(n) {
             var q = GardenParticle()

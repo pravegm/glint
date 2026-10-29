@@ -19,7 +19,8 @@ struct ResultsView: View {
         let c = canvas.compact
         // R3b: the buttons get their own rect (always fully on screen); the card scrolls in the rest.
         let place = AppRules.resultsPlacement(layout: canvas.layout, insets: canvas.insets, isDuo: canvas.isDuo,
-                                              buttonsHeight: AppRules.resultsButtonsHeight(compact: c))
+                                              buttonsHeight: AppRules.resultsButtonsHeight(compact: c,
+                                                                                         hasGate: summary.worldGate != nil))
         ZStack {
             LinearGradient(colors: [GlintTheme.night.opacity(0.72), GlintTheme.indigo.opacity(0.5),
                                     GlintTheme.night.opacity(0.8)], startPoint: .top, endPoint: .bottom)
@@ -33,7 +34,8 @@ struct ResultsView: View {
             }
         }
         .frame(width: canvas.size.width, height: canvas.size.height)
-        .onAppear { animateIn() }
+        // R5 (QA P1-3): tied to the view (cancelled when it goes) and run once per result.
+        .task(id: summary.id) { await animateIn() }
         .sheet(isPresented: $showsAchievements) {
             AchievementSheet(ids: summary.newAchievements) { showsAchievements = false }
                 .presentationDetents([.medium])
@@ -44,7 +46,7 @@ struct ResultsView: View {
 
     private var headline: String {
         if summary.won { return isLevel ? "Sunrise!" : "Dawn!" }
-        return isLevel ? "The night won" : "The night is over"
+        return "The night won"
     }
 
     private func card(compact: Bool) -> some View {
@@ -86,7 +88,7 @@ struct ResultsView: View {
                 .contentTransition(.numericText())
                 .accessibilityLabel("Score \(summary.score)")
 
-            if summary.outcome.isNewBest && summary.score > 0 {
+            if summary.won && summary.outcome.isNewBest && summary.score > 0 {
                 Text("New best!")
                     .font(GlintType.headline(compact))
                     .foregroundStyle(GlintTheme.ink)
@@ -175,7 +177,7 @@ struct ResultsView: View {
                     Button {
                         controller.nextTapped()
                     } label: {
-                        Label("Next sunrise", systemImage: "sun.max.fill")
+                        Label("Next level", systemImage: "sun.max.fill")
                     }
                     .buttonStyle(GlintButtonStyle(kind: .primary, compact: compact))
                     Button {
@@ -184,17 +186,41 @@ struct ResultsView: View {
                         Label("Retry", systemImage: "arrow.counterclockwise")
                     }
                     .buttonStyle(GlintButtonStyle(kind: .secondary, height: 58, compact: compact))
-                } else {
+                } else if let gate = summary.worldGate {
+                    // R5 (QA P1-4): the next world is shut: say what it needs, and Levels leads.
+                    Text(gate)
+                        .font(GlintType.body(compact))
+                        .foregroundStyle(GlintTheme.goldLight)
+                        .multilineTextAlignment(.center)
+                    Button {
+                        controller.openLevels()
+                    } label: {
+                        Label("Levels", systemImage: "map.fill")
+                    }
+                    .buttonStyle(GlintButtonStyle(kind: .primary, compact: compact))
                     Button {
                         controller.retryTapped()
                     } label: {
-                        Label(summary.won ? "Play again" : "Try again", systemImage: "arrow.counterclockwise")
+                        Label("Retry", systemImage: "arrow.counterclockwise")
+                    }
+                    .buttonStyle(GlintButtonStyle(kind: .secondary, height: 52, compact: compact))
+                } else {
+                    let last = summary.won && summary.mode == .level(LevelBook.count)
+                    Button {
+                        controller.retryTapped()
+                    } label: {
+                        Label(last ? "Play again" : "Retry", systemImage: "arrow.counterclockwise")
                     }
                     .buttonStyle(GlintButtonStyle(kind: .primary, compact: compact))
                 }
-                HStack(spacing: 12) {
-                    Button("Levels") { controller.openLevels() }
-                        .buttonStyle(GlintButtonStyle(kind: .secondary, height: 52, compact: compact))
+                if summary.worldGate == nil {
+                    HStack(spacing: 12) {
+                        Button("Levels") { controller.openLevels() }
+                            .buttonStyle(GlintButtonStyle(kind: .secondary, height: 52, compact: compact))
+                        Button("Home") { controller.goHome() }
+                            .buttonStyle(GlintButtonStyle(kind: .secondary, height: 52, compact: compact))
+                    }
+                } else {
                     Button("Home") { controller.goHome() }
                         .buttonStyle(GlintButtonStyle(kind: .secondary, height: 52, compact: compact))
                 }
@@ -202,7 +228,7 @@ struct ResultsView: View {
                 Button {
                     controller.retryTapped()
                 } label: {
-                    Label("Again", systemImage: "arrow.counterclockwise")
+                    Label("Retry", systemImage: "arrow.counterclockwise")
                 }
                 .buttonStyle(GlintButtonStyle(kind: .primary, compact: compact))
                 HStack(spacing: 12) {
@@ -216,36 +242,41 @@ struct ResultsView: View {
         .frame(maxWidth: 480)
     }
 
-    private func animateIn() {
+    /// The score count-up and the stars landing. R5 (QA P1-3): it runs inside the view's `.task`, so leaving the card
+    /// cancels it (no chimes over the next level), every cue checks for that, and a result animates only once (coming
+    /// back from the cover display shows it settled). Demo runs land everything at once.
+    private func animateIn() async {
         let stars = summary.stars
         let score = summary.score
         let reduce = controller.reduceMotion
         let unlocked = !summary.outcome.unlocked.isEmpty || !summary.newAchievements.isEmpty
-        if controller.demo != nil {
+        if controller.demo != nil || controller.animatedResultID == summary.id {
             shownScore = score
             shownStars = stars
             showRest = true
             return
         }
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 350_000_000)
-            let steps = 24
-            for k in 1...steps {
-                shownScore = score * k / steps
-                try? await Task.sleep(nanoseconds: 30_000_000)
-            }
-            shownScore = score
-            if stars > 0 {
-                for i in 1...stars {
-                    try? await Task.sleep(nanoseconds: 380_000_000)
-                    withAnimation(GlintTheme.pop(reduce)) { shownStars = i }
-                    FeedbackDirector.shared.ui(.star(i))
-                }
-            }
-            try? await Task.sleep(nanoseconds: 300_000_000)
-            withAnimation(GlintTheme.settle(reduce)) { showRest = true }
-            if unlocked { FeedbackDirector.shared.ui(.unlock) }
+        controller.markAnimated(summary.id)
+        try? await Task.sleep(nanoseconds: 350_000_000)
+        let steps = 24
+        for k in 1...steps {
+            if Task.isCancelled { return }
+            shownScore = score * k / steps
+            try? await Task.sleep(nanoseconds: 30_000_000)
         }
+        shownScore = score
+        if stars > 0 {
+            for i in 1...stars {
+                try? await Task.sleep(nanoseconds: 380_000_000)
+                if Task.isCancelled { return }
+                withAnimation(GlintTheme.pop(reduce)) { shownStars = i }
+                FeedbackDirector.shared.ui(.star(i))
+            }
+        }
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        if Task.isCancelled { return }
+        withAnimation(GlintTheme.settle(reduce)) { showRest = true }
+        if unlocked { FeedbackDirector.shared.ui(.unlock) }
     }
 }
 

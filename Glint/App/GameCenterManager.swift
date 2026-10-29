@@ -185,10 +185,10 @@ final class GameCenterManager {
         isAuthenticated = GKLocalPlayer.local.isAuthenticated
         if isAuthenticated {
             signInController = nil
-            // Re-send everything earned (Game Center keeps the best; achievements are idempotent).
-            UserDefaults.standard.removeObject(forKey: reportedKey)
+            // Re-send everything earned (Game Center keeps the best; achievements are idempotent). R5 (QA P2-9): the
+            // re-sync batch goes quietly (no banners on every launch); only newly earned ones (Results) show one.
             if knownStars > 0 { submitStars(knownStars) }
-            if !knownEarned.isEmpty { unlock(knownEarned) }
+            resync(knownEarned)
         }
         GKAccessPoint.shared.isActive = false
         flush()
@@ -220,6 +220,25 @@ final class GameCenterManager {
                 Task { @MainActor in
                     GameCenterManager.shared.didSubmit(entry, ok: ok)
                 }
+            }
+        }
+    }
+
+    /// Every earned achievement, re-sent without a banner (sign-in).
+    private func resync(_ ids: [String]) {
+        let known = Set(Self.achievementIDs)
+        let batch = ids.filter { known.contains($0) }
+        guard isAuthenticated, !disabled, !batch.isEmpty else { return }
+        let achievements: [GKAchievement] = batch.map { id in
+            let achievement = GKAchievement(identifier: id)
+            achievement.percentComplete = 100
+            achievement.showsCompletionBanner = false
+            return achievement
+        }
+        GKAchievement.report(achievements) { error in
+            let ok = error == nil
+            Task { @MainActor in
+                GameCenterManager.shared.didReport(batch, ok: ok)
             }
         }
     }

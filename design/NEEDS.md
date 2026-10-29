@@ -3,6 +3,25 @@
 Add a line under your role when you need something from another module. The owner answers by doing it (or saying why
 not) and deleting the line.
 
+## Core (R5b) → founder / Scene (from QA-R5)
+- **Clouds:** Core now caps the band at `Tuning.maxLiveClouds` = 4 live clouds in every mode. A later cloud waits just
+  off its edge until one leaves. This is tested, and the balance effect is nil (Harbour rarely has more than 3 at once).
+- **Floating ×n (QA-R5-player #8):** Scene can show the multiplier instead of the chain count:
+  `Tuning.multiplier(chain:)` on `.popped`'s `chain`, or `snapshot.multiplier`. It tops out at ×4.
+- **Achievement copy (QA-R5-player):** the suggested rewordings are "Reach a ×4 multiplier: 13 pops in a row." and
+  "Pop 3 or more shadows in one Sweep." The App Store Connect tool reads these strings from both `Achievements.swift`
+  and docs/appstore/achievements.md, so say the word and Core will change `Achievements.swift` to match.
+- **GAME-DESIGN §3–§6 is stale (QA-R5-store F11).** The current rules in `Tuning`:
+  - edge 135°
+  - band core ±0.065, edge ±0.10
+  - firefly scorch: 0.6 s, core only, plus a dart
+  - drag cap 1.4
+  - brute HP 4.5
+  - crease shade 0.12
+  - glooms travel submerged to 0.15–0.60
+  - ★★★ score bars from L4
+  - levels last 35–95 s
+
 ## Core (R1) → founder (docs only; Core already does the right thing)
 - Contracts.swift `MirrorInput` comments say the band hides "θ < 85°" and the crease glow spans "θ 15°…85°";
   GAME-DESIGN §3 and `Tuning` use 80° (band 0 at 80°, glow full at 80°). Please fix the two comments.
@@ -46,3 +65,33 @@ not) and deleting the line.
   `GardenScene.canvasPoint(layout:u:d:)` (SwiftUI space), **not** `layout.point(u:d:)`. In book layouts the two
   differ by up to 60 pt near the flowers. They are identical in laptop and phone layouts.
 - No Contracts change needed (no `flowerInset` field).
+
+## Feel (R5) → App (from QA-R5-scene-feel)
+- Optional: call `FeedbackDirector.shared.prepare()` when the "Close the phone to start" card appears (Play tapped).
+  It wakes the audio and haptic engines on their own task, off the frame loop. `ui(.levelStart)` already calls it, so
+  this only helps the time spent on the card.
+- QA-R5-app P1-3 (Results chimes leaking into the next level) is App-side: Feel plays `ui(.star)`/`ui(.unlock)` when
+  asked. Cancel the Results task before Retry/Next.
+
+## App (R5) → Scene (answered by Scene R5)
+- Done: the floating word is the multiplier (`GardenScene.multiplierText(chain:)` from `Tuning.multiplier(chain:)`:
+  "×1.5", "×2.25", "×4"). Sweeps say "Sweep of 5!" (no "×" outside the multiplier).
+
+## Scene (R5) → App
+- Multi-touch drag: the scene now enables `isMultipleTouchEnabled`, and the newest finger takes over the drag
+  (`dragEnded` then `dragBegan`). When the dragging finger lifts and another is still down, the next one that moves
+  sends `dragBegan`. The scene also ends the drag inside `apply(layout:)`. The App side of QA P1-3 is still open: a
+  finger that landed while paused is refused by `GameController.dragBegan`. Please treat a `dragMoved` with
+  `dragging == false` (playing, not paused) as a `dragBegan` at that point. The drag is relative, so nothing jumps.
+- QA P2-5: ground textures for every world are now prewarmed in the background per canvas size and kept until a
+  memory warning. Skipping `apply(layout:)` while the cover is shown is no longer needed (it costs nothing now), but it
+  is harmless.
+- Player QA #19: the garden keeps its "Wave n" label; drop the HUD's banner.
+- Player QA #11: the rail now runs on the garden's outer margin (13 pt in), and the grip lies along it, starting
+  30 pt below the crease (clear of the frame's corner bolt). The store copy "a brass lever beside the garden" fits.
+
+## App (R5) → Core / founder
+- Player QA #18: a `.wisps` hint ("Wisps come in flocks. Sweep them in one pass.") needs a new `HintID` case
+  (Contracts) and Core raising it on L3. The App will add the copy and the subject rule once the case exists.
+- Player QA copy for `Achievements.swift`: "Pop 3 or more shadows in one Sweep." and "Reach a ×4 multiplier: 13 pops
+  in a row." (these are Core strings).

@@ -21,6 +21,9 @@ final class PilotSource: MirrorSource {
 
     /// R3 demo `ignore=<kind>`: glooms of this kind are hidden from the brain (it never aims at them).
     var ignoring: GloomKind?
+    /// R5b demo `pilotLag=<s>`: the pilot acts on what it wanted this many seconds ago (it reacts later; same skill).
+    var lag: Double = 0
+    private var wants: [(time: TimeInterval, band: Double)] = []
 
     init(skill: Double, seed: UInt64) {
         let s = skill.isFinite ? min(max(skill, 0), 1) : 0.8
@@ -51,7 +54,12 @@ final class PilotSource: MirrorSource {
         }
         if time.isFinite { lastTime = time }
         let snapshot = last ?? DawnSnapshot(mode: .endless)
-        let wanted = brain.band(for: snapshot, dt: dt)
+        var wanted = brain.band(for: snapshot, dt: dt)
+        if lag > 0, time.isFinite {
+            wants.append((time, wanted))
+            while wants.count > 1 && wants[1].time <= time - lag { wants.removeFirst() }
+            if let oldest = wants.first, oldest.time <= time - lag { wanted = oldest.band } else { wanted = band }
+        }
         let before = band
         let goal: Double
         if snapshot.phase == .waiting {

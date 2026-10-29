@@ -36,25 +36,25 @@ Same frames and captions at both sizes. On these phones there is no hinge, so a 
 
 | # (file) | Story beat (in-game moment) | Headline (count) / sub-line | Demo args (`ci/store-scenarios.txt`) |
 |---|---|---|---|
-| **P01** `P01-hero` | **The mirror.** Book composite of D01: the sun in the mirror page, the band across the garden page, a pop in gold sparks | **Your phone is a *mirror*** (22) / Best on iPhone Duo. Plays on other iPhones too. | frame `book:D01-hero` (fallback capture `screen=play;level=6;t=18;skill=0.8;progress=mid`) |
-| **P02** `P02-sweep` | **The pop cascade.** A wisp flock caught mid-Sweep: pops bursting, "Sweep!" floating, the chain | **Sweep the light. *Pop!*** (21) / Every pop climbs a rising scale. | `screen=play;level=3;skill=0.9;freezeOn=sweep;progress=mid` (freezes 0.3 s after the Sweep) |
-| **P03** `P03-reach` | **The aim.** The band out in the garden; the gold grip on the rail at its edge | **Aim the *sunlight*** (16) / Drag anywhere. A gold grip follows. | `screen=play;level=2;t=20;skill=0.8;progress=mid` |
-| **P04** `P04-fireflies` | **Spare them.** Fireflies drifting near the band, the hint line "Spare the fireflies" | **Spare the *fireflies*** (19) / They replant lost flowers. | `screen=play;level=4;t=12;skill=0.6;hint=spareTheFireflies;progress=mid` |
-| **P05** `P05-brute` | **Tracking.** A brute steaming and shrinking inside the band, wisps behind | **Follow the *big ones*** (19) / Keep the light on a brute as it creeps. | `screen=play;level=6;t=25;skill=0.8;progress=mid` |
+| **P01** `P01-hero` | **The mirror.** Book composite of D01: the sun in the mirror page, the band across the garden page, a pop in gold sparks | **Your phone is a *mirror*** (22) / Best on iPhone Duo. Plays on other iPhones too. | frame `book:D01-hero` (fallback capture `screen=play;level=6;skill=0.55;pilotLag=0.3;freezeOn=busy;freezeAfter=12;progress=mid`) |
+| **P02** `P02-sweep` | **The pop cascade.** A wisp flock caught mid-Sweep: pops bursting, "Sweep!" floating, the chain | **Sweep the light. *Pop!*** (21) / Every pop climbs a rising scale. | `screen=play;level=3;skill=0.75;freezeOn=sweep;freezeAfter=6;progress=mid` |
+| **P03** `P03-reach` | **The aim.** The band out in the garden; the gold grip on the rail at its edge | **Aim the *sunlight*** (16) / Drag anywhere. A gold grip follows. | `screen=play;level=5;skill=0.55;pilotLag=0.3;freezeOn=busy;freezeAfter=15;progress=mid` |
+| **P04** `P04-fireflies` | **Spare them.** Fireflies drifting near the band, the hint line "Spare the fireflies" | **Spare the *fireflies*** (19) / They replant lost flowers. | `screen=play;level=5;skill=0.6;pilotLag=0.3;freezeOn=firefly;freezeAfter=8;hint=spareTheFireflies;progress=mid` |
+| **P05** `P05-brute` | **Tracking.** A brute steaming and shrinking inside the band, wisps behind | **Follow the *big ones*** (19) / Keep the light on a brute as it creeps. | `screen=play;level=6;skill=0.55;pilotLag=0.3;freezeOn=busy;freezeAfter=22;progress=mid` |
 | **P06** `P06-worlds` | **Progress.** The level map, Meadow tab: sun medallions on a winding path, most starred, the next glowing | **30 *sunrises*, 3 worlds** (21) / Meadow, Rooftops and Harbour. | `screen=levels;progress=mid` |
-| **P07** `P07-rooftops` | **New tricks.** Rooftops: splitter wisps flung outwards, a hopper crouching | **Shadows that *split* and hop** (26) / New tricks on the Rooftops. | `screen=play;level=15;t=30;skill=0.8;progress=mid` |
-| **P08** `P08-harbour` | **It gets hard.** Harbour: a dense wave, one flower lost (a drooping stalk), the sun high in the mirror | **Hard by the *Harbour*** (19) / World 3 will cost you petals. | `screen=play;level=27;t=40;skill=0.7;progress=mid` |
-| **P09** `P09-long-night` | **Endless.** Long Night at 60 s: the wave banner, the score, the chain | **Then the *Long Night*** (19) / Endless waves. One best score. | `screen=play;mode=endless;t=60;skill=0.8;progress=mid` |
-| **P10** `P10-todays-dawn` | **Daily.** Today's Dawn: the date chip, the score | **A new *dawn* every day** (20) / Today's Dawn: one sunrise for everyone. | `screen=play;mode=daily;t=20;skill=0.8;progress=mid` |
+| **P07** `P07-rooftops` | **New tricks.** Rooftops: splitter wisps flung outwards, a hopper crouching | **Shadows that *split* and hop** (26) / New tricks on the Rooftops. | `screen=play;level=14;skill=0.55;pilotLag=0.3;freezeOn=busy;freezeAfter=25;progress=mid` |
+| **P08** `P08-harbour` | **It gets hard.** Harbour: a dense wave, one flower lost (a drooping stalk), the sun high in the mirror | **Hard by the *Harbour*** (19) / World 3 will cost you petals. | `screen=play;level=27;skill=0.5;pilotLag=0.3;freezeOn=eaten;freezeAfter=20;progress=mid` |
+| **P09** `P09-long-night` | **Endless.** Long Night at 60 s: the wave banner, the score, the chain | **Then the *Long Night*** (19) / Endless waves. One best score. | `screen=play;mode=endless;skill=0.55;pilotLag=0.3;freezeOn=busy;freezeAfter=40;progress=mid` |
+| **P10** `P10-todays-dawn` | **Daily.** Today's Dawn: the date chip, the score | **A new *dawn* every day** (20) / Today's Dawn: one sunrise for everyone. | `screen=play;mode=daily;skill=0.55;pilotLag=0.3;freezeOn=busy;freezeAfter=15;progress=mid` |
 
 **Why this order:** 1–3 are the pitch (the mirror, the satisfying pop, the aim); 4–5 are the two skills (spare, follow); 6–10 are the reasons to come back (the worlds, new shadow tricks, real difficulty, endless, daily).
 
 **Caption notes (truth; eyeball each on the first store run):**
-- **No `band=` pins:** the light in every frame is the light the pilot made, so lit shadows and the band agree.
+- **Crowded and truthful (store run 40881814246 fix):** a skilled pilot cleared the garden, so every play frame now uses a mid-skill pilot that reacts late (`skill=0.55;pilotLag=0.3`) playing live, frozen 0.3 s after the moment the frame is about (`freezeOn=busy`: ≥ 5 shadows, ≥ 2 lit, pop FX in flight; `sweep`; `firefly`; `eaten`), with `freezeAfter` inside the level's length. No `t=` and no `band=` pins: the light in every frame is the light the pilot made.
 - **P02:** a Sweep is 3+ pops within 0.35 s (GAME-DESIGN §5) and the pops really do climb a pentatonic ladder (§9).
 - **P03:** "A gold grip follows" is the phone fallback's grip on the brass rail (R3); the Duo has none, so D03 has its own caption.
-- **P04:** "They replant lost flowers" needs a firefly in view; if the seed shows none, retime `t=` or change the sub-line to "Keep the light off them."
-- **P08:** "will cost you petals" needs at least one eaten flower on screen at t=40; if not, retime.
+- **P04:** `freezeOn=firefly` freezes with a firefly at the light (level 5 has 3). "They replant lost flowers" stays true; if a frame shows no flower gap, it still reads as the rule.
+- **P08:** `freezeOn=eaten` freezes just after a shadow eats a flower (a drooping stalk on screen), so "will cost you petals" is shown, not just said.
 - **One progress state:** every frame uses `progress=mid`, so the set reads as one player.
 
 ## B. iPhone Duo, inner display (2853 × 2007, book pose): 10 frames

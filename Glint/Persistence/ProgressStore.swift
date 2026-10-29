@@ -62,6 +62,9 @@ struct ProgressData: Codable, Equatable {
     var seenHints: [String] = []
     /// A real hinge has reported on this device at some point (the iPhone Duo flag, ROUND-1 App 2).
     var hingeSeen: Bool = false
+    /// R5 (QA P1-1): the device model (`utsname.machine`) that saw the hinge. A backup restored onto another phone
+    /// doesn't make it a Duo: the flag only counts on the same model.
+    var hingeMachine: String = ""
     /// Levels and runs started.
     var plays: Int = 0
     /// R2: Today's Dawn days finished (ascending, the last 400 kept): the day streak.
@@ -76,7 +79,7 @@ struct ProgressData: Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case version, levelStars, levelBest, endlessBest, dailyBests, bestDailyEver, lastLevel, firstLaunch, seenHints
-        case hingeSeen, plays, dailyPlayed, achievements
+        case hingeSeen, plays, dailyPlayed, achievements, hingeMachine
     }
 
     init(from decoder: Decoder) throws {
@@ -99,6 +102,7 @@ struct ProgressData: Codable, Equatable {
         firstLaunch = first.isFinite ? max(first, 0) : 0
         seenHints = (try? c.decodeIfPresent([String].self, forKey: .seenHints)) ?? []
         hingeSeen = (try? c.decodeIfPresent(Bool.self, forKey: .hingeSeen)) ?? false
+        hingeMachine = (try? c.decodeIfPresent(String.self, forKey: .hingeMachine)) ?? ""
         plays = ProgressRules.clampScore((try? c.decodeIfPresent(Int.self, forKey: .plays)) ?? 0)
         let days: [Int] = (try? c.decodeIfPresent([Int].self, forKey: .dailyPlayed)) ?? []
         dailyPlayed = ProgressRules.cleanDays(days)
@@ -262,8 +266,14 @@ enum ProgressRules {
     }
 
     /// Files a finished level or run. Level stars only go up; bests keep the larger score.
+    /// The saved Duo flag, trusted only on the model that set it (R5, QA P1-1).
+    static func hingeSeen(_ d: ProgressData, machine: String) -> Bool {
+        d.hingeSeen && !d.hingeMachine.isEmpty && d.hingeMachine == machine
+    }
+
+    /// `finished` false (R5, QA P2-1): a Today's Dawn left early still keeps its best, but doesn't count as the day played.
     static func record(_ d: inout ProgressData, mode: PlayMode, won: Bool, stars earned: Int, score: Int,
-                       now: Date) -> RecordOutcome {
+                       now: Date, finished: Bool = true) -> RecordOutcome {
         let before = unlockSet(d, now: now)
         let value = clampScore(score)
         var out = RecordOutcome()
@@ -290,7 +300,7 @@ enum ProgressRules {
             out.previousBest = d.dailyBests[key] ?? 0
             let best = max(out.previousBest, value)
             d.dailyBests[key] = best
-            d.dailyPlayed = cleanDays(d.dailyPlayed + [day])
+            if finished { d.dailyPlayed = cleanDays(d.dailyPlayed + [day]) }
             d.bestDailyEver = max(d.bestDailyEver, best)
             out.best = best
             // Keep the file small: the last 60 days.
@@ -320,8 +330,13 @@ final class ProgressStore: ObservableObject {
     init(defaults: UserDefaults?) {
         self.defaults = defaults
         var loaded = ProgressData()
-        if let raw = defaults?.data(forKey: Self.key), let decoded = Self.decode(raw) {
-            loaded = decoded
+        if let raw = defaults?.data(forKey: Self.key) {
+            if let decoded = Self.decode(raw) {
+                loaded = decoded
+            } else {
+                // R5 (QA P2-11): never silently throw a save away: keep the unreadable bytes beside it.
+                defaults?.set(raw, forKey: Self.key + ".bad")
+            }
         }
         if loaded.firstLaunch <= 0 { loaded.firstLaunch = Date().timeIntervalSince1970 }
         data = loaded
@@ -339,9 +354,10 @@ final class ProgressStore: ObservableObject {
     var nextLevel: Int { ProgressRules.nextLevel(data) }
     var totalStars: Int { ProgressRules.totalStars(data) }
 
-    func record(mode: PlayMode, won: Bool, stars: Int, score: Int, now: Date) -> RecordOutcome {
+    func record(mode: PlayMode, won: Bool, stars: Int, score: Int, now: Date, finished: Bool = true) -> RecordOutcome {
         var copy = data
-        let outcome = ProgressRules.record(&copy, mode: mode, won: won, stars: stars, score: score, now: now)
+        let outcome = ProgressRules.record(&copy, mode: mode, won: won, stars: stars, score: score, now: now,
+                                           finished: finished)
         data = copy
         save()
         return outcome
@@ -376,10 +392,21 @@ final class ProgressStore: ObservableObject {
         save()
     }
 
-    func noteHingeSeen() {
-        guard !data.hingeSeen else { return }
+    func noteHingeSeen(machine: String = "") {
+        guard !data.hingeSeen || data.hingeMachine != machine else { return }
         var copy = data
         copy.hingeSeen = true
+        copy.hingeMachine = machine
+        data = copy
+        save()
+    }
+
+    /// R5 (QA P1-1): the hinge API says this device has none: forget an old (restored) Duo flag.
+    func clearHingeSeen() {
+        guard data.hingeSeen else { return }
+        var copy = data
+        copy.hingeSeen = false
+        copy.hingeMachine = ""
         data = copy
         save()
     }

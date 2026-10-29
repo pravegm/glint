@@ -3,19 +3,26 @@
 # ci/store-frame.swift. THIS FILE IS THE SOURCE OF TRUTH for names and captions (tools/appstore/build-metadata.js checks
 # the names against docs/appstore/asc-metadata.json and every sub-line against screenshots.md).
 # name|demo args (-glintDemo)|wait s|caption (drawn on the frame: headline / sub-line, one *highlight*)|expect|frame
-#  - Every play frame uses t= (the pilot plays to t s, then the app freezes: "GLINT-T freeze time") or freezeOn=, and
-#    progress=mid, so the set reads as one player. No band= pins: the light shown is the light the pilot made.
-#  - frame: book:D01-hero = frame 1 is the Duo book composite of the Duo set's D01 capture (flat fallback = FLAGGED).
+#  - Crowded, truthful fields (store run 40881814246 showed a skilled pilot clears the garden): a mid-skill pilot that
+#    reacts late (skill 0.55, pilotLag=0.3 s) plays LIVE, and the app freezes 0.3 s after the moment the frame is about:
+#    busy (≥ 5 shadows, ≥ 2 in the light, pop FX in flight), sweep (just after a Sweep burst), firefly (a firefly at
+#    the light), eaten (a flower just eaten). freezeAfter=<s> holds the freeze until that much play has passed, kept
+#    well inside each level's length (R5: L3 42 s, L5 50, L6 55, L14 70, L27 90; Today's Dawn 90). No t= (it would
+#    freeze on time, not on the moment) and no band= pins: the light shown is the light the pilot made.
+#  - wait: ci/screenshots.sh waits up to max(wait, 60) s for the "GLINT-T freeze <tag>" line.
+#  - progress=mid everywhere, so the set reads as one player.
+#  - frame: book:D01-hero = frame 1 is the Duo book composite of the Duo set's D01 capture. Without a Duo capture in the
+#    same run (duo ticked, or duo_from_run) P01 falls back to flat and is FLAGGED: that is why the trial run flagged it.
 #  - No "|" inside a field.
-P01-hero|screen=play;level=6;t=18;skill=0.8;progress=mid|28|Your phone is a *mirror* / Best on iPhone Duo. Plays on other iPhones too.|GLINT-T freeze|book:D01-hero
-P02-sweep|screen=play;level=3;skill=0.9;freezeOn=sweep;progress=mid|60|Sweep the light. *Pop!* / Every pop climbs a rising scale.|GLINT-T freeze sweep
-P03-reach|screen=play;level=2;t=20;skill=0.8;progress=mid|30|Aim the *sunlight* / Drag anywhere. The lever follows.|GLINT-T freeze
-P04-fireflies|screen=play;level=4;t=12;skill=0.6;hint=spareTheFireflies;progress=mid|22|Spare the *fireflies* / They replant lost flowers.|GLINT-T freeze
-P05-brute|screen=play;level=6;t=25;skill=0.8;progress=mid|35|Follow the *big ones* / Keep the light on a brute as it creeps.|GLINT-T freeze
+P01-hero|screen=play;level=6;skill=0.55;pilotLag=0.3;freezeOn=busy;freezeAfter=12;progress=mid|75|Your phone is a *mirror* / Best on iPhone Duo. Plays on other iPhones too.|GLINT-T freeze busy|book:D01-hero
+P02-sweep|screen=play;level=3;skill=0.75;freezeOn=sweep;freezeAfter=6;progress=mid|60|Sweep the light. *Pop!* / Every pop climbs a rising scale.|GLINT-T freeze sweep
+P03-reach|screen=play;level=5;skill=0.55;pilotLag=0.3;freezeOn=busy;freezeAfter=15;progress=mid|70|Aim the *sunlight* / Drag anywhere. A gold grip follows.|GLINT-T freeze busy
+P04-fireflies|screen=play;level=5;skill=0.6;pilotLag=0.3;freezeOn=firefly;freezeAfter=8;hint=spareTheFireflies;progress=mid|70|Spare the *fireflies* / They replant lost flowers.|GLINT-T freeze firefly
+P05-brute|screen=play;level=6;skill=0.55;pilotLag=0.3;freezeOn=busy;freezeAfter=22;progress=mid|75|Follow the *big ones* / Keep the light on a brute as it creeps.|GLINT-T freeze busy
 P06-worlds|screen=levels;progress=mid|8|30 *sunrises*, 3 worlds / Meadow, Rooftops and Harbour.|GLINT-T screen levels
-P07-rooftops|screen=play;level=15;t=30;skill=0.8;progress=mid|40|Shadows that *split* and hop / New tricks on the Rooftops.|GLINT-T freeze
-P08-harbour|screen=play;level=27;t=40;skill=0.7;progress=mid|50|Hard by the *Harbour* / World 3 will cost you petals.|GLINT-T freeze
-P09-long-night|screen=play;mode=endless;t=60;skill=0.8;progress=mid|70|Then the *Long Night* / Endless waves. One best score.|GLINT-T freeze
-P10-todays-dawn|screen=play;mode=daily;t=20;skill=0.8;progress=mid|30|A new *dawn* every day / Today's Dawn: one sunrise for everyone.|GLINT-T freeze
+P07-rooftops|screen=play;level=14;skill=0.55;pilotLag=0.3;freezeOn=busy;freezeAfter=25;progress=mid|85|Shadows that *split* and hop / New tricks on the Rooftops.|GLINT-T freeze busy
+P08-harbour|screen=play;level=27;skill=0.5;pilotLag=0.3;freezeOn=eaten;freezeAfter=20;progress=mid|100|Hard by the *Harbour* / World 3 will cost you petals.|GLINT-T freeze eaten
+P09-long-night|screen=play;mode=endless;skill=0.55;pilotLag=0.3;freezeOn=busy;freezeAfter=40;progress=mid|100|Then the *Long Night* / Endless waves. One best score.|GLINT-T freeze busy
+P10-todays-dawn|screen=play;mode=daily;skill=0.55;pilotLag=0.3;freezeOn=busy;freezeAfter=15;progress=mid|70|A new *dawn* every day / Today's Dawn: one sunrise for everyone.|GLINT-T freeze busy
 # Reserves (not in the default filter ^P[0-9]): run with phone_filter '^R' to compare.
-R2-results|screen=results;results=won;level=4;progress=mid|10|Save every *flower* / Five flowers kept, three stars.|GLINT-T screen results
+R2-results|screen=results;results=won;level=4;progress=mid|10|Save every *flower* / All five, plus the score: three stars.|GLINT-T screen results

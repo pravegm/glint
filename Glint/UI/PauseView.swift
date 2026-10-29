@@ -21,6 +21,8 @@ struct PauseView: View {
             }
         }
         .frame(width: canvas.size.width, height: canvas.size.height)
+        // R5 (QA P2-8): VoiceOver stays on the menu (never the HUD behind it).
+        .accessibilityAddTraits(.isModal)
     }
 
     private func titleCard(compact: Bool) -> some View {
@@ -38,8 +40,9 @@ struct PauseView: View {
             Text(AppRules.grouped(score))
                 .font(GlintType.hero(compact ? 40 : 52))
                 .foregroundStyle(GlintTheme.goldFace)
-            if controller.isDuo {
-                Text("Closing the phone pauses too. Open it to carry on.")
+            if controller.hingeDriven {
+                // R5: only where it is true (the hinge drives the light), and the menu needs Resume.
+                Text("Closing the phone pauses too.")
                     .font(GlintType.caption(compact))
                     .foregroundStyle(GlintTheme.haze)
                     .multilineTextAlignment(.center)
@@ -61,7 +64,7 @@ struct PauseView: View {
             Button {
                 controller.restartTapped()
             } label: {
-                Label("Restart", systemImage: "arrow.counterclockwise")
+                Label("Retry", systemImage: "arrow.counterclockwise")
             }
             .buttonStyle(GlintButtonStyle(kind: .secondary, height: 58, compact: compact))
             HStack(spacing: 12) {
@@ -76,6 +79,47 @@ struct PauseView: View {
                 }
                 .buttonStyle(GlintButtonStyle(kind: .secondary, height: 58, compact: compact))
             }
+            // R5 (player QA #24): sound and haptics without leaving the level.
+            PauseSoundToggles(settings: controller.settings)
+            .padding(.top, 4)
+        }
+    }
+}
+
+/// Sound and haptics on the pause card (observes the settings so the icons follow).
+struct PauseSoundToggles: View {
+    @ObservedObject var settings: SettingsStore
+
+    var body: some View {
+        HStack(spacing: 18) {
+            PauseToggle(symbol: settings.soundOn ? "speaker.wave.2.fill" : "speaker.slash.fill",
+                        label: settings.soundOn ? "Sound on" : "Sound off") {
+                settings.soundOn.toggle()
+            }
+            PauseToggle(symbol: settings.hapticsOn ? "hand.tap.fill" : "hand.raised.slash.fill",
+                        label: settings.hapticsOn ? "Haptics on" : "Haptics off") {
+                settings.hapticsOn.toggle()
+            }
+        }
+    }
+}
+
+/// A small round toggle on the pause card, captioned.
+struct PauseToggle: View {
+    let symbol: String
+    let label: String
+    let action: () -> Void
+
+    var body: some View {
+        VStack(spacing: 4) {
+            RoundIconButton(symbol: symbol, label: label, size: 50) {
+                FeedbackDirector.shared.ui(.toggle)
+                action()
+            }
+            Text(label)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(GlintTheme.mist)
+                .accessibilityHidden(true)
         }
     }
 }

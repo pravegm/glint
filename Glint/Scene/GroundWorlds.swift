@@ -371,3 +371,45 @@ enum GroundWorlds {
         creaseAndEdges(ctx, w, h, ink: pick(warm, 0x04060C, 0x140C08), seed: 0x3EAF)
     }
 }
+
+// MARK: - R5: ground rendering off the main thread
+
+/// R5 (QA P2-5): what a ground texture is (its cache key's parts). Plain values, so it can cross to a background queue.
+struct GroundSpec: Equatable {
+    var depth: CGFloat
+    var span: CGFloat
+    var warm: Bool
+    var style: GroundStyle
+    var inset: CGFloat
+}
+
+/// R5: paints a ground into a plain CoreGraphics bitmap (no UIKit), so the prewarm can run on a background queue. The
+/// bitmap context is y-up like every other texture here; `makeImage()` gives an upright image.
+enum GroundRender {
+    static func image(_ spec: GroundSpec) -> CGImage? {
+        let w = (max(spec.depth, 8) / 4).rounded() * 4
+        let h = (max(spec.span, 8) / 4).rounded() * 4
+        // R5: ≤ 1.25 × and ≤ 1600 px, so several worlds and sizes fit in memory together.
+        let scale: CGFloat = min(1.25, 1600 / max(w, h))
+        let pw = Int((w * scale).rounded())
+        let ph = Int((h * scale).rounded())
+        guard pw > 0, ph > 0,
+              let ctx = CGContext(data: nil, width: pw, height: ph, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.scaleBy(x: scale, y: scale)
+        let s = CGSize(width: w, height: h)
+        let ins = min(max(spec.inset, 0), w * 0.5)
+        switch spec.style {
+        case .meadow:
+            GardenArt.drawGround(ctx, s, spec.warm ? GroundPalette.dawn : GroundPalette.night, inset: ins)
+        case .moonlit:
+            GardenArt.drawGround(ctx, s, spec.warm ? GroundPalette.moonSilver : GroundPalette.moon, inset: ins)
+        case .rooftops:
+            GroundWorlds.drawRooftops(ctx, s, warm: spec.warm, inset: ins)
+        case .harbour:
+            GroundWorlds.drawHarbour(ctx, s, warm: spec.warm, inset: ins)
+        }
+        return ctx.makeImage()
+    }
+}

@@ -23,38 +23,64 @@ struct PlayHUD: View {
         let pauseSize = Self.pauseSize
         let margin = AppRules.hudMargin(layout: layout)
         let mirror = layout.mirrorRect
-        let dailyDay: Int? = AppRules.dailyDay(controller.playMode)
+        let isDaily = AppRules.dailyDay(controller.playMode) != nil
+        let scoreCenter = AppRules.hudCenter(u: 0, item: scoreSize, layout: layout, insets: canvas.insets,
+                                             margin: margin)
+        let pauseCenter = AppRules.hudCenter(u: 1, item: pauseSize, layout: layout, insets: canvas.insets,
+                                             margin: margin)
         ZStack {
+            // R5 (VoiceOver, phones): the garden is an adjustable "Light": swipe up or down to move the band.
+            if controller.dragDriven && controller.stage == .live && !controller.levelOver {
+                Color.clear
+                    .frame(width: layout.gardenRect.width, height: layout.gardenRect.height)
+                    .position(x: layout.gardenRect.midX, y: layout.gardenRect.midY)
+                    .allowsHitTesting(false)
+                    .accessibilityElement()
+                    .accessibilityLabel("Light")
+                    .accessibilityValue(AppRules.lightValue(hud.state.band))
+                    .accessibilityHint("Swipe up or down to move the light towards or away from the flowers")
+                    .accessibilityAdjustableAction { direction in
+                        switch direction {
+                        case .increment: controller.nudgeLight(0.1)
+                        case .decrement: controller.nudgeLight(-0.1)
+                        @unknown default: break
+                        }
+                    }
+            }
+
             ScorePill(state: hud.state, compact: c)
                 .frame(width: scoreSize.width, height: scoreSize.height)
-                .position(AppRules.hudCenter(u: 0, item: scoreSize, layout: layout, insets: canvas.insets,
-                                             margin: margin))
+                .position(scoreCenter)
                 .allowsHitTesting(false)
 
-            RoundIconButton(symbol: "pause.fill", label: "Pause", size: pauseSize.width) {
-                controller.pauseTapped()
+            if !controller.levelOver {
+                // R5 (QA P0-1): no pause once the level is over (its result is already saved).
+                RoundIconButton(symbol: "pause.fill", label: "Pause", size: pauseSize.width) {
+                    controller.pauseTapped()
+                }
+                .position(pauseCenter)
+                .opacity(controller.pause.menu ? 0 : 1)
             }
-            .position(AppRules.hudCenter(u: 1, item: pauseSize, layout: layout, insets: canvas.insets, margin: margin))
-            .opacity(controller.pause.menu ? 0 : 1)
 
-            if let day = dailyDay {
-                // REVIEW-2 fix 11: Today's Dawn's date chip, top centre of the mirror.
-                Text(AppRules.dateChip(day: day))
+            if isDaily {
+                // Today's Dawn's date chip (R5: the player's local date of this run), placed by the plates' real rects.
+                Text(AppRules.localDateChip(controller.runStart))
                     .font(GlintType.caption(c))
                     .foregroundStyle(GlintTheme.ink)
                     .padding(.horizontal, 14)
                     .frame(height: Self.dateChipSize.height)
                     .background(Capsule().fill(GlintTheme.goldFace))
-                    // Centred along the far edge, one row in from the score and pause plates (never under them).
-                    .position(AppRules.farEdgeCenter(item: Self.dateChipSize, layout: layout, insets: canvas.insets,
-                                                     margin: margin + scoreSize.height + 8))
+                    .position(AppRules.dateChipCenter(chip: Self.dateChipSize,
+                                                      score: AppRules.rect(center: scoreCenter, size: scoreSize),
+                                                      pause: AppRules.rect(center: pauseCenter, size: pauseSize),
+                                                      layout: layout))
                     .allowsHitTesting(false)
             }
 
             if let prompt = controller.prompt {
                 let maxSize = AppRules.promptMaxSize(layout: layout)
                 PromptCard(prompt: prompt, compact: c, starLine: controller.startStarLine,
-                           reduceMotion: controller.reduceMotion)
+                           reduceMotion: controller.reduceMotion, bookPose: layout.foldVertical)
                     .frame(maxWidth: maxSize.width, maxHeight: maxSize.height)
                     .position(AppRules.promptCenter(layout: layout))
                     .allowsHitTesting(false)
@@ -69,6 +95,7 @@ struct PlayHUD: View {
                     .transition(.opacity)
                 HintLine(text: HintRules.text(hint), compact: c)
                     .frame(maxWidth: min(AppRules.promptMaxSize(layout: layout).width, 420))
+                    .opacity(0.88)
                     .position(at)
                     .allowsHitTesting(false)
                     .transition(.opacity)
@@ -166,8 +193,8 @@ struct ScorePill: View {
                 .contentTransition(.numericText())
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
-            // R2: the chain as a whole count. R3 (REVIEW-2 fix 11): Long Night's wave always shows beside it.
-            if let line = AppRules.scoreSubline(chain: state.chain, wave: state.wave) {
+            // R5: the multiplier ("×2.5", up to ×4), never the raw chain count. Long Night's wave always shows.
+            if let line = AppRules.scoreSubline(multiplier: state.multiplier, wave: state.wave) {
                 Text(line)
                     .font(GlintType.caption(compact))
                     .foregroundStyle(GlintTheme.gold)
@@ -194,10 +221,13 @@ struct PromptCard: View {
     let compact: Bool
     var starLine: String? = nil
     var reduceMotion = false
+    /// R5 (player QA #26): the phone drawing turns to the book pose's vertical fold.
+    var bookPose = false
 
     var body: some View {
         VStack(spacing: 8) {
             PromptArt(prompt: prompt, reduceMotion: reduceMotion)
+                .rotationEffect(.degrees(bookPose && !isDrag ? -90 : 0))
                 .frame(width: compact ? 64 : 80, height: compact ? 64 : 80)
             Text(prompt.text)
                 .font(GlintType.headline(compact))
@@ -213,6 +243,11 @@ struct PromptCard: View {
         .padding(.vertical, 16)
         .background(CardBackground(radius: 24))
         .accessibilityElement(children: .combine)
+    }
+
+    private var isDrag: Bool {
+        if case .drag = prompt { return true }
+        return false
     }
 }
 

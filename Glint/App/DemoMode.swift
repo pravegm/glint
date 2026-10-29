@@ -50,6 +50,8 @@ struct DemoMode: Equatable, Sendable {
     /// `freezeOn=` moments (all events: the freeze lands 0.3 s after the event so its FX are on screen).
     enum Stop: String, Equatable, CaseIterable, Sendable {
         case started, pop, sweep, split, hop, firefly, scorch, eaten, sunrise, night, wave, hint
+        /// R5b (store frames): a busy field. `busy` and `firefly` are states, checked every frame (`DemoBusy`).
+        case busy
 
         func matches(_ event: GameEvent) -> Bool {
             switch self {
@@ -58,7 +60,7 @@ struct DemoMode: Equatable, Sendable {
             case .sweep: if case .swept = event { return true }
             case .split: if case .split = event { return true }
             case .hop: if case .hopped = event { return true }
-            case .firefly: if case .fireflyDelivered = event { return true }
+            case .firefly, .busy: return false   // states, not events (DemoBusy)
             case .scorch: if case .fireflyScorched = event { return true }
             case .eaten: if case .flowerEaten = event { return true }
             case .sunrise: if case .sunrise = event { return true }
@@ -74,6 +76,11 @@ struct DemoMode: Equatable, Sendable {
     static let defaultSeed: UInt64 = 7
     /// Event freezes hold this long after the event.
     static let stopDelay = 0.3
+
+    /// R5b: how long after its event each tag freezes (a sweep at 0.12 s, so the burst and "Sweep!" are on screen).
+    static func stopDelay(for tag: Stop) -> Double {
+        tag == .sweep ? 0.12 : stopDelay
+    }
     /// `t=`: the last stretch is played live (fixed 1/120 s steps) so the frame shows FX in motion.
     static let liveTail = 0.5
 
@@ -107,6 +114,8 @@ struct DemoMode: Equatable, Sendable {
     /// R4 `spawn=firefly`: with `t=` on a level, one extra firefly is scripted 1 s before t (frame 19: a real
     /// firefly on screen with its hint).
     var spawnFirefly = false
+    /// R5b `pilotLag=<s>` (0…2): the demo pilot reacts this much later (more glooms build up), skill unchanged.
+    var pilotLag: Double?
 
     init(raw: String) { self.raw = raw }
 
@@ -180,6 +189,8 @@ struct DemoMode: Equatable, Sendable {
                 if let n = Int(value) { config.streakDays = min(max(n, 0), 365) }
             case "ignore": config.ignoreKind = GloomKind(rawValue: value.lowercased())
             case "spawn": config.spawnFirefly = value.lowercased() == "firefly"
+            case "pilotLag":
+                if let s = number(value) { config.pilotLag = min(max(s, 0), 2) }
             default: break
             }
         }
@@ -346,5 +357,31 @@ enum IconExport {
             AppTrace.demo("GLINT-T icon failed: \(error.localizedDescription)")
             #endif
         }
+    }
+}
+
+// MARK: - R5b store-frame freeze states (pure; tested)
+
+enum DemoBusy {
+    static let minSurfaced = 5
+    static let minLit = 2
+    /// A pop's FX counts as "in flight" this long after it.
+    static let popFX = 0.4
+    /// `freezeOn=busy` gives up this long (session time) after it starts watching.
+    static let timeout = 10.0
+    /// `freezeOn=firefly`: a surfaced firefly this close (d) to the band.
+    static let fireflyReach = 0.15
+
+    /// ≥ 5 surfaced glooms, ≥ 2 of them lit, and a pop's FX still on screen.
+    static func isBusy(_ snap: DawnSnapshot, sinceLastPop: Double?) -> Bool {
+        let surfaced = snap.glooms.filter { !$0.submerged }
+        let lit = surfaced.filter { $0.lit > 0 }.count
+        guard let since = sinceLastPop, since >= 0, since <= popFX else { return false }
+        return surfaced.count >= minSurfaced && lit >= minLit
+    }
+
+    /// A firefly out of the crease shade, within reach of the band.
+    static func fireflyNearBand(_ snap: DawnSnapshot) -> Bool {
+        snap.fireflies.contains { $0.d >= Tuning.creaseShade && abs($0.d - snap.band) <= fireflyReach }
     }
 }

@@ -1057,6 +1057,24 @@ struct CoreTests {
         #expect(s.snapshot.shades.isEmpty)
     }
 
+    /// R5b: at most four clouds at once; the rest wait their turn and still cross.
+    @Test func atMostFourCloudsAtOnce() {
+        var clouds: [CloudSpec] = []
+        var i: Int = 0
+        while i < 7 {
+            clouds.append(CloudSpec(time: 0.1 + 0.2 * Double(i), fromLeft: i % 2 == 0, halfWidth: 0.1, speed: 0.1, strength: 1))
+            i += 1
+        }
+        let s = DawnSession(spec: LevelSpec(number: 15, world: 2, title: "Test", duration: 60, groups: [], clouds: clouds))
+        var most: Int = 0
+        _ = CoreHarness.run(s, seconds: 50, dt: 1.0 / 60.0) { (_: Double, session: DawnSession) -> Double in
+            most = max(most, session.snapshot.shades.count)
+            return 0.5
+        }
+        #expect(most == Tuning.maxLiveClouds)
+        #expect(s.stats.clouds == 7)
+    }
+
     @Test func aCloudSparesAFirefly() {
         let clear = DawnSession(spec: CoreHarness.spec([CoreHarness.group(.firefly, at: 0.5)]))
         let a = CoreHarness.runParked(clear, at: 0.3, seconds: 8)

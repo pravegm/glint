@@ -69,7 +69,7 @@ const achievements = rows.map(r => {
 });
 for (const s of ['`glint.endless`', '`glint.daily`', '`glint.stars`', '`Long Night`', '`Today\'s Dawn`', '`Total Stars`',
                  '` point` / ` points`', '` star` / ` stars`', '0 – 10,000,000', '0 – 90',
-                 'Start **Mon 9 Nov 2026, 00:00 UTC**; duration **1 day**; repeats every **1 day**']) need(ach, s, 'achievements.md');
+                 'Start **Tue 15 Dec 2026, 00:00 UTC** (launch day); duration **1 day**; repeats every **1 day**']) need(ach, s, 'achievements.md');
 const lbLoc = (n, one, many) => ({ name: n, formatterSuffix: many, formatterSuffixSingular: one });
 const leaderboards = [
   { vendorIdentifier: 'glint.endless', referenceName: 'Long Night', defaultFormatter: 'INTEGER', scoreSortType: 'DESC', submissionType: 'BEST_SCORE',
@@ -77,7 +77,7 @@ const leaderboards = [
     localizations: { 'en-GB': lbLoc('Long Night', ' point', ' points'), 'en-US': lbLoc('Long Night', ' point', ' points') } },
   { vendorIdentifier: 'glint.daily', referenceName: 'Today\'s Dawn', defaultFormatter: 'INTEGER', scoreSortType: 'DESC', submissionType: 'BEST_SCORE',
     scoreRangeStart: 0, scoreRangeEnd: 10000000,
-    recurrence: { startDate: '2026-11-09T00:00:00Z', duration: 'PT24H', rule: 'FREQ=DAILY;INTERVAL=1' },
+    recurrence: { startDate: '2026-12-15T00:00:00Z', duration: 'PT24H', rule: 'FREQ=DAILY;INTERVAL=1' },   // launch day (QA R5): never before the Game Center push
     localizations: { 'en-GB': lbLoc('Today\'s Dawn', ' point', ' points'), 'en-US': lbLoc('Today\'s Dawn', ' point', ' points') } },
   { vendorIdentifier: 'glint.stars', referenceName: 'Total stars', defaultFormatter: 'INTEGER', scoreSortType: 'DESC', submissionType: 'BEST_SCORE',
     scoreRangeStart: 0, scoreRangeEnd: 90, recurrence: null,

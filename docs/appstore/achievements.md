@@ -36,10 +36,10 @@
 | # | Achievement ID | Title | Pre-earned description | Earned description | Points | Hidden | Trigger (for Core: exact) |
 |---|---|---|---|---|---|---|---|
 | 1 | `glint.ach.firstlight` | First Light | Win your first sunrise. | The sun is up. The garden is yours. | 10 | No | a `.sunrise` event in any `.level(n)` session |
-| 2 | `glint.ach.sweep` | Clean Sweep | Pop 3 shadows or more in one Sweep. | Three pops, one swish of light. | 10 | No | any `.swept(count:bonus:)` event (it first fires at count 3) |
+| 2 | `glint.ach.sweep` | Clean Sweep | Pop 3 or more shadows in one Sweep. | Three pops, one swish of light. | 10 | No | any `.swept(count:bonus:)` event (it first fires at count 3) |
 | 3 | `glint.ach.brute` | The Bigger They Come | Pop a brute. | Big, slow, grumpy, and gone. | 25 | No | a `.popped` event with `kind == .brute` |
 | 4 | `glint.ach.firefly` | Firefly Gardener | Let a firefly replant a lost flower. | A little light brought a flower back. | 25 | No | a `.fireflyDelivered(replanted: true)` event |
-| 5 | `glint.ach.chain4` | Four Times Bright | Reach a x4 chain: pop 13 shadows in a row. | The chain hit x4. Dazzling. | 50 | No | a `.popped` event with `chain >= 13` (multiplier `1 + 0.25 × (chain − 1)` reaches ×4 at chain 13: GAME-DESIGN §5). If `Tuning` moves the step or the cap, change the number in the description and here together |
+| 5 | `glint.ach.chain4` | Four Times Bright | Reach a ×4 multiplier: 13 pops in a row. | The chain hit x4. Dazzling. | 50 | No | a `.popped` event with `chain >= 13` (multiplier `1 + 0.25 × (chain − 1)` reaches ×4 at chain 13: GAME-DESIGN §5). If `Tuning` moves the step or the cap, change the number in the description and here together |
 | 6 | `glint.ach.rooftops` | Over the Rooftops | Win all 10 Rooftops sunrises. | Every roof in the city, lit. | 50 | No | `ProgressStore` has ≥ 1 star on each of levels 11–20 |
 | 7 | `glint.ach.harbour` | Harbour Lights | Win all 10 Harbour sunrises. | The whole harbour, lit at last. | 100 | No | `ProgressStore` has ≥ 1 star on each of levels 21–30 |
 | 8 | `glint.ach.allstars` | Ninety Suns | Earn all 90 stars. | Every sunrise, every flower. | 100 | No | total stars == 90 (`LevelBook.count` × 3) |
@@ -67,7 +67,7 @@ public enum Achievements {
         AchievementDef(id: "glint.ach." + key, title: title, detail: detail)
     }
     static let firstLight = def("firstlight", "First Light", "Win your first sunrise.")
-    static let sweep = def("sweep", "Clean Sweep", "Pop 3 shadows or more in one Sweep.")
+    static let sweep = def("sweep", "Clean Sweep", "Pop 3 or more shadows in one Sweep.")
     // … one `static let` per row above, in the table's order …
     static let all: [AchievementDef] = [firstLight, sweep, brute, firefly, chain4, rooftops, harbour, allStars, daily, longNight]
 }

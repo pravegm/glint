@@ -65,12 +65,38 @@ enum CoverLine: Equatable, Sendable {
     case openToPlay
     case openToStart
     case paused(score: Int)
+    /// R5: paused from the pause button: opening the phone shows the pause menu (it doesn't resume by itself).
+    case pausedMenu(score: Int)
 
     var text: String {
         switch self {
         case .openToPlay: return "Open the phone to play"
-        case .openToStart: return "Open the phone"
+        case .openToStart: return "Open the phone to start"
         case .paused: return "Paused · open the phone to carry on"
+        case .pausedMenu: return "Paused · open the phone to see the pause menu"
+        }
+    }
+
+    /// R5: the cover shows two lines (a short title, then what to do), never one long wrapped line.
+    var title: String {
+        switch self {
+        case .paused, .pausedMenu: return "Paused"
+        case .openToPlay, .openToStart: return text
+        }
+    }
+
+    var detail: String? {
+        switch self {
+        case .paused: return "Open the phone to carry on"
+        case .pausedMenu: return "Open the phone to see the pause menu"
+        case .openToPlay, .openToStart: return nil
+        }
+    }
+
+    var score: Int? {
+        switch self {
+        case let .paused(score), let .pausedMenu(score): return score
+        case .openToPlay, .openToStart: return nil
         }
     }
 }
@@ -85,12 +111,15 @@ struct PauseFlags: Equatable, Sendable {
     var shut = false
     /// The app is inactive or in the background.
     var inactive = false
+    /// R5: the app is on the Duo's cover display (the phone is shut), whatever the hinge reports or doesn't.
+    var cover = false
 
-    var isPaused: Bool { menu || shut || inactive }
+    var isPaused: Bool { menu || shut || inactive || cover }
 
     /// The `GLINT-T paused <reason>` word for the strongest reason.
     var reason: String {
         if shut { return "shut" }
+        if cover { return "cover" }
         if menu { return "menu" }
         if inactive { return "inactive" }
         return "none"
@@ -177,9 +206,9 @@ enum HintRules {
         switch id {
         case .lightTheShadows: return "Light the shadows."
         case .followTheBigOnes: return "Follow the big ones."
-        case .spareTheFireflies: return "Spare the fireflies."
+        case .spareTheFireflies: return "Spare the fireflies. They replant flowers."
         case .splitters: return "Splitters burst in two. Catch the pieces."
-        case .hoppers: return "Hoppers jump when the light touches them."
+        case .hoppers: return "Hoppers hop when the light touches them."
         }
     }
 
@@ -241,8 +270,10 @@ enum AppRules {
     }
 
     /// The Duo split layout: a hinge was seen (persisted), the screen looks like the inner display, or demo `fold=1`.
-    static func isDuo(window: CGSize, hingeSeen: Bool, demoFold: Bool) -> Bool {
-        demoFold || hingeSeen || looksLikeDuoInner(window)
+    static func isDuo(window: CGSize, hingeSeen: Bool, demoFold: Bool, onMac: Bool = false) -> Bool {
+        // R5: an iPhone app on a Mac ("Designed for iPhone") is always a phone, whatever its window's shape.
+        if onMac { return false }
+        return demoFold || hingeSeen || looksLikeDuoInner(window)
     }
 
     /// The cover display: only on a known Duo (a hinge seen), when the window's long side is under 760. A regular
@@ -265,8 +296,9 @@ enum AppRules {
 
     /// Wait for the hinge before starting (see `PlayStage.checking`).
     static func needsHingeCheck(hasHinge: Bool, pilotOrFixed: Bool, hingeSeen: Bool, duoLog: Bool,
-                                sinceLaunch: Double) -> Bool {
-        guard !hasHinge, !pilotOrFixed else { return false }
+                                sinceLaunch: Double, unavailable: Bool = false) -> Bool {
+        // R5 (QA P2-4): once the hinge API has said "no hinge" this launch, never wait for it again.
+        guard !hasHinge, !pilotOrFixed, !unavailable else { return false }
         return hingeSeen || duoLog || sinceLaunch < launchWindow
     }
 
@@ -290,15 +322,53 @@ enum AppRules {
         return hingeDriven ? .openToLight : .drag(direction: dragDirection(layout))
     }
 
-    static func coverLine(route: AppRoute, stage: PlayStage, phase: SessionPhase?, paused: Bool, score: Int) -> CoverLine {
+    static func coverLine(route: AppRoute, stage: PlayStage, phase: SessionPhase?, paused: Bool, score: Int,
+                          menu: Bool = false) -> CoverLine {
         guard route == .play else { return .openToPlay }
         if stage == .closeFirst || stage == .checking { return .openToStart }
         guard let phase else { return .openToStart }
         switch phase {
         case .waiting: return .openToStart
-        case .playing: return .paused(score: score)
-        case .won, .lost: return paused ? .paused(score: score) : .openToPlay
+        case .playing: return menu ? .pausedMenu(score: score) : .paused(score: score)
+        case .won, .lost: return .openToPlay
         }
+    }
+
+    /// R5 (player QA #4): "Already open? Show the game" only when nothing says the phone is shut (the hinge reads
+    /// open, or has been silent for 3 s) AND the window is inner-display sized: never on a shut phone, and never the
+    /// full game on the small outer display.
+    static func coverEscapeAllowed(hingeAngle: Double?, sampleAge: Double?, window: CGSize) -> Bool {
+        let innerSized = max(window.width, window.height) >= coverLongSide
+        guard innerSized else { return false }
+        if let a = hingeAngle, a.isFinite, a < Tuning.resumeAngle, let age = sampleAge, age <= 3 { return false }
+        return true
+    }
+
+    /// R5 (QA P1-2): the screen stays awake only while a level is really being played (not paused, not waiting).
+    static func keepAwake(route: AppRoute, stage: PlayStage, phase: SessionPhase?, paused: Bool) -> Bool {
+        route == .play && stage == .live && phase == .playing && !paused
+    }
+
+    /// R5 (QA P1-4): a world's last level won while the next world is still shut: what it needs.
+    static func worldGateNote(level n: Int, data: ProgressData) -> String? {
+        let w = LevelBook.world(of: n)
+        guard w < LevelBook.worldCount, n == LevelBook.levels(inWorld: w).upperBound,
+              !ProgressRules.isWorldOpen(w + 1, data) else { return nil }
+        let missing = ProgressRules.starsMissing(toOpen: w + 1, data)
+        return "\(missing) more ★ in \(LevelBook.worldName(w)) opens \(LevelBook.worldName(w + 1))"
+    }
+
+    /// R5 (QA P1-5): the date chip shows the player's own (local) date of the run's start.
+    static func localDateChip(_ date: Date, timeZone: TimeZone = .current) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        let months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        let wd = calendar.component(.weekday, from: date)
+        let dd = calendar.component(.day, from: date)
+        let mm = calendar.component(.month, from: date)
+        guard wd >= 1, wd <= 7, mm >= 1, mm <= 12 else { return "Today" }
+        return "\(weekdays[wd - 1]) \(dd) \(months[mm - 1])"
     }
 
     static func modeTitle(_ mode: PlayMode) -> String {
@@ -393,7 +463,12 @@ enum AppRules {
         guard isDuo else { return MenuRegions(primary: safe, secondary: nil) }
         let band = creaseBand(layout: layout, half: creaseClearance)
         let garden = clear(layout.gardenRect.intersection(safe), of: band, layout: layout)
-        let mirror = clear(layout.mirrorRect.intersection(safe), of: band, layout: layout)
+        var mirror = clear(layout.mirrorRect.intersection(safe), of: band, layout: layout)
+        // R5 (player QA #7, #28): keep titles and cards inside the mirror's brass frame (frame + 12 pt).
+        let inset = mirrorFrameThickness(layout: layout) + 12
+        if mirror.width > inset * 4 && mirror.height > inset * 4 {
+            mirror = mirror.insetBy(dx: inset, dy: inset)
+        }
         return MenuRegions(primary: garden, secondary: mirror)
     }
 
@@ -466,6 +541,12 @@ enum AppRules {
         route == .play && !hasHinge && !isDuo
     }
 
+    /// R5 (QA P2-3): the lever shows whenever drag drives the light in play (a Duo whose hinge never reports too),
+    /// and never for the hinge or a demo pilot.
+    static func showsLever(route: AppRoute, dragDriven: Bool) -> Bool {
+        route == .play && dragDriven
+    }
+
     /// Home's Today's Dawn card status (R2 addendum: "come back tomorrow").
     static func dailyCardStatus(open: Bool, playedToday: Bool, todayBest: Int, streak: Int) -> String {
         guard open else { return "Win level \(ProgressRules.dailyLevel)" }
@@ -517,7 +598,7 @@ enum AppRules {
 
     /// The level map's world tab status line: "★ 24/30" when open, "★ 20" (the stars needed) when locked.
     static func worldTabStatus(open: Bool, stars: Int, max: Int, gate: Int) -> String {
-        open ? "★ \(stars)/\(max)" : "★ \(gate)"
+        open ? "★ \(stars)/\(max)" : "Needs ★ \(gate)"
     }
 
     /// 12,340 style grouping (locale independent, for HUD numbers).
@@ -653,6 +734,26 @@ extension AppRules {
     }
 
     /// The score pill's second line: "Chain 7", "Wave 3", or both ("Chain 7 · Wave 3"); nil for neither.
+    /// R5 (player QA #8): the multiplier ("×2.5", capped at ×4), never the raw chain count.
+    static func multiplierText(_ multiplier: Double) -> String? {
+        guard multiplier.isFinite, multiplier > 1.001 else { return nil }
+        var t = String(format: "%.2f", min(multiplier, Tuning.maxMultiplier))
+        while t.hasSuffix("0") { t.removeLast() }
+        if t.hasSuffix(".") { t.removeLast() }
+        return "×" + t
+    }
+
+    static func scoreSubline(multiplier: Double, wave: Int) -> String? {
+        let m = multiplierText(multiplier)
+        let waveText: String? = wave > 0 ? "Wave \(wave)" : nil
+        switch (m, waveText) {
+        case let (c?, w?): return c + " · " + w
+        case let (c?, nil): return c
+        case let (nil, w?): return w
+        case (nil, nil): return nil
+        }
+    }
+
     static func scoreSubline(chain: Int, wave: Int) -> String? {
         let chainText: String? = chain >= 2 ? "Chain \(chain)" : nil
         let waveText: String? = wave > 0 ? "Wave \(wave)" : nil
@@ -740,8 +841,10 @@ extension AppRules {
 
     /// The Results buttons' block: the primary (64), a secondary (58) and the Levels / Home row (52), 12 pt apart,
     /// plus the region's 10 pt padding top and bottom.
-    static func resultsButtonsHeight(compact: Bool) -> CGFloat {
+    static func resultsButtonsHeight(compact: Bool, hasGate: Bool = false) -> CGFloat {
         let primary = max(GlintTheme.buttonHeight, GlintTheme.minTap)
+        // R5: with the world-gate note: the note (two lines), Levels, Retry and Home.
+        if hasGate { return 48 + 12 + primary + 12 + 52 + 12 + 52 + 20 }
         return primary + 12 + 58 + 12 + 52 + 20
     }
 
@@ -759,5 +862,42 @@ extension AppRules {
         let buttons = CGRect(x: safe.minX, y: safe.maxY - h, width: safe.width, height: h)
         let card = CGRect(x: safe.minX, y: safe.minY, width: safe.width, height: max(safe.height - h, 1))
         return (card, buttons)
+    }
+}
+
+// MARK: - Round 5 (QA-R5; pure, tested)
+
+extension AppRules {
+    /// R5 (player QA #6): the date chip by the real plate rects: between the score and pause plates on the same row
+    /// when there's room, else one row in from them (never overlapping either).
+    static func dateChipCenter(chip: CGSize, score: CGRect, pause: CGRect, layout: GardenLayout) -> CGPoint {
+        let mirror = layout.mirrorRect
+        if layout.foldVertical {
+            // Book pose: the plates sit along the far edge, one at each end; the chip goes between them.
+            let gapTop = min(score.maxY, pause.maxY)
+            let gapBottom = max(score.minY, pause.minY)
+            if gapBottom - gapTop >= chip.height + 16 {
+                return CGPoint(x: score.midX, y: (gapTop + gapBottom) / 2)
+            }
+            let x = layout.gardenAfter ? max(score.maxX, pause.maxX) + 8 + chip.width / 2
+                                       : min(score.minX, pause.minX) - 8 - chip.width / 2
+            return CGPoint(x: x, y: mirror.midY)
+        }
+        let left = min(score.maxX, pause.maxX)
+        let right = max(score.minX, pause.minX)
+        if right - left >= chip.width + 16 {
+            return CGPoint(x: (left + right) / 2, y: score.midY)
+        }
+        let y = layout.gardenAfter ? max(score.maxY, pause.maxY) + 8 + chip.height / 2
+                                   : min(score.minY, pause.minY) - 8 - chip.height / 2
+        return CGPoint(x: mirror.midX, y: y)
+    }
+}
+
+extension AppRules {
+    /// R5: VoiceOver's value for the "Light": how far out it reaches (0 % = in the crease, 100 % = at the flowers).
+    static func lightValue(_ band: Double) -> String {
+        guard band.isFinite, band > 0 else { return "In the crease" }
+        return "\(Int((min(band, 1) * 100).rounded())) % of the way to the flowers"
     }
 }

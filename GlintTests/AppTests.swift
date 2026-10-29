@@ -2,6 +2,7 @@ import CoreGraphics
 import Foundation
 import SwiftUI
 import Testing
+import UIKit
 @testable import Glint
 
 // App engineer's tests (design/ROUND-1.md App 6): pure rules only. Routing, pause / resume, cover detection, unlocks,
@@ -561,7 +562,7 @@ struct HintAndQueueTests {
     @Test func hintCopyAndDone() {
         #expect(HintRules.text(.lightTheShadows) == "Light the shadows.")
         #expect(HintRules.text(.followTheBigOnes) == "Follow the big ones.")
-        #expect(HintRules.text(.spareTheFireflies) == "Spare the fireflies.")
+        #expect(HintRules.text(.spareTheFireflies) == "Spare the fireflies. They replant flowers.")
         let pop = GameEvent.popped(id: 1, kind: .murk, u: 0.5, d: 0.5, chain: 1, points: 10)
         let brute = GameEvent.popped(id: 2, kind: .brute, u: 0.5, d: 0.5, chain: 1, points: 40)
         #expect(HintRules.isDone(.lightTheShadows, by: pop))
@@ -729,7 +730,7 @@ struct R2LayoutTests {
 
     @Test func worldTabsAreShort() {
         #expect(AppRules.worldTabStatus(open: true, stars: 24, max: 30, gate: 20) == "★ 24/30")
-        #expect(AppRules.worldTabStatus(open: false, stars: 0, max: 30, gate: 20) == "★ 20")
+        #expect(AppRules.worldTabStatus(open: false, stars: 0, max: 30, gate: 20) == "Needs ★ 20")
         for w in 1...LevelBook.worldCount {
             #expect(LevelBook.worldName(w).count <= 9)
         }
@@ -1132,5 +1133,248 @@ struct R4Tests {
             let far = span.center + Double(span.length / layout.gardenDepth) / 2
             #expect(far < inner)
         }
+    }
+}
+
+// MARK: - Round 5 (design/QA-R5-app.md, QA-R5-player.md, QA-R5-store.md)
+
+struct R5Tests {
+    /// QA P0-1: a win is saved the moment the sunrise fires, even if the player leaves before the Results card.
+    @Test @MainActor func aWinIsSavedAtSunriseNotAtResults() {
+        let store = ProgressStore(inMemory: ProgressData())
+        let settings = SettingsStore(defaults: nil)
+        let controller = GameController(store: store, settings: settings, demo: DemoMode(raw: ""))
+        controller.play(.level(1))
+        let won = DawnSnapshot(mode: .level(1), phase: .won, score: 900)
+        controller.handleEvents([.sunrise(stars: 3, flowerBonus: 200)], snapshot: won, now: 10)
+        // Saved already: stars, best, the next level open, and the level is over (no pause button).
+        #expect(ProgressRules.stars(store.data, level: 1) == 3)
+        #expect(ProgressRules.best(store.data, level: 1) == 900)
+        #expect(ProgressRules.isUnlocked(level: 2, store.data))
+        #expect(controller.levelOver)
+        #expect(controller.route == .play)
+        // The player leaves during the results delay: nothing is lost, and nothing is filed twice.
+        controller.goHome()
+        #expect(controller.route == .home)
+        #expect(ProgressRules.stars(store.data, level: 1) == 3)
+        #expect(store.nextLevel == 2)
+    }
+
+    @Test @MainActor func aLongNightGameOverIsSavedAtOnce() {
+        let store = ProgressStore(inMemory: ProgressData())
+        let controller = GameController(store: store, settings: SettingsStore(defaults: nil), demo: DemoMode(raw: ""))
+        controller.play(.endless)
+        let lost = DawnSnapshot(mode: .endless, phase: .lost, score: 4_321)
+        controller.handleEvents([.nightWins], snapshot: lost, now: 5)
+        #expect(store.data.endlessBest == 4_321)
+    }
+
+    @Test func screenSleepsUnlessPlaying() {
+        #expect(AppRules.keepAwake(route: .play, stage: .live, phase: .playing, paused: false))
+        #expect(!AppRules.keepAwake(route: .play, stage: .live, phase: .playing, paused: true))
+        #expect(!AppRules.keepAwake(route: .play, stage: .closeFirst, phase: nil, paused: false))
+        #expect(!AppRules.keepAwake(route: .play, stage: .live, phase: .waiting, paused: false))
+        #expect(!AppRules.keepAwake(route: .play, stage: .live, phase: .won, paused: false))
+        #expect(!AppRules.keepAwake(route: .home, stage: .live, phase: .playing, paused: false))
+    }
+
+    @Test func coverCopy() {
+        #expect(AppRules.coverLine(route: .play, stage: .live, phase: .playing, paused: true, score: 9, menu: true)
+                == .pausedMenu(score: 9))
+        #expect(CoverLine.pausedMenu(score: 1).detail == "Open the phone to see the pause menu")
+        #expect(CoverLine.paused(score: 1).title == "Paused")
+        #expect(CoverLine.paused(score: 1).detail == "Open the phone to carry on")
+        #expect(CoverLine.openToStart.text == "Open the phone to start")
+        #expect(CoverLine.pausedMenu(score: 7).score == 7)
+        #expect(CoverLine.openToPlay.score == nil)
+    }
+
+    @Test func coverEscapeNeverOnAShutPhone() {
+        let small = CGSize(width: 400, height: 700)
+        let inner = CGSize(width: 951, height: 669)
+        #expect(!AppRules.coverEscapeAllowed(hingeAngle: 120, sampleAge: 0.1, window: small))
+        #expect(!AppRules.coverEscapeAllowed(hingeAngle: 5, sampleAge: 0.5, window: inner))
+        #expect(AppRules.coverEscapeAllowed(hingeAngle: 5, sampleAge: 4, window: inner))
+        #expect(AppRules.coverEscapeAllowed(hingeAngle: nil, sampleAge: nil, window: inner))
+        #expect(AppRules.coverEscapeAllowed(hingeAngle: 110, sampleAge: 0.2, window: inner))
+    }
+
+    @Test func coverPausesWhateverTheHinge() {
+        var f = PauseFlags()
+        f.cover = true
+        #expect(f.isPaused)
+        #expect(f.reason == "cover")
+        // A Duo whose hinge never reports: the shut rule can't fire, but the cover flag holds the level.
+        let r = PauseRules.step(f, grace: 0, input: PauseInput(phase: .playing, hingeDriven: false, hingeShut: false,
+                                                                canResume: false), dt: 0.1)
+        #expect(r.flags.isPaused)
+    }
+
+    @Test func worldGateNote() {
+        var d = ProgressData()
+        for i in 0..<10 { d.levelStars[i] = 1 }
+        #expect(AppRules.worldGateNote(level: 10, data: d) == "10 more ★ in Meadow opens Rooftops")
+        #expect(AppRules.worldGateNote(level: 9, data: d) == nil)
+        for i in 0..<10 { d.levelStars[i] = 2 }
+        #expect(AppRules.worldGateNote(level: 10, data: d) == nil)
+        #expect(AppRules.worldGateNote(level: LevelBook.count, data: d) == nil)
+    }
+
+    @Test func dateChipIsLocal() {
+        // 03:00 UTC on Thu 29 Oct 2026 is still Wed 28 Oct in New York.
+        let date = Date(timeIntervalSince1970: 1_793_242_800)   // 2026-10-29T03:00:00Z
+        let ny = TimeZone(identifier: "America/New_York") ?? TimeZone(secondsFromGMT: -4 * 3_600) ?? .current
+        let utc = TimeZone(identifier: "UTC") ?? .current
+        #expect(AppRules.localDateChip(date, timeZone: ny) == "Wed 28 Oct")
+        #expect(AppRules.localDateChip(date, timeZone: utc) == "Thu 29 Oct")
+    }
+
+    @Test func multiplierNotChainCount() {
+        #expect(AppRules.multiplierText(1) == nil)
+        #expect(AppRules.multiplierText(1.25) == "×1.25")
+        #expect(AppRules.multiplierText(2.5) == "×2.5")
+        #expect(AppRules.multiplierText(4) == "×4")
+        #expect(AppRules.multiplierText(7) == "×4")
+        #expect(AppRules.scoreSubline(multiplier: 2.5, wave: 3) == "×2.5 · Wave 3")
+        #expect(AppRules.scoreSubline(multiplier: 1, wave: 0) == nil)
+    }
+
+    @Test @MainActor func dateChipNeverOverlapsThePlates() {
+        let cases: [(GardenLayout, EdgeInsets)] = [
+            (GardenLayout.make(size: CGSize(width: 402, height: 874), isDuo: false, swapHalves: false),
+             EdgeInsets(top: 59, leading: 0, bottom: 34, trailing: 0)),
+            (GardenLayout.make(size: CGSize(width: 375, height: 667), isDuo: false, swapHalves: false),
+             EdgeInsets(top: 20, leading: 0, bottom: 0, trailing: 0)),
+            (GardenLayout.make(size: CGSize(width: 951, height: 669), isDuo: true, swapHalves: false), EdgeInsets()),
+            (GardenLayout.make(size: CGSize(width: 669, height: 951), isDuo: true, swapHalves: false), EdgeInsets()),
+        ]
+        for (layout, insets) in cases {
+            let compact = min(layout.size.width, layout.size.height) < 500
+            let margin = AppRules.hudMargin(layout: layout)
+            let scoreSize = PlayHUD.scoreSize(compact: compact)
+            let score = AppRules.rect(center: AppRules.hudCenter(u: 0, item: scoreSize, layout: layout, insets: insets,
+                                                                 margin: margin), size: scoreSize)
+            let pause = AppRules.rect(center: AppRules.hudCenter(u: 1, item: PlayHUD.pauseSize, layout: layout,
+                                                                 insets: insets, margin: margin), size: PlayHUD.pauseSize)
+            let chip = AppRules.rect(center: AppRules.dateChipCenter(chip: PlayHUD.dateChipSize, score: score,
+                                                                     pause: pause, layout: layout),
+                                     size: PlayHUD.dateChipSize)
+            #expect(!chip.intersects(score))
+            #expect(!chip.intersects(pause))
+            #expect(layout.mirrorRect.contains(CGPoint(x: chip.midX, y: chip.midY)))
+        }
+    }
+
+    @Test func macIsAPhone() {
+        #expect(!AppRules.isDuo(window: CGSize(width: 900, height: 700), hingeSeen: true, demoFold: false, onMac: true))
+        #expect(AppRules.isDuo(window: CGSize(width: 900, height: 700), hingeSeen: false, demoFold: false))
+        #expect(OrientationRules.mask(isDuo: false) == .portrait)
+        #expect(OrientationRules.mask(isDuo: true) == .all)
+    }
+
+    @Test func hingeFlagTravelsOnlyWithItsModel() {
+        var d = ProgressData()
+        d.hingeSeen = true
+        d.hingeMachine = "iPhone19,9"
+        #expect(ProgressRules.hingeSeen(d, machine: "iPhone19,9"))
+        #expect(!ProgressRules.hingeSeen(d, machine: "iPhone17,3"))
+        d.hingeMachine = ""
+        #expect(!ProgressRules.hingeSeen(d, machine: "iPhone19,9"))
+        #expect(!AppRules.needsHingeCheck(hasHinge: false, pilotOrFixed: false, hingeSeen: true, duoLog: false,
+                                          sinceLaunch: 0.2, unavailable: true))
+    }
+
+    @Test func aLeftEarlyDailyIsNotADayPlayed() {
+        var d = ProgressData()
+        _ = ProgressRules.record(&d, mode: .daily(day: 50), won: false, stars: 0, score: 120, now: Date(), finished: false)
+        #expect(d.dailyPlayed.isEmpty)
+        #expect(ProgressRules.dailyBest(d, day: 50) == 120)
+        _ = ProgressRules.record(&d, mode: .daily(day: 50), won: true, stars: 0, score: 900, now: Date())
+        #expect(d.dailyPlayed == [50])
+    }
+
+    @Test @MainActor func aCorruptSaveIsKeptAside() {
+        let suite = "glint.tests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else { return }
+        defaults.set(Data("not json".utf8), forKey: ProgressStore.key)
+        let store = ProgressStore(defaults: defaults)
+        #expect(store.data.levelStars.allSatisfy { $0 == 0 })
+        #expect(defaults.data(forKey: ProgressStore.key + ".bad") == Data("not json".utf8))
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    @Test @MainActor func aboutCopyByDevice() {
+        #expect(AboutView.heading == "Best on iPhone Duo")
+        #expect(AboutView.blurb(isDuo: false).hasPrefix("Plays on every iPhone by dragging"))
+        #expect(!AboutView.blurb(isDuo: false).contains("Open it"))
+        #expect(AboutView.blurb(isDuo: true).contains("Open it"))
+    }
+
+    @Test func voiceOverLightValue() {
+        #expect(AppRules.lightValue(-0.2) == "In the crease")
+        #expect(AppRules.lightValue(0.5) == "50 % of the way to the flowers")
+        #expect(AppRules.lightValue(1.4) == "100 % of the way to the flowers")
+    }
+
+    @Test func flatBadgesAreCaught() {
+        let w = 64
+        var px = [UInt8](repeating: 40, count: w * w * 4)
+        let flat: CGImage? = px.withUnsafeMutableBytes { buf -> CGImage? in
+            guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+                  let ctx = CGContext(data: buf.baseAddress, width: w, height: w, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                      space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
+            return ctx.makeImage()
+        }
+        #expect(flat != nil)
+        if let flat { #expect(BadgeExport.isFlat(flat)) }
+    }
+
+    @Test @MainActor func resultsButtonsFitWithTheWorldGateNote() {
+        let phone = GardenLayout.make(size: CGSize(width: 375, height: 667), isDuo: false, swapHalves: false)
+        let need = AppRules.resultsButtonsHeight(compact: true, hasGate: true)
+        let place = AppRules.resultsPlacement(layout: phone, insets: EdgeInsets(top: 20, leading: 0, bottom: 0, trailing: 0),
+                                              isDuo: false, buttonsHeight: need)
+        #expect(place.buttons.height >= need)
+        #expect(place.card.height > 200)
+    }
+}
+
+// MARK: - R5b store-frame freezes
+
+struct R5bTests {
+    private func gloom(_ id: Int, lit: Double, submerged: Bool = false) -> GloomState {
+        GloomState(id: id, kind: .murk, u: 0.5, d: 0.5, radius: 0.05, hp: 1, maxHP: 1, lit: lit, submerged: submerged)
+    }
+
+    @Test func busyField() {
+        var snap = DawnSnapshot(mode: .level(6))
+        snap.glooms = [gloom(1, lit: 0.5), gloom(2, lit: 0.8), gloom(3, lit: 0), gloom(4, lit: 0), gloom(5, lit: 0)]
+        #expect(DemoBusy.isBusy(snap, sinceLastPop: 0.1))
+        #expect(!DemoBusy.isBusy(snap, sinceLastPop: 1.0))     // no pop FX in flight
+        #expect(!DemoBusy.isBusy(snap, sinceLastPop: nil))
+        snap.glooms[4].submerged = true                          // only 4 surfaced
+        #expect(!DemoBusy.isBusy(snap, sinceLastPop: 0.1))
+    }
+
+    @Test func fireflyNearTheBand() {
+        var snap = DawnSnapshot(mode: .level(4))
+        snap.band = 0.5
+        snap.fireflies = [FireflyState(id: 1, u: 0.5, d: 0.6)]
+        #expect(DemoBusy.fireflyNearBand(snap))
+        snap.fireflies = [FireflyState(id: 1, u: 0.5, d: 0.9)]
+        #expect(!DemoBusy.fireflyNearBand(snap))
+        snap.band = 0.05
+        snap.fireflies = [FireflyState(id: 1, u: 0.5, d: 0.05)]   // still in the crease shade
+        #expect(!DemoBusy.fireflyNearBand(snap))
+    }
+
+    @Test func freezeKeysR5b() {
+        let d = DemoMode.parse("screen=play;level=6;t=18;freezeOn=busy;pilotLag=0.6")
+        #expect(d.stopOn == .busy)
+        #expect(d.pilotLag.map { abs($0 - 0.6) < 1e-9 } == true)
+        #expect(DemoMode.parse("pilotLag=9").pilotLag.map { abs($0 - 2) < 1e-9 } == true)
+        #expect(abs(DemoMode.stopDelay(for: .sweep) - 0.12) < 1e-9)
+        #expect(abs(DemoMode.stopDelay(for: .eaten) - 0.3) < 1e-9)
+        #expect(!DemoMode.Stop.busy.matches(.nightWins))
     }
 }

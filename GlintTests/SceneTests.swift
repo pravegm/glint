@@ -549,7 +549,8 @@ struct SceneTests {
         for _ in 0..<12 { scene.render(s, events: [], dt: SceneTests.step) }
         #expect(scene.dyingGloomCount == 0)
         #expect(scene.chainTextPeakScale > 1.2)
-        #expect(scene.floatingTexts.contains("×5"))
+        // R5: the floating word is the multiplier (chain 5 → ×2), not the chain count.
+        #expect(scene.floatingTexts.contains("×2"))
         for _ in 0..<120 { scene.render(s, events: [], dt: SceneTests.step) }
         #expect(scene.bandSwell < 0.05)
     }
@@ -733,7 +734,7 @@ struct SceneTests {
         #expect(scene.activeGloomCount == 0)
         #expect(scene.dyingGloomCount == 0)
         #expect(scene.fxActiveCount > 10)
-        #expect(scene.floatingTexts.contains("×4"))
+        #expect(scene.floatingTexts.contains("×1.75"))
     }
 
     @Test func aLitGloomSqueezesItsEyesShut() {
@@ -752,7 +753,7 @@ struct SceneTests {
         scene.render(s, events: [.swept(count: 3, bonus: 90)], dt: SceneTests.step)
         #expect(scene.floatingTexts.contains("Sweep!"))
         scene.render(s, events: [.swept(count: 4, bonus: 120)], dt: SceneTests.step)
-        #expect(scene.floatingTexts.contains("Sweep ×4!"))
+        #expect(scene.floatingTexts.contains("Sweep of 4!"))
         #expect(!scene.floatingTexts.contains("Sweep!"))
 
         let quiet = GardenScene(layout: SceneTests.layouts[0])
@@ -875,6 +876,135 @@ struct SceneTests {
         #expect(scene.groundStyle == .moonlit)
     }
 
+    // MARK: R5 (QA sweep)
+
+    @Test func theFloatingMultiplierMatchesTheStore() {
+        #expect(GardenScene.multiplierText(chain: 3) == "×1.5")
+        #expect(GardenScene.multiplierText(chain: 4) == "×1.75")
+        #expect(GardenScene.multiplierText(chain: 5) == "×2")
+        #expect(GardenScene.multiplierText(chain: 13) == "×4")
+        #expect(GardenScene.multiplierText(chain: 40) == "×4")
+    }
+
+    /// QA P1-1: when the pool is full, the particle nearest its end is replaced (never one mid-life).
+    @Test func aFullPoolReplacesTheParticleNearestItsEnd() {
+        let pool = GardenFXPool(capacity: 3, texture: GardenArt.dot, blend: .add)
+        for life in [CGFloat(1.0), CGFloat(0.2), CGFloat(0.9)] {
+            var q = GardenParticle()
+            q.life = life
+            pool.spawn(q, size: 4, color: .white)
+        }
+        var q = GardenParticle()
+        q.life = 0.7
+        pool.spawn(q, size: 4, color: .white)
+        let lives = pool.liveLives.sorted()
+        #expect(lives.count == 3)
+        #expect(abs(lives[0] - 0.7) < 0.0001 && abs(lives[1] - 0.9) < 0.0001 && abs(lives[2] - 1.0) < 0.0001)
+    }
+
+    /// QA P1-3: the newest finger takes the drag over (end + begin: the drag is relative, so nothing jumps), and a
+    /// layout change ends the drag.
+    @Test func theNewestTouchTakesOverTheDrag() {
+        let scene = GardenScene(layout: SceneTests.layouts[0])
+        let driver = SceneFakeDriver()
+        scene.driver = driver
+        let a = NSObject()
+        let b = NSObject()
+        scene.beginDrag(ObjectIdentifier(a), at: CGPoint(x: 100, y: 600))
+        scene.beginDrag(ObjectIdentifier(b), at: CGPoint(x: 300, y: 700))
+        #expect(driver.drags == ["began", "ended", "began"])
+        #expect(scene.isDragging)
+        scene.apply(layout: SceneTests.layouts[1])
+        #expect(!scene.isDragging)
+        #expect(driver.drags.last == "ended")
+    }
+
+    /// QA P2-1: going to the menus resets the scene even when both sides are Long Night.
+    @Test func theMenusStartAFreshScene() {
+        let scene = GardenScene(layout: SceneTests.layouts[0])
+        var s = DawnSnapshot(mode: .endless, phase: .playing)
+        s.time = 10
+        s.band = 0.4
+        s.glooms = [SceneTests.gloom(1, .murk, u: 0.5, d: 0.5)]
+        scene.render(s, events: [.popped(id: 7, kind: .murk, u: 0.3, d: 0.3, chain: 4, points: 20)],
+                     dt: SceneTests.step)
+        #expect(!scene.floatingTexts.isEmpty)
+        scene.attract = true
+        var menu = DawnSnapshot(mode: .endless, phase: .playing)
+        menu.time = 50
+        menu.band = 0.4
+        menu.glooms = [SceneTests.gloom(1, .wisp, u: 0.2, d: 0.2)]
+        scene.render(menu, events: [], dt: SceneTests.step)
+        #expect(scene.floatingTexts.isEmpty)
+        #expect(scene.dyingGloomCount == 0)
+        #expect(scene.activeGloomCount == 1)
+    }
+
+    /// QA P2-2: six clouds at once still light the whole band (the layers grow to fit every piece).
+    @Test func sixCloudsStillLightTheWholeBand() {
+        let scene = GardenScene(layout: SceneTests.layouts[0])
+        var s = SceneTests.playing(.level(25))
+        var shades: [ShadeState] = []
+        for i in 0..<6 { shades.append(ShadeState(id: i, u: 0.08 + Double(i) * 0.16, halfWidth: 0.04, strength: 0.8)) }
+        s.shades = shades
+        scene.render(s, events: [], dt: SceneTests.step)
+        #expect(scene.lightPieceCount > 15)
+        #expect(scene.lightPoolCapacity >= scene.lightPieceCount)
+        #expect(scene.mirrorShadeClouds == 6)
+        var pieces: [LightPiece] = []
+        GardenLightMath.pieces(shades: shades, into: &pieces)
+        #expect(abs((pieces.last?.u1 ?? 0) - 1) < 0.0001)
+    }
+
+    /// QA P2-3: floating words stay wholly on the garden, even long ones at the edge lanes.
+    @Test func floatingWordsAreNeverClipped() {
+        for layout in [SceneTests.layouts[0], GardenLayout(size: CGSize(width: 375, height: 667), foldVertical: false,
+                                                            gardenAfter: true, gardenFraction: 0.58)] {
+            let scene = GardenScene(layout: layout)
+            let s = SceneTests.playing()
+            scene.render(s, events: [.popped(id: 3, kind: .murk, u: 0.99, d: 0.5, chain: 9, points: 30),
+                                     .swept(count: 3, bonus: 90)], dt: SceneTests.step)
+            for k in 4...10 {
+                scene.render(s, events: [.swept(count: k, bonus: 30 * k)], dt: SceneTests.step)
+            }
+            for _ in 0..<20 { scene.render(s, events: [], dt: SceneTests.step) }
+            let bounds = scene.floatingBounds.insetBy(dx: -1, dy: -1)
+            #expect(!scene.floatingFrames.isEmpty)
+            for f in scene.floatingFrames {
+                #expect(f.minX >= bounds.minX && f.maxX <= bounds.maxX, "word at \(f) pokes out of \(bounds)")
+            }
+        }
+    }
+
+    /// QA P2-9: with Reduce Motion the chain word fades in with no springy overshoot.
+    @Test func reduceMotionHasNoSpringyWords() {
+        let scene = GardenScene(layout: SceneTests.layouts[0])
+        scene.reduceMotion = true
+        let s = SceneTests.playing()
+        scene.render(s, events: [.popped(id: 1, kind: .murk, u: 0.5, d: 0.5, chain: 6, points: 20)],
+                     dt: SceneTests.step)
+        for _ in 0..<30 { scene.render(s, events: [], dt: SceneTests.step) }
+        #expect(scene.chainTextPeakScale < 1.01)
+    }
+
+    /// Player QA #9: a submerged gloom under the band shows dim, sleepy slits (never bright eyes).
+    @Test func submergedEyesAreDimSlitsEvenUnderTheBand() {
+        let scene = GardenScene(layout: SceneTests.layouts[0])
+        var s = SceneTests.playing()
+        s.band = 0.4
+        var g = SceneTests.gloom(1, .murk, u: 0.5, d: 0.4)
+        g.submerged = true
+        g.surfaceD = 0.6
+        s.glooms = [g]
+        for _ in 0..<10 { scene.render(s, events: [], dt: SceneTests.step) }
+        guard let eyes = scene.gloomEyes(id: 1) else {
+            Issue.record("no gloom")
+            return
+        }
+        #expect(eyes.opacity <= 0.35)
+        #expect(eyes.openness <= 0.5)
+    }
+
     // MARK: Mirror
 
     /// R2/R3 (REVIEW-1 P0-4, REVIEW-2 P1-5): the phone's grip sits on the band's edge at d = band exactly along the
@@ -889,7 +1019,8 @@ struct SceneTests {
         #expect(!scene.leverShowing)
         scene.showsLever = true
         let range = scene.railRange
-        #expect(abs(range.lowerBound) < 0.0001)
+        // R5: the rail starts a grip-length below the crease (clear of the frame's corner bolt).
+        #expect(range.lowerBound > 0 && range.lowerBound < 0.1)
         #expect(range.upperBound > 0.7 && range.upperBound < 1)
         for b in [-0.2, 0.0, 0.37, 0.8, 1.0] {
             s.band = b
@@ -1001,6 +1132,7 @@ struct SceneTests {
         #expect(scene.drawnNodeCount <= 300)
         // R2: the light layers keep 150 pooled piece sprites (hidden unless a cloud shade cuts the band); R3 adds the
         // fireflies' trail dots and more ripple rings; R3b the grass's wash and line layers (60 pooled sprites).
-        #expect(scene.nodeCount <= 780)
+        // R5 (QA P1-1): the FX pools doubled (192 / 160 / 48 hidden sprites) and 6-cloud tints: still cheap, never drawn.
+        #expect(scene.nodeCount <= 1000)
     }
 }

@@ -48,9 +48,13 @@ final class GloomNode {
     var rippleClock: CGFloat = 0
 
     var isSubmerged: Bool { sink > 0.5 }
+    /// R5: the eyes' opacity and openness as drawn (tests: dim slits underground).
+    var eyeOpacity: CGFloat { eyes.alpha }
+    var eyeOpenness: CGFloat { eyes.yScale }
     var isPoppingUp: Bool { popLeft > 0 }
 
     private var soilTint = GardenInk(hex: 0x8A7A5A)
+    private var litColorKey = -1
 
     /// R4: the ground's soil colour (the lip it peeks over).
     func setSoil(_ c: GardenInk) {
@@ -110,6 +114,8 @@ final class GloomNode {
         lit.colorBlendFactor = 1
         lit.color = GardenPalette.gold.ui
         brow.isHidden = true
+        // R5: the underground greying colour is constant (set once, not every frame).
+        body.color = GardenInk(hex: 0x3A3842).ui
 
         // Explicit z inside the puppet, so the stacking holds even when the view ignores sibling order.
         body.zPosition = 0.0
@@ -174,6 +180,7 @@ final class GloomNode {
         puppet.zRotation = 0
         puppet.position = .zero
         sink = 0
+        litColorKey = -1
         fresh = true
         popLeft = 0
         rippleClock = 0
@@ -270,12 +277,13 @@ final class GloomNode {
         puppet.position = CGPoint(x: 0, y: (lift - crouch - 0.12 * sink) * r)
         // R4 (REVIEW-3 P1-7): underground it is dim and desaturated (no rim, no gloss, no light), its eyes at 50 %
         // peeking over a lip of soil; never a box.
-        body.alpha = 1 - 0.78 * sink
+        // R5 (player QA #9): the body is all but hidden under the soil and the eyes are dim, sleepy slits, so a
+        // submerged gloom under the band never looks like the light failing.
+        body.alpha = 1 - 0.9 * sink
         body.colorBlendFactor = 0.8 * sink
-        body.color = GardenInk(hex: 0x3A3842).ui
         mouth.alpha = 1 - sink
         brow.alpha = 1 - sink
-        let eyeAlpha: CGFloat = 1 - 0.5 * sink
+        let eyeAlpha: CGFloat = 1 - 0.68 * sink
         eyes.alpha = eyeAlpha
         pupils.alpha = eyeAlpha
         squeeze.alpha = eyeAlpha
@@ -304,7 +312,10 @@ final class GloomNode {
 
         // The lit rim: gold, hotter (whiter) as it nears popping (R4: never while underground).
         lit.alpha = shownLit * (1 - sink)
-        if shownLit > 0.01 {
+        // R5 (QA P2-7): a new colour only when it visibly changes.
+        let litKey = Int((1 - hpFrac) * 20)
+        if shownLit > 0.01 && litKey != litColorKey {
+            litColorKey = litKey
             lit.color = GardenPalette.gold.mixed(GardenInk.white, (1 - hpFrac) * 0.65).ui
         }
 
@@ -319,9 +330,11 @@ final class GloomNode {
             let open = (1 - 0.9 * shownLit) * blink
             let ey = look.eyeY * (1 - open)
             // (Round eyes even while the body is flattened under the ground.)
+            // (Round eyes while the body is flattened under the ground, then narrowed to slits: 30 % open.)
             let unsquash: CGFloat = 1 / max(1 - 0.3 * sink, 0.1)
-            eyes.yScale = open * unsquash
-            pupils.yScale = open * unsquash
+            let slit: CGFloat = 1 - 0.7 * sink
+            eyes.yScale = open * unsquash * slit
+            pupils.yScale = open * unsquash * slit
             eyes.position = CGPoint(x: 0, y: ey)
             let off = look.eyeRadius * 0.26
             let wx = sin(time * 0.7 + phase) * 0.35
@@ -436,6 +449,8 @@ final class GardenFirefly {
     private(set) var scorch: CGFloat = 0
     private(set) var size: CGFloat = 12
     var trailClock: CGFloat = 0
+    private var colorKey = -1
+
     /// R2: the scorch warning ring has shown (re-armed once it cools).
     var warned = false
     /// The colour as drawn (lime → red with scorch).
@@ -447,6 +462,7 @@ final class GardenFirefly {
         halo.colorBlendFactor = 1
         halo.zPosition = 0
         bug.texture = CreatureArt.firefly
+        bug.color = GardenPalette.fireflyHot.ui
         bug.zPosition = 0.1
         wings.texture = CreatureArt.fireflyWings
         wings.zPosition = 0.15
@@ -482,6 +498,7 @@ final class GardenFirefly {
         trailClock = 0
         history.removeAll(keepingCapacity: true)
         historyClock = 0
+        colorKey = -1
         for d in dots { d.isHidden = true }
         warned = false
         scorch = 0
@@ -512,28 +529,39 @@ final class GardenFirefly {
         scorch = CGFloat(GardenMath.clamp(f.scorch, 0, 1))
         tint = GardenPalette.firefly.mixed(GardenPalette.fireflyHot, scorch)
         let pulse = 0.5 + 0.5 * sin(time * 2.6 + phase)
-        let flick: CGFloat = scorch > 0.15 ? 1 - scorch * 0.6 * rng.unit() : 1
+        // R5 (QA P2-9): scorching flickers; with Reduce Motion it is a smooth 4 Hz pulse, never a random strobe.
+        var flick: CGFloat = 1
+        if scorch > 0.15 {
+            if motion > 0.5 {
+                flick = 1 - scorch * 0.6 * rng.unit()
+            } else {
+                flick = 1 - scorch * 0.35 * (0.5 + 0.5 * sin(time * 4 * 2 * CGFloat.pi))
+            }
+        }
+        // R5 (QA P2-7): colours change only when the scorch visibly does (no new UIColor every frame).
+        let tintKey = Int(scorch * 32)
+        let retint = tintKey != colorKey
+        colorKey = tintKey
         // R3 (REVIEW-2 P2-17): a big lime body you can't mistake for a white dot; the halo is saturated lime, softer.
         let body = sz * 1.7
         let haloK: CGFloat = 3.2 * (0.9 + 0.15 * pulse)
         halo.size = CGSize(width: sz * haloK, height: sz * haloK)
         halo.alpha = (0.26 + 0.24 * pulse) * flick
-        halo.color = GardenInk(hex: 0x9CFF2E).mixed(GardenPalette.fireflyHot, scorch).ui
+        if retint { halo.color = GardenInk(hex: 0x9CFF2E).mixed(GardenPalette.fireflyHot, scorch).ui }
         bug.size = CGSize(width: body, height: body)
         bug.zRotation = heading - CGFloat.pi / 2
         bug.colorBlendFactor = 0.8 * scorch
-        bug.color = GardenPalette.fireflyHot.ui
         // Wings flicker: a fast flutter of size and opacity.
         wings.size = CGSize(width: body, height: body)
         wings.zRotation = bug.zRotation
         let flutter = sin(time * 52 + phase)
         wings.xScale = 1 + 0.16 * flutter * motion
-        wings.alpha = 0.55 + 0.35 * abs(flutter)
+        wings.alpha = motion > 0.5 ? 0.55 + 0.35 * abs(flutter) : 0.7
         let back = CGPoint(x: -cos(heading) * body * 0.2, y: -sin(heading) * body * 0.2)
         core.position = back
         core.size = CGSize(width: body * 0.62, height: body * 0.62)
         core.alpha = 0.7 * flick * (0.7 + 0.3 * pulse)
-        core.color = tint.ui
+        if retint { core.color = tint.ui }
 
         // The 6-dot trail: points along its path, oldest the smallest and faintest.
         historyClock += dt
@@ -557,7 +585,7 @@ final class GardenFirefly {
             d.position = CGPoint(x: h.x - root.position.x, y: h.y - root.position.y)
             d.size = CGSize(width: ds, height: ds)
             d.alpha = 0.15 + 0.55 * k
-            d.color = tint.ui
+            if retint { d.color = tint.ui }
         }
     }
 

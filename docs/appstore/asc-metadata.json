@@ -125,12 +125,12 @@
       "localizations": {
         "en-GB": {
           "name": "Clean Sweep",
-          "beforeEarnedDescription": "Pop 3 shadows or more in one Sweep.",
+          "beforeEarnedDescription": "Pop 3 or more shadows in one Sweep.",
           "afterEarnedDescription": "Three pops, one swish of light."
         },
         "en-US": {
           "name": "Clean Sweep",
-          "beforeEarnedDescription": "Pop 3 shadows or more in one Sweep.",
+          "beforeEarnedDescription": "Pop 3 or more shadows in one Sweep.",
           "afterEarnedDescription": "Three pops, one swish of light."
         }
       },
@@ -185,12 +185,12 @@
       "localizations": {
         "en-GB": {
           "name": "Four Times Bright",
-          "beforeEarnedDescription": "Reach a x4 chain: pop 13 shadows in a row.",
+          "beforeEarnedDescription": "Reach a ×4 multiplier: 13 pops in a row.",
           "afterEarnedDescription": "The chain hit x4. Dazzling."
         },
         "en-US": {
           "name": "Four Times Bright",
-          "beforeEarnedDescription": "Reach a x4 chain: pop 13 shadows in a row.",
+          "beforeEarnedDescription": "Reach a ×4 multiplier: 13 pops in a row.",
           "afterEarnedDescription": "The chain hit x4. Dazzling."
         }
       },

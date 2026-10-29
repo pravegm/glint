@@ -361,7 +361,9 @@ final class DawnSession {
 
     /// Clouds arrive just off their edge and drift across; gone once fully past the far edge.
     private func moveClouds(_ h: Double, now: Double) {
-        while cloudIndex < cloudQueue.count && cloudQueue[cloudIndex].spec.time <= now {
+        // R5b: at most Tuning.maxLiveClouds on the band at once; a later one waits (just off its edge) for a slot.
+        while cloudIndex < cloudQueue.count && cloudQueue[cloudIndex].spec.time <= now
+            && shades.count < Tuning.maxLiveClouds {
             let c: CloudSpec = cloudQueue[cloudIndex].spec
             cloudIndex += 1
             let hw: Double = max(c.halfWidth, 0.01)

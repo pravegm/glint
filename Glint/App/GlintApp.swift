@@ -2,6 +2,8 @@ import SwiftUI
 
 @main
 struct GlintApp: App {
+    /// R5: phones portrait only (`OrientationRules`).
+    @UIApplicationDelegateAdaptor(GlintAppDelegate.self) private var appDelegate
     @StateObject private var store: ProgressStore
     @StateObject private var settings: SettingsStore
     @StateObject private var controller: GameController

@@ -127,16 +127,20 @@ struct SplitMenu<Top: View, Bottom: View>: View {
     let maxWidth: CGFloat
     let spread: Bool
     let alignTop: Bool
+    /// R5: on a Duo, pin the mirror half's content to its top (Home's title clear of the sun, which sits low).
+    let topAlignTop: Bool
     let top: () -> Top
     let bottom: () -> Bottom
 
     init(canvas: AppCanvas, scrolls: Bool = true, maxWidth: CGFloat = 560, spread: Bool = false,
-         alignTop: Bool = false, @ViewBuilder top: @escaping () -> Top, @ViewBuilder bottom: @escaping () -> Bottom) {
+         alignTop: Bool = false, topAlignTop: Bool = false, @ViewBuilder top: @escaping () -> Top,
+         @ViewBuilder bottom: @escaping () -> Bottom) {
         self.canvas = canvas
         self.scrolls = scrolls
         self.maxWidth = maxWidth
         self.spread = spread
         self.alignTop = alignTop
+        self.topAlignTop = topAlignTop
         self.top = top
         self.bottom = bottom
     }
@@ -145,7 +149,9 @@ struct SplitMenu<Top: View, Bottom: View>: View {
         let regions = canvas.regions
         ZStack {
             if let secondary = regions.secondary {
-                SplitRegion(rect: secondary, scrolls: scrolls, maxWidth: maxWidth, alignTop: alignTop) { top() }
+                SplitRegion(rect: secondary, scrolls: scrolls, maxWidth: maxWidth, alignTop: alignTop || topAlignTop) {
+                    top()
+                }
                 SplitRegion(rect: regions.primary, scrolls: scrolls, maxWidth: maxWidth, alignTop: alignTop) { bottom() }
             } else if spread {
                 SplitRegion(rect: regions.primary, scrolls: scrolls, maxWidth: maxWidth, fill: true) {

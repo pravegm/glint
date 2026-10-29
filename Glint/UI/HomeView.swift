@@ -16,9 +16,11 @@ struct HomeView: View {
             // R2: on a Duo the title sits on the mirror half and every control on the garden half, clear of the crease.
             // R3 (REVIEW-2 fix 13): phones push the cards to the bottom (no empty band); on a Duo the title sits to
             // the leading side of the mirror, clear of the sun disc (drawn a little right of centre).
-            SplitMenu(canvas: canvas, spread: !canvas.isDuo) {
+            // R5 (player QA #7): on a Duo the title sits at the top of the mirror (inside its frame), centred, above
+            // the low dawn sun.
+            SplitMenu(canvas: canvas, spread: !canvas.isDuo, topAlignTop: true) {
                 titleBlock(compact: c)
-                    .frame(maxWidth: .infinity, alignment: canvas.isDuo ? .leading : .center)
+                    .frame(maxWidth: .infinity)
             } bottom: {
                 VStack(spacing: c ? 16 : 20) {
                     playButton(next: next, compact: c)
@@ -81,7 +83,7 @@ struct HomeView: View {
             }
             ModeCard(title: "Long Night",
                      status: endlessOpen ? (data.endlessBest > 0 ? "Best \(AppRules.grouped(data.endlessBest))" : "Endless")
-                                         : "Win level \(ProgressRules.endlessLevel)",
+                                         : "Win level \(ProgressRules.endlessLevel) or come back tomorrow",
                      locked: !endlessOpen, compact: compact,
                      art: AnyView(LongNightArt())) {
                 controller.playEndless()
@@ -200,8 +202,9 @@ struct ModeCard: View {
                 Text(status)
                     .font(GlintType.caption(compact))
                     .foregroundStyle(locked ? GlintTheme.haze : GlintTheme.goldLight)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.75)
             }
             .padding(compact ? 10 : 14)
             .frame(maxWidth: .infinity)

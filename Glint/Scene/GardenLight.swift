@@ -84,12 +84,28 @@ enum GardenLightMath {
 
     /// The light cut into pieces along u at every place the factor bends (the outer fades, each shade's soft edges).
     static func pieces(shades: [ShadeState], into out: inout [LightPiece]) {
-        var pts: [Double] = [0, outerFade, 1 - outerFade, 1]
+        var scratch: [Double] = []
+        pieces(shades: shades, into: &out, scratch: &scratch)
+    }
+
+    /// R5 (QA P2-7): the same, reusing `scratch` for the breakpoints (no allocation in the frame loop).
+    static func pieces(shades: [ShadeState], into out: inout [LightPiece], scratch pts: inout [Double]) {
+        pts.removeAll(keepingCapacity: true)
+        pts.append(0)
+        pts.append(outerFade)
+        pts.append(1 - outerFade)
+        pts.append(1)
         let e = shadeSoft / 2
         for s in shades where s.strength > 0.001 && s.u.isFinite && s.halfWidth.isFinite {
             let h = max(s.halfWidth, 0)
-            let edges: [Double] = [s.u - h - e, s.u - h + e, s.u + h - e, s.u + h + e]
-            for v in edges where v > 0 && v < 1 { pts.append(v) }
+            let a = s.u - h - e
+            let b = s.u - h + e
+            let c = s.u + h - e
+            let d = s.u + h + e
+            if a > 0 && a < 1 { pts.append(a) }
+            if b > 0 && b < 1 { pts.append(b) }
+            if c > 0 && c < 1 { pts.append(c) }
+            if d > 0 && d < 1 { pts.append(d) }
         }
         pts.sort()
         out.removeAll(keepingCapacity: true)
@@ -120,15 +136,26 @@ final class GardenLightLayer {
     let root = SKNode()
     private var flats: [SKSpriteNode] = []
     private var ramps: [SKSpriteNode] = []
+    private let flatTexture: SKTexture
+    private let rampTexture: SKTexture
+    private let blend: SKBlendMode
+    private var color: UIColor
 
     /// `blend`: `.add` for light; R3b: `.alpha` for the grass's warm wash (a piece's flat + ramp pair then stacks as
     /// 1 − (1 − a)(1 − b) ≈ a + b at these low opacities).
     init(_ profile: GardenArt.LightProfile, color: UIColor, capacity: Int = 15, blend: SKBlendMode = .add) {
-        let ft = GardenArt.light(profile, ramp: false)
-        let rt = GardenArt.light(profile, ramp: true)
-        for _ in 0..<max(capacity, 1) {
-            let f = SKSpriteNode(texture: ft)
-            let r = SKSpriteNode(texture: rt)
+        flatTexture = GardenArt.light(profile, ramp: false)
+        rampTexture = GardenArt.light(profile, ramp: true)
+        self.blend = blend
+        self.color = color
+        grow(to: max(capacity, 1))
+    }
+
+    /// R5 (QA P2-2): more pieces than sprites (many clouds at once): add sprite pairs rather than drop light.
+    private func grow(to n: Int) {
+        while flats.count < n {
+            let f = SKSpriteNode(texture: flatTexture)
+            let r = SKSpriteNode(texture: rampTexture)
             for s in [f, r] {
                 s.blendMode = blend
                 s.colorBlendFactor = 1
@@ -141,7 +168,11 @@ final class GardenLightLayer {
         }
     }
 
+    /// Sprite pairs held (tests).
+    var capacity: Int { flats.count }
+
     func setColor(_ c: UIColor) {
+        color = c
         for s in flats { s.color = c }
         for s in ramps { s.color = c }
     }
@@ -166,6 +197,7 @@ final class GardenLightLayer {
             hide()
             return
         }
+        if pieces.count > flats.count { grow(to: pieces.count) }
         var i = 0
         for p in pieces {
             if i >= flats.count { break }

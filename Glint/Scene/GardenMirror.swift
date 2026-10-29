@@ -68,6 +68,7 @@ final class GardenMirror {
     private var leverNear: CGPoint = .zero
     private var shineClock: CGFloat = 0
     private var tintKey: Int = -1
+    private var sunTintKey: Int = -1
 
     var leverShowing: Bool { !leverKnob.isHidden }
 
@@ -120,7 +121,8 @@ final class GardenMirror {
             cloudSpeed.append(rng.range(0.006, 0.014))
             cloudScale.append(rng.range(0.7, 1.15))
         }
-        for i in 0..<3 {
+        // R5 (QA P2-2): a cloud for each of up to 6 shades.
+        for i in 0..<6 {
             let c = SKSpriteNode(texture: MirrorArt.cloud(i + 1))
             c.colorBlendFactor = 0.62
             c.color = GardenInk(hex: 0x6A76A6).ui
@@ -442,6 +444,9 @@ final class GardenMirror {
         // The sky's three gradients.
         skyDawn.alpha = GardenMath.smooth(0.02, 0.45, d)
         skyDay.alpha = GardenMath.smooth(0.45, 0.95, d)
+        // R5 (QA P2-8): no overdraw: a layer that's covered or invisible isn't drawn.
+        skyDawn.isHidden = skyDawn.alpha < 0.005 || skyDay.alpha > 0.995
+        skyNight.isHidden = skyDawn.alpha > 0.995 || skyDay.alpha > 0.995
 
         // The reflection shifts with the band (towards the crease as the phone opens).
         let shiftK = (GardenMath.clamp(band, -0.2, 1) - 0.4) * 7
@@ -455,15 +460,19 @@ final class GardenMirror {
         sunPoint = disc.center
         sun.position = sunPoint
         sun.size = CGSize(width: r * 2, height: r * 2)
+        // R5 (QA P2-7): colours change only when the hour does (no new UIColor every frame).
+        let sunKey = Int(d * 50) * 2 + (moonlit ? 1 : 0)
+        let retintSun = sunKey != sunTintKey
+        sunTintKey = sunKey
         sun.colorBlendFactor = 0.55 * (1 - d)
-        sun.color = GardenInk(hex: 0xFF5A36).ui
+        if retintSun { sun.color = GardenInk(hex: 0xFF5A36).ui }
         sunGlow.position = sunPoint
         sunGlow.size = CGSize(width: r * 7.5, height: r * 7.5)
-        sunGlow.color = GardenInk(hex: 0xFF7A45).mixed(GardenInk(hex: 0xFFE6A8), d).ui
+        if retintSun { sunGlow.color = GardenInk(hex: 0xFF7A45).mixed(GardenInk(hex: 0xFFE6A8), d).ui }
         sunGlow.alpha = 0.55 + 0.3 * d
         sunRays.position = sunPoint
         sunRays.size = CGSize(width: r * 9, height: r * 9)
-        sunRays.color = GardenInk(hex: 0xFFC27A).mixed(GardenInk(hex: 0xFFF2C8), d).ui
+        if retintSun { sunRays.color = GardenInk(hex: 0xFFC27A).mixed(GardenInk(hex: 0xFFF2C8), d).ui }
         sunRays.alpha = 0.18 + 0.32 * d
         sunRays.zRotation = time * 0.05 * motion
         // R2: a small soft cross flare on the sun's upper-left rim, slowly twinkling (not a star over the sun).
@@ -482,7 +491,7 @@ final class GardenMirror {
             fl.position = CGPoint(x: sunPoint.x + cx * k, y: sunPoint.y + cy * k)
             let fs = r * (i == 0 ? 1.3 : 0.8)
             fl.size = CGSize(width: fs, height: fs)
-            fl.color = GardenInk(hex: 0xFFD9A0).ui
+            if retintSun { fl.color = GardenInk(hex: 0xFFD9A0).ui }
             fl.alpha = (i == 0 ? 0.06 : 0.09) * light * (0.4 + 0.6 * d)
         }
 
@@ -495,14 +504,14 @@ final class GardenMirror {
         shaft.position = sunPoint
         shaft.zRotation = atan2(vx, -vy)
         shaft.size = CGSize(width: r * 3.2, height: len)
-        shaft.color = (moonlit ? GardenMirror.moonGold : GardenInk(hex: 0xFFD27A)).ui
+        if retintSun { shaft.color = (moonlit ? GardenMirror.moonGold : GardenInk(hex: 0xFFD27A)).ui }
         shaft.alpha = 0.24 * light
         if moonlit {
             // Silver: an untinted moon, a cool halo, faint rays.
             sun.colorBlendFactor = 0
-            sunGlow.color = GardenInk(hex: 0xBCCCF4).ui
+            if retintSun { sunGlow.color = GardenInk(hex: 0xBCCCF4).ui }
             sunGlow.alpha = 0.5
-            sunRays.color = GardenInk(hex: 0xD6E0FF).ui
+            if retintSun { sunRays.color = GardenInk(hex: 0xD6E0FF).ui }
             sunRays.alpha = 0.08
             for fl in flares { fl.alpha = 0 }
         }
@@ -566,9 +575,12 @@ final class GardenMirror {
             shine.isHidden = true
         }
         veil.alpha = GardenMath.clamp(veilLevel, 0, 1) * 0.6
+        veil.isHidden = veil.alpha < 0.005
 
-        // The lever.
-        for n in [leverTrack, leverGlow, leverKnob] { n.isHidden = !lever }
+        // The lever (retired in R3; kept hidden).
+        leverTrack.isHidden = !lever
+        leverGlow.isHidden = !lever
+        leverKnob.isHidden = !lever
         if lever {
             let tt = GardenMath.clamp(leverT, 0, 1)
             leverPoint = CGPoint(x: leverFar.x + (leverNear.x - leverFar.x) * tt,

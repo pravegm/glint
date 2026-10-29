@@ -1,3 +1,4 @@
+import AVFoundation
 import CoreGraphics
 import Foundation
 import Testing
@@ -507,6 +508,65 @@ struct FeelTests {
         #expect(cues == expected)
         #expect(FeelCueMap.cue(for: .hint(.hoppers)) == nil)
         #expect(FeelCueMap.cue(for: .chainEnded(was: 9)) == nil)
+    }
+
+    // MARK: R5: QA fixes (layout change, Bluetooth, interruptions, engine wake)
+
+    @Test func aLayoutChangeMidDragNeverJumpsTheBand() {
+        let drag = DragMirrorSource()
+        drag.layout = feelPhoneLayout()
+        drag.setBand(0)
+        let depth = Double(drag.layout.gardenDepth)
+        drag.dragBegan(CGPoint(x: 200, y: 400))
+        drag.dragMoved(CGPoint(x: 200, y: 400 + depth / 4))
+        let before = drag.target
+        // Rotate to a book layout: the same finger now reports a point in different coordinates.
+        drag.layout = GardenLayout(size: CGSize(width: 844, height: 390), foldVertical: true, gardenAfter: true,
+                                   gardenFraction: 0.5)
+        drag.dragMoved(CGPoint(x: 700, y: 50))
+        #expect(feelClose(drag.target, before, 1e-9))
+        // The next move continues from there, in the new layout's direction (+x towards the flowers).
+        let newDepth = Double(drag.layout.gardenDepth)
+        drag.dragMoved(CGPoint(x: 700 + newDepth / 4, y: 50))
+        #expect(feelClose(drag.target, before + 0.25 * DragMirrorSource.dragGain, 1e-6))
+        // Setting the same layout again changes nothing.
+        let same = drag.layout
+        drag.layout = same
+        drag.dragMoved(CGPoint(x: 700 + newDepth / 2, y: 50))
+        #expect(feelClose(drag.target, before + 0.5 * DragMirrorSource.dragGain, 1e-6))
+    }
+
+    @Test func hapticsWaitForBluetoothAudio() {
+        #expect(FeelAudioEngine.hapticDelay(outputLatency: 0.18, ioBuffer: 0.005, bluetooth: false) == 0)
+        #expect(feelClose(FeelAudioEngine.hapticDelay(outputLatency: 0.18, ioBuffer: 0.005, bluetooth: true), 0.185,
+                          1e-9))
+        #expect(FeelAudioEngine.hapticDelay(outputLatency: 0.6, ioBuffer: 0.01, bluetooth: true)
+                == FeelAudioEngine.maxHapticDelay)
+        #expect(FeelAudioEngine.hapticDelay(outputLatency: Double.nan, ioBuffer: 0.005, bluetooth: true) < 0.01)
+        #expect(FeelAudioEngine.isBluetooth(.bluetoothA2DP))
+        #expect(FeelAudioEngine.isBluetooth(.bluetoothLE))
+        #expect(!FeelAudioEngine.isBluetooth(.builtInSpeaker))
+        let cue = FeelHapticCue(notes: [.tap(0.5, 0.8), .buzz(0.3, 0.4, at: 0.05, duration: 0.1)],
+                                curve: [FeelHapticPoint(time: 0, value: 1), FeelHapticPoint(time: 0.15, value: 0)])
+        let late = FeelHapticBook.delayed(cue, by: 0.2)
+        #expect(feelClose(late.notes[0].time, 0.2, 1e-9))
+        #expect(feelClose(late.notes[1].time, 0.25, 1e-9))
+        #expect(feelClose(late.curve[1].time, 0.35, 1e-9))
+        #expect(FeelHapticBook.delayed(cue, by: 0) == cue)
+        #expect(FeelHapticBook.delayed(cue, by: Double.nan) == cue)
+    }
+
+    @Test func aSuspensionIsNotAnInterruption() {
+        #expect(!FeelAudioEngine.honoursBegan(reason: .appWasSuspended))
+        #expect(FeelAudioEngine.honoursBegan(reason: .default))
+        #expect(FeelAudioEngine.honoursBegan(reason: nil))
+    }
+
+    @Test func playScreenFramesKeepTheEnginesAwake() {
+        #expect(FeedbackDirector.keepsAwake(paused: false, pausedFor: Double.infinity))
+        #expect(FeedbackDirector.keepsAwake(paused: true, pausedFor: 5))
+        #expect(!FeedbackDirector.keepsAwake(paused: true, pausedFor: FeedbackDirector.pauseHold + 1))
+        #expect(!FeedbackDirector.keepsAwake(paused: true, pausedFor: Double.nan))
     }
 
     // MARK: R3: surfacing

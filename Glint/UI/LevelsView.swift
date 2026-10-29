@@ -70,6 +70,9 @@ struct LevelsView: View {
             ForEach(1...LevelBook.worldCount, id: \.self) { w in
                 let open = ProgressRules.isWorldOpen(w, data)
                 let isSelected = w == selected
+                let tabStatus = AppRules.worldTabStatus(open: open, stars: ProgressRules.stars(data, world: w),
+                                                        max: ProgressRules.maxStars(world: w),
+                                                        gate: ProgressRules.gate(world: w))
                 Button {
                     controller.selectWorld(w)
                 } label: {
@@ -120,7 +123,8 @@ struct LevelsView: View {
                     )
                 }
                 .buttonStyle(PressScaleStyle())
-                .accessibilityLabel("\(LevelBook.worldName(w))\(open ? "" : ", locked")")
+                // R5 (QA P2-8): VoiceOver hears the star status too.
+                .accessibilityLabel("\(LevelBook.worldName(w)), \(open ? "" : "locked, ")\(tabStatus)")
             }
         }
     }
@@ -307,7 +311,7 @@ struct WorldLockCard: View {
                     .padding(12)
                     .background(Circle().fill(GlintTheme.cardDeep.opacity(0.9)))
             }
-            Text("\(LevelBook.worldName(world)) opens at \(needed) ★ in \(LevelBook.worldName(world - 1))")
+            Text("\(LevelBook.worldName(world)) opens at \(needed) ★ in the \(LevelBook.worldName(world - 1))")
                 .font(GlintType.headline(compact))
                 .foregroundStyle(GlintTheme.cream)
                 .multilineTextAlignment(.center)

@@ -1,3 +1,4 @@
+import QuartzCore
 import SwiftUI
 
 /// The Duo's outer (cover) display: the app keeps running there when the phone is shut. The brass mirror with the
@@ -17,7 +18,8 @@ struct CoverView: View {
     var body: some View {
         let line = AppRules.coverLine(route: controller.route, stage: controller.stage,
                                       phase: controller.route == .play && controller.stage == .live ? hud.state.phase : nil,
-                                      paused: controller.pause.isPaused, score: hud.state.score)
+                                      paused: controller.pause.isPaused, score: hud.state.score,
+                                      menu: controller.pause.menu)
         let s = min(size.width, size.height)
         let today = DailySeed.day(for: Date())
         let data = store.data
@@ -33,11 +35,19 @@ struct CoverView: View {
                 MenuMirrorArt(sun: 0.55)
                     .frame(width: s * 0.36, height: s * 0.25)
                 Wordmark(size: max(min(s * 0.14, 52), 26))
-                Text(line.text)
+                // R5 (player QA #29): a short title, then what to do, never one long wrapped line.
+                Text(line.title)
                     .font(.system(size: max(min(s * 0.065, 24), 15), weight: .heavy, design: .rounded))
                     .foregroundStyle(GlintTheme.cream)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 16)
+                if let detail = line.detail {
+                    Text(detail)
+                        .font(.system(size: max(min(s * 0.05, 19), 13), weight: .semibold, design: .rounded))
+                        .foregroundStyle(GlintTheme.mist)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 16)
+                }
                 if let score = Self.pausedScore(line) {
                     HStack(spacing: 14) {
                         Text("Score \(AppRules.grouped(score))")
@@ -57,7 +67,11 @@ struct CoverView: View {
                         .foregroundStyle(GlintTheme.goldLight)
                         .multilineTextAlignment(.center)
                 }
-                if offerEscape && !controller.forcedCover {
+                // R5 (player QA #4): never on a phone the hinge reads as shut, never onto the small outer display.
+                if offerEscape && !controller.forcedCover
+                    && AppRules.coverEscapeAllowed(hingeAngle: controller.hinge.angle,
+                                                   sampleAge: controller.hinge.lastSampleTime.map { CACurrentMediaTime() - $0 },
+                                                   window: size) {
                     Button("Already open? Show the game") {
                         controller.coverDismissed = true
                     }

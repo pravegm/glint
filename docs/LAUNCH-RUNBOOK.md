@@ -308,10 +308,10 @@ IDs can never be changed once created. These are the exact values (the same as `
 | Achievement ID | Title | Description before earning | Description after earning | Points |
 |---|---|---|---|---|
 | `glint.ach.firstlight` | First Light | Win your first sunrise. | The sun is up. The garden is yours. | 10 |
-| `glint.ach.sweep` | Clean Sweep | Pop 3 shadows or more in one Sweep. | Three pops, one swish of light. | 10 |
+| `glint.ach.sweep` | Clean Sweep | Pop 3 or more shadows in one Sweep. | Three pops, one swish of light. | 10 |
 | `glint.ach.brute` | The Bigger They Come | Pop a brute. | Big, slow, grumpy, and gone. | 25 |
 | `glint.ach.firefly` | Firefly Gardener | Let a firefly replant a lost flower. | A little light brought a flower back. | 25 |
-| `glint.ach.chain4` | Four Times Bright | Reach a x4 chain: pop 13 shadows in a row. | The chain hit x4. Dazzling. | 50 |
+| `glint.ach.chain4` | Four Times Bright | Reach a ×4 multiplier: 13 pops in a row. | The chain hit x4. Dazzling. | 50 |
 | `glint.ach.rooftops` | Over the Rooftops | Win all 10 Rooftops sunrises. | Every roof in the city, lit. | 50 |
 | `glint.ach.harbour` | Harbour Lights | Win all 10 Harbour sunrises. | The whole harbour, lit at last. | 100 |
 | `glint.ach.allstars` | Ninety Suns | Earn all 90 stars. | Every sunrise, every flower. | 100 |
