@@ -42,6 +42,25 @@ jobs:
               d = beta.get((b["relationships"].get("buildBetaDetail", {}).get("data") or {}).get("id"), {})
               lines.append(f"| {v} ({a['version']}) | {a['uploadedDate']} | {a['processingState']} | "
                            f"{d.get('internalBuildState', '?')} | {a['expired']} |")
+          # R4: an upload Apple accepted but that never became a build (rejected in processing, or still being
+          # ingested) only shows up here: the app's build uploads with their state and any errors/warnings.
+          bu = requests.get(f"{api}/apps/{app['id']}/buildUploads", headers=h, params={"limit": 10})
+          lines += ["", f"Build uploads (HTTP {bu.status_code}):"]
+          try:
+              for u in bu.json().get("data", []):
+                  ua = u.get("attributes", {})
+                  st = ua.get("state") or {}
+                  lines.append(f"- {ua.get('cfBundleShortVersionString')} ({ua.get('cfBundleVersion')}) "
+                               f"uploaded {ua.get('uploadedDate') or ua.get('createdDate')}: "
+                               f"{st.get('state') if isinstance(st, dict) else st}")
+                  if isinstance(st, dict):
+                      for kind in ("errors", "warnings", "infos"):
+                          for e in st.get(kind) or []:
+                              lines.append(f"    {kind[:-1]}: {e.get('code')} {e.get('description') or e.get('message')}")
+              if bu.status_code != 200:
+                  lines.append("    " + bu.text[:600])
+          except Exception as ex:
+              lines.append(f"    (could not read: {ex}) {bu.text[:400]}")
           out = "\n".join(lines)
           print(out)
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
