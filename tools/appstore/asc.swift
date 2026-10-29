@@ -559,7 +559,15 @@ func repoText(_ rel: String) -> String? {
 /// The body of the array literal in `static let <name>[: T] = [ ... ]` (between the brackets), or nil when the
 /// declaration isn't an array literal (e.g. `= ProgressRules.allAchievements`).
 func arrayLiteral(named name: String, in text: String) -> String? {
-    guard let start = text.range(of: "static let \(name)") else { return nil }
+    // Whole names only: "static let all" must not match "static let allStars" (Glint R3: asc run 40789020736).
+    var from = text.startIndex
+    var found: Range<String.Index>?
+    while let r = text.range(of: "static let \(name)", range: from..<text.endIndex) {
+        let next = r.upperBound < text.endIndex ? text[r.upperBound] : " "
+        if !(next.isLetter || next.isNumber || next == "_") { found = r; break }
+        from = r.upperBound
+    }
+    guard let start = found else { return nil }
     let rest = text[start.upperBound...]
     guard let eq = rest.firstIndex(of: "=") else { return nil }
     let value = rest[rest.index(after: eq)...].drop { $0 == " " || $0 == "\t" }
