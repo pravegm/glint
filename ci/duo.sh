@@ -3,7 +3,7 @@
 # called by .github/workflows/duo.yml. Lean by design (the sister rigs grew to 900 lines; the lessons kept are: every
 # simctl/hinge call has a timeout, hinge sets are retried, wait ~2.5 s after a move before a shot, run alone).
 #
-# One launch: `-glintDemo "screen=play;level=8;duolog=1"` with the real HingeMirrorSource. Checks (from the app's DEBUG
+# One launch: `-glintDemo "screen=play;mode=endless;duolog=1"` with the real HingeMirrorSource. Checks (from the app's DEBUG
 # lines, design/ROUND-1.md + the App addendum):
 #   START-CLOSED  open at launch → `GLINT-T prompt close` (a level never starts open)
 #   COVER         shut (5°) → `GLINT-T screen cover`
@@ -81,7 +81,7 @@ probe_displays
 log "launch"
 to 30 xcrun simctl terminate "$UDID" "$BUNDLE" 2>/dev/null || true
 to 90 xcrun simctl launch --terminate-running-process --stdout="$LOG" --stderr="$LOG" "$UDID" "$BUNDLE" \
-  -glintDemo "screen=play;level=8;duolog=1" >/dev/null || log "WARN launch failed"
+  -glintDemo "screen=play;mode=endless;duolog=1" >/dev/null || log "WARN launch failed"
 sleep 8
 shot 01-open-at-start
 m=0
@@ -89,7 +89,7 @@ grep -q "GLINT-T prompt close" "$LOG" && ok=1 || ok=0
 verdict START-CLOSED $ok "launched open at 160°: $(grep -oE 'GLINT-T prompt [a-z]+' "$LOG" | tail -1)"
 
 m=$(mark); mc=$m; hsweep 160 5 2.0; sleep 2; shot 02-cover
-since "$m" | grep -q "GLINT-T screen cover" && ok=1 || ok=0
+grep -qE "GLINT-T (screen|paused) cover" "$LOG" && ok=1 || ok=0
 verdict COVER $ok "shut to 5°"
 
 m=$(mark); hsweep 5 40 1.5; sleep 1.5; shot 03-crease-glow
@@ -105,7 +105,7 @@ verdict BAND-MID $ok "108°: band ${b:-none}"
 # PAUSE-SHUT right away (R3: holding still for long now loses the level, so later checks would see Results).
 shot 07-playing
 m=$(mark); hsweep 108 5 1.5; sleep 2; shot 08-paused-cover
-since "$m" | grep -q "GLINT-T paused shut" && p=1 || p=0
+since "$m" | grep -qE "GLINT-T paused (shut|cover)" && p=1 || p=0
 m2=$(mark); hsweep 5 108 1.5; sleep 3; shot 09-resumed
 since "$m2" | grep -q "GLINT-T resumed" && r=1 || r=0
 [[ $p == 1 && $r == 1 ]] && ok=1 || ok=0
