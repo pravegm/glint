@@ -16,7 +16,7 @@ class RNG {
 }
 
 const T = {
-  bandMin: -0.2, core: 0.05, edge: 0.085, flowerCount: 5, chainWindow: 1.6, sweepWindow: 0.35, maxMult: 4,
+  bandMin: -0.2, core: Number(process.env.CORE || 0.065), edge: Number(process.env.EDGE || 0.10), submergedSpeed: 1.6, flowerCount: 5, chainWindow: 1.6, sweepWindow: 0.35, maxMult: 4,
   chainStep: 0.25, sweepMin: 3, sweepPer: 30, flowerBonus: 40, pad: 0.4, burn: 1.0,
   ffSpeed: 0.075, ffRadius: 0.02, ffScorch: 0.35, ffDecay: 0.6, ffBloom: 50, ffWaveAmp: 0.06, ffWaveHz: 0.35,
   splitCount: 2, splitFling: 0.07, splitFlingSpeed: 0.30, splitFlingTime: 0.6, splitSpreadU: 0.06,
@@ -32,11 +32,10 @@ function intensityDist(dist) {
 const SPEC = {
   murk: { hp: 0.55, speed: 0.10, r: 0.050, pts: 10 },
   wisp: { hp: 0.12, speed: 0.21, r: 0.030, pts: 5 },
-  brute: { hp: 3.6, speed: 0.065, r: 0.085, pts: 40 },
+  brute: { hp: Number(process.env.BRUTE_HP || 4.5), speed: 0.065, r: 0.085, pts: 40 },
   splitter: { hp: 0.7, speed: 0.09, r: 0.060, pts: 15 },
   hopper: { hp: 0.8, speed: 0.14 / (0.9 + 0.22), r: 0.050, pts: 20 },
 };
-if (process.env.BRUTE_HP) SPEC.brute.hp = Number(process.env.BRUTE_HP);
 
 // ---------------- LevelBook ----------------
 // recipe: [title, dur, murks, flocks, flockSize, brutes, splitters, hoppers, fireflies, speed, crowd]
@@ -59,6 +58,16 @@ function build(rec, rng, start, span, endPad) {
   for (let i = 0; i < rec.splitters; i++) items.push({ kind: 'splitter', count: rng.unit() < rec.pair ? 2 : 1, u: uRange(0.5), form: 'line' });
   for (let i = 0; i < rec.hoppers; i++) items.push({ kind: 'hopper', count: rng.unit() < rec.pair ? 2 : 1, u: uRange(0.5), form: 'line' });
   for (let i = 0; i < rec.fireflies; i++) items.push({ kind: 'firefly', count: 1, u: uRange(0.4), form: 'cluster' });
+  // R3: where each group surfaces (rec.surfaceMax 0 = never submerged).
+  const smax = rec.surfaceMax || 0, smin = rec.surfaceMin || 0.15;
+  const HI = { murk: smax, wisp: Math.min(0.55, smax), brute: Math.min(0.3, smax), splitter: Math.min(0.45, smax), hopper: Math.min(0.4, smax) };
+  for (const it of items) {
+    if (smax <= 0 || it.kind === 'firefly') { it.surf = [0, 0]; continue; }
+    const hi = Math.max(HI[it.kind], smin);
+    if (it.kind === 'murk' && it.form === 'cluster' && it.count >= 2) {
+      const c = rng.range(smin + 0.05, Math.max(hi - 0.05, smin + 0.05)); it.surf = [c - 0.05, c + 0.05];
+    } else { const v = rng.range(smin, hi); it.surf = [v, v]; }
+  }
   for (const it of items) it.key = rng.unit() * (1 - BIAS[it.kind]) + BIAS[it.kind];
   items.sort((x, y) => x.key - y.key);
   let total = 0; for (const it of items) total += COST[it.kind] * it.count;
@@ -70,7 +79,7 @@ function build(rec, rng, start, span, endPad) {
     // density 0.6 + 0.8x: F(x) = 0.6x + 0.4x^2  ->  x = (-0.6 + sqrt(0.36 + 1.6F)) / 0.8
     const x = join ? g[g.length - 1].x : (-0.7 + Math.sqrt(0.49 + 1.2 * mid)) / 0.6;
     const t = join ? g[g.length - 1].time : start + t1 * x;
-    g.push({ x, time: t, kind: it.kind, count: it.count, u: it.u, form: it.form, s: it.kind === 'firefly' ? 1 : S * (0.95 + 0.1 * x) });
+    g.push({ x, time: t, kind: it.kind, count: it.count, u: it.u, form: it.form, surf: it.surf, s: it.kind === 'firefly' ? 1 : S * (0.95 + 0.1 * x) });
   }
   return g;
 }
@@ -101,7 +110,7 @@ function level(n) {
   const rec = R.levels[n - 1];
   const rng = new RNG(levelSeed(n));
   const groups = build(rec, rng, 2.5, rec.dur - 2.5, 8);
-  return { number: n, world: Math.floor((n - 1) / 10) + 1, title: rec.title, duration: rec.dur, groups, clouds: cloudsFor(rec, rng, 2.5, rec.dur - 2.5) };
+  return { number: n, world: Math.floor((n - 1) / 10) + 1, title: rec.title, duration: rec.dur, groups, clouds: cloudsFor(rec, rng, 2.5, rec.dur - 2.5), starScore: rec.starScore || 0 };
 }
 function daily(day) {
   const rng = new RNG(dailySeed(day) ^ 0x5A5A5A5An);
@@ -121,7 +130,7 @@ class Session {
     this.score = 0; this.chain = 0; this.lastPop = -1e9; this.sweep = 0; this.pops = 0; this.nextId = 1;
     this.queue = []; this.qi = 0; this.seq = 0; this.firstBand = null; this.band = T.bandMin; this.wave = 0;
     this.eaten = 0; this.scorched = 0; this.delivered = 0; this.longestChain = 0;
-    this.cloudQ = []; this.ci = 0; this.shades = []; this.blockedCloud = 0; this.blockedCrease = 0;
+    this.cloudQ = []; this.ci = 0; this.shades = []; this.blockedCloud = 0; this.blockedCrease = 0; this.blockedSub = 0; this.surfacedN = 0;
     if (spec) { this.expand(spec.groups, 0); this.addClouds(spec.clouds || [], 0); }
   }
   addClouds(list, offset) {
@@ -136,7 +145,9 @@ class Session {
         else if (gr.form === 'line') u = gr.u[0] + (gr.u[1] - gr.u[0]) * (i + 0.5) / gr.count;
         else { u = gr.u[0] + (gr.u[1] - gr.u[0]) * (gr.count > 1 ? i / (gr.count - 1) : 0.5); t += gr.form * i; }
         const phase = this.rng.unit();
-        this.queue.push({ seq: this.seq++, t, kind: gr.kind, u: Math.min(Math.max(u, 0.03), 0.97), s: gr.s, phase });
+        const sf = gr.surf || [0, 0];
+        const sd = gr.kind === 'firefly' ? 0 : sf[0] + (sf[1] - sf[0]) * this.rng.unit();
+        this.queue.push({ seq: this.seq++, t, kind: gr.kind, u: Math.min(Math.max(u, 0.03), 0.97), s: gr.s, phase, sd });
       }
     }
     const rest = this.queue.slice(this.qi); rest.sort((a, b) => a.t - b.t || a.seq - b.seq); this.queue = rest; this.qi = 0;
@@ -175,7 +186,7 @@ class Session {
       const e = this.queue[this.qi++];
       if (e.kind === 'firefly') {
         this.ffs.push({ id: this.nextId++, u: e.u, baseU: e.u, d: -T.ffRadius, scorch: 0, lit: 0, age: 0, speed: T.ffSpeed * e.s, phase: e.phase });
-      } else this.spawn(e.kind, e.u, null, e.s);
+      } else this.spawn(e.kind, e.u, null, e.s, false, e.sd, ev);
     }
     while (this.ci < this.cloudQ.length && this.cloudQ[this.ci].time <= now) {
       const c = this.cloudQ[this.ci++];
@@ -193,6 +204,13 @@ class Session {
       const dist = Math.max(0, Math.abs(g.d - b) - T.pad * g.r);
       const raw = on ? intensityDist(dist) : 0;
       const cf = this.shades.length ? cloudFactor(g.u, this.shades) : 1;
+      if (g.sub) {
+        if (raw > 0) this.blockedSub += raw * h;
+        g.lit = 0; g.wasLit = false; g.age += h; g.tension = 0;
+        g.d += g.speed * T.submergedSpeed * h;
+        if (g.d >= g.sd) { g.sub = false; this.surfacedN++; ev.push(['surfaced', g.kind, g.d]); }
+        this.glooms[w++] = g; continue;
+      }
       const lit = g.d >= T.creaseShade ? raw * cf : 0;
       if (raw > 0) { if (g.d < T.creaseShade) this.blockedCrease += raw * h; else { this.blockedCloud += raw * (1 - cf) * h; if (cf < 0.5) g.clouded = true; } }
       g.lit = lit;
@@ -241,10 +259,12 @@ class Session {
     if (this.chain > 0 && now - this.lastPop > T.chainWindow) { ev.push(['chainEnded', this.chain]); this.chain = 0; this.sweep = 0; }
     if (!this.endless && now >= this.duration) this.sunrise(ev);
   }
-  spawn(kind, u, d, s, flung) {
+  spawn(kind, u, d, s, flung, sd) {
     const sp = SPEC[kind];
+    const d0 = d === null ? -sp.r : d;
+    const sub = !flung && (sd || 0) > d0;
     const g = { id: this.nextId++, kind, u, d: d === null ? -sp.r : d, r: sp.r, hp: sp.hp, maxHP: sp.hp, lit: 0, age: 0, tension: flung ? 1 : 0,
-      speed: sp.speed * s, speedScale: s, rest: T.hopRest / s, timer: 0, hopping: false, from: 0, fling: flung ? T.splitFlingTime : 0, wasLit: false };
+      speed: sp.speed * s, speedScale: s, rest: T.hopRest / s, timer: 0, hopping: false, from: 0, fling: flung ? T.splitFlingTime : 0, wasLit: false, sub, sd: sub ? sd : 0 };
     this.glooms.push(g);
   }
   pop(g, ev) {
@@ -296,14 +316,14 @@ class Session {
 // ---------------- Pilot ----------------
 const Pilot = require('./pilot.js')(T, SPEC, RNG, (u, sh) => cloudFactor(u, sh));
 
-function run(spec, skill, seed, endless, cap, sessionSeed) {
+function run(spec, skill, seed, endless, cap, sessionSeed, parked) {
   const s = new Session(spec, sessionSeed === undefined ? seed : sessionSeed, endless);
   const p = new Pilot(skill, seed * 7 + 1);
   const dt = 1 / 60; let frames = 0; const maxF = (cap || 400) * 60;
   let fieldSum = 0, fieldN = 0;
   const lo = spec ? 0.25 * spec.duration : 60, hi = spec ? 0.9 * spec.duration : 1e9;
   while (!s.finished && frames < maxF) {
-    const b = p.band_(s.snapshot(), dt);
+    const b = parked !== undefined ? parked : p.band_(s.snapshot(), dt);
     s.step(dt, { band: b, isShut: false });
     if (s.time >= lo && s.time <= hi) { fieldSum += s.glooms.length; fieldN++; }
     frames++;
@@ -322,7 +342,7 @@ if (require.main === module) {
     const parts = []; let field = 0;
     for (const sk of skills) {
       let won = 0, fl = 0, sc = 0, three = 0, ch = 0;
-      for (let i = 0; i < seeds; i++) { const r = run(spec, sk, 1 + i * 7919); if (r.won) won++; if (r.flowers === 5) three++; fl += r.flowers; sc += r.score; ch = Math.max(ch, r.chain); if (sk === 0.6) field += r.field / seeds; }
+      for (let i = 0; i < seeds; i++) { const r = run(spec, sk, 1 + i * 7919); if (r.won) won++; if (r.flowers === 5 && r.score >= (spec.starScore || 0)) three++; fl += r.flowers; sc += r.score; ch = Math.max(ch, r.chain); if (sk === 0.6) field += r.field / seeds; }
       parts.push(`s${sk}: ${won}/${seeds} fl=${(fl / seeds).toFixed(1)} 3*=${three} ch=${ch} sc=${(sc / seeds).toFixed(0)}`);
     }
     const hp = spec.groups.reduce((a, g) => a + g.count * (g.kind === 'firefly' ? 0 : SPEC[g.kind].hp), 0);

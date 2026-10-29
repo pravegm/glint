@@ -31,21 +31,30 @@ final class GloomNode {
     private let squeeze = SKSpriteNode()
     private let mouth = SKSpriteNode()
     private let brow = SKSpriteNode()
-    /// R2: the dark seam a gloom in the crease shade sits in (over its lower half).
+    /// R3: the soft mound of ground over a submerged gloom (a feathered ellipse: never a box).
     private let pool = SKSpriteNode()
 
-    /// R2: 1 = sunk in the crease shade (lower half hidden, eyes peeking), 0 = out in the garden.
+    /// R3: 1 = travelling under the ground (`GloomState.submerged`: a ghost of the body, the eyes peeking, a mound),
+    /// 0 = out in the garden. Smoothed.
     private(set) var sink: CGFloat = 0
-    private var wasSunk = false
     private var fresh = true
-    /// It came up out of the shade this frame (the scene adds a ripple).
-    private(set) var surfacedThisFrame = false
-    /// Where the seam's surface is drawn (scene points).
+    /// Where the ground's surface is over it (scene points: ripples and the surfacing burst start there).
     private(set) var surfacePoint: CGPoint = .zero
     /// Where it looks (scene unit vector, as passed: towards the band).
     private(set) var lookDir = CGVector(dx: 0, dy: -1)
+    /// R3: the pop-up as it surfaces.
+    private var popLeft: CGFloat = 0
+    static let popTime: CGFloat = 0.32
+    var rippleClock: CGFloat = 0
 
     var isSubmerged: Bool { sink > 0.5 }
+    var isPoppingUp: Bool { popLeft > 0 }
+
+    /// R3: it rises out of the ground (`.surfaced`): a springy pop up.
+    func popUp() {
+        popLeft = GloomNode.popTime
+        sink = 0
+    }
 
     private(set) var kind: GloomKind = .murk
     private(set) var id: Int = -1
@@ -103,9 +112,10 @@ final class GloomNode {
         brow.zPosition = 0.25
         root.addChild(puppet)
         for n in [body, lit, mouth, eyes, pupils, squeeze, brow] { puppet.addChild(n) }
-        pool.texture = CreatureArt.pool
-        pool.anchorPoint = CGPoint(x: 0.5, y: CreatureArt.poolSurface / CreatureArt.poolSize.height)
-        pool.zPosition = 0.4
+        pool.texture = GardenArt.shadow
+        pool.colorBlendFactor = 1
+        pool.color = GardenInk(hex: 0x06040A).ui
+        pool.zPosition = -0.05
         pool.isHidden = true
         root.addChild(pool)
         configure(kind: .murk, id: -1)
@@ -153,10 +163,13 @@ final class GloomNode {
         puppet.zRotation = 0
         puppet.position = .zero
         sink = 0
-        wasSunk = false
         fresh = true
-        surfacedThisFrame = false
+        popLeft = 0
+        rippleClock = 0
         pool.isHidden = true
+        body.alpha = 1
+        mouth.alpha = 1
+        brow.alpha = 1
     }
 
     /// A hop starts (Core moves the gloom; the node adds the arc).
@@ -174,11 +187,10 @@ final class GloomNode {
         tension = CGFloat(GardenMath.clamp(g.tension, 0, 1))
         lookDir = dir
 
-        // R2: sunk in the crease shade, or out in the open.
-        sink = GardenMath.sink(d: g.d)
-        let sunkNow = sink > 0.5
-        surfacedThisFrame = !fresh && wasSunk && !sunkNow
-        wasSunk = sunkNow
+        // R3: under the ground (Core's `submerged`) or out in the open; a new node starts where Core says.
+        let sinkTarget = GardenMath.sink(g)
+        sink = fresh ? sinkTarget : GardenMath.approach(sink, sinkTarget, rate: 12, dt: dt)
+        if abs(sink - sinkTarget) < 0.002 { sink = sinkTarget }
         fresh = false
 
         // Blinks (more often while peeking out of the seam).
@@ -226,25 +238,38 @@ final class GloomNode {
             sy *= 1 - 0.06 * shownLit
             sx *= 1 + 0.04 * shownLit
         }
+        // R3: surfacing pops up: a springy overshoot and a little lift.
+        var pop: CGFloat = 0
+        if popLeft > 0 {
+            popLeft = max(0, popLeft - dt)
+            let k = 1 - popLeft / GloomNode.popTime
+            pop = sin(k * CGFloat.pi) * (1 - 0.4 * k)
+            lift += 0.45 * pop
+            sy *= 1 + 0.22 * pop
+            sx *= 1 - 0.08 * pop
+        }
+        // R3: under the ground it is a flattened ghost (the body faint, the eyes peeking).
+        sy *= 1 - 0.3 * sink
+        sx *= 1 + 0.06 * sink
         let s = r * hpScale * grow
         scaleNow = s
         puppet.xScale = s * sx
         puppet.yScale = s * sy
         let crouch: CGFloat = kind == .hopper ? 0.1 * tension : 0
-        puppet.position = CGPoint(x: 0, y: (lift - crouch - 0.1 * sink) * r)
-        // The seam: its surface rises to just under the eyes as the gloom sinks.
-        if sink > 0.005 {
-            let top = GardenMath.lerp(-1.3, -0.04, sink) * s
-            let pw = 3.0 * s
+        puppet.position = CGPoint(x: 0, y: (lift - crouch - 0.12 * sink) * r)
+        body.alpha = 1 - 0.8 * sink
+        mouth.alpha = 1 - sink
+        brow.alpha = 1 - sink
+        // The ground's soft mound over it: a feathered dark ellipse (never a box).
+        if sink > 0.01 {
             pool.isHidden = false
-            pool.size = CGSize(width: pw, height: pw * CreatureArt.poolSize.height / CreatureArt.poolSize.width)
-            pool.position = CGPoint(x: 0, y: top)
-            pool.alpha = GardenMath.smooth(0, 0.3, sink)
-            surfacePoint = CGPoint(x: p.x, y: p.y + top)
+            pool.size = CGSize(width: s * 2.8, height: s * 1.25)
+            pool.position = CGPoint(x: 0, y: -0.1 * s)
+            pool.alpha = 0.45 * sink
         } else {
             pool.isHidden = true
-            surfacePoint = CGPoint(x: p.x, y: p.y - 0.04 * s)
         }
+        surfacePoint = CGPoint(x: p.x, y: p.y - 0.15 * s)
         puppet.zRotation = sin(time * 1.7 + phase * 1.3) * 0.06 * motion
 
         // A sizzling shiver while lit.
@@ -273,8 +298,10 @@ final class GloomNode {
         } else {
             let open = (1 - 0.9 * shownLit) * blink
             let ey = look.eyeY * (1 - open)
-            eyes.yScale = open
-            pupils.yScale = open
+            // (Round eyes even while the body is flattened under the ground.)
+            let unsquash: CGFloat = 1 / max(1 - 0.3 * sink, 0.1)
+            eyes.yScale = open * unsquash
+            pupils.yScale = open * unsquash
             eyes.position = CGPoint(x: 0, y: ey)
             let off = look.eyeRadius * 0.26
             let wx = sin(time * 0.7 + phase) * 0.35
@@ -370,7 +397,13 @@ final class GardenFirefly {
     let root = SKNode()
     private let halo = SKSpriteNode()
     private let bug = SKSpriteNode()
+    private let wings = SKSpriteNode()
     private let core = SKSpriteNode()
+    /// R3: a 6-dot trail along its recent path (children of `root`, placed relative to it).
+    static let trailCount = 6
+    private var dots: [SKSpriteNode] = []
+    private var history: [CGPoint] = []
+    private var historyClock: CGFloat = 0
     private(set) var id: Int = -1
     var seenFrame: Int = -1
     private var phase: CGFloat = 0
@@ -395,14 +428,30 @@ final class GardenFirefly {
         halo.zPosition = 0
         bug.texture = CreatureArt.firefly
         bug.zPosition = 0.1
+        wings.texture = CreatureArt.fireflyWings
+        wings.zPosition = 0.15
         core.texture = GardenArt.dot
         core.blendMode = .add
         core.colorBlendFactor = 1
         core.zPosition = 0.2
         root.addChild(halo)
         root.addChild(bug)
+        root.addChild(wings)
         root.addChild(core)
+        for i in 0..<GardenFirefly.trailCount {
+            let d = SKSpriteNode(texture: GardenArt.dot)
+            d.blendMode = .add
+            d.colorBlendFactor = 1
+            d.color = GardenPalette.firefly.ui
+            d.zPosition = -0.1 - CGFloat(i) * 0.001
+            d.isHidden = true
+            root.addChild(d)
+            dots.append(d)
+        }
     }
+
+    /// The trail dots drawn now.
+    var trailDotsShowing: Int { dots.filter { !$0.isHidden }.count }
 
     func configure(id i: Int) {
         id = i
@@ -411,6 +460,9 @@ final class GardenFirefly {
         hasLast = false
         fadeLeft = 0
         trailClock = 0
+        history.removeAll(keepingCapacity: true)
+        historyClock = 0
+        for d in dots { d.isHidden = true }
         warned = false
         scorch = 0
         root.alpha = 1
@@ -441,17 +493,52 @@ final class GardenFirefly {
         tint = GardenPalette.firefly.mixed(GardenPalette.fireflyHot, scorch)
         let pulse = 0.5 + 0.5 * sin(time * 2.6 + phase)
         let flick: CGFloat = scorch > 0.15 ? 1 - scorch * 0.6 * rng.unit() : 1
-        halo.size = CGSize(width: sz * 4.4 * (0.9 + 0.15 * pulse), height: sz * 4.4 * (0.9 + 0.15 * pulse))
-        halo.alpha = (0.42 + 0.4 * pulse) * flick
-        halo.color = tint.ui
-        bug.size = CGSize(width: sz, height: sz)
+        // R3 (REVIEW-2 P2-17): a big lime body you can't mistake for a white dot; the halo is saturated lime, softer.
+        let body = sz * 1.7
+        let haloK: CGFloat = 3.2 * (0.9 + 0.15 * pulse)
+        halo.size = CGSize(width: sz * haloK, height: sz * haloK)
+        halo.alpha = (0.26 + 0.24 * pulse) * flick
+        halo.color = GardenInk(hex: 0x9CFF2E).mixed(GardenPalette.fireflyHot, scorch).ui
+        bug.size = CGSize(width: body, height: body)
         bug.zRotation = heading - CGFloat.pi / 2
-        bug.xScale = 1 + 0.1 * sin(time * 48 + phase) * motion
-        let back = CGPoint(x: -cos(heading) * sz * 0.32, y: -sin(heading) * sz * 0.32)
+        bug.colorBlendFactor = 0.8 * scorch
+        bug.color = GardenPalette.fireflyHot.ui
+        // Wings flicker: a fast flutter of size and opacity.
+        wings.size = CGSize(width: body, height: body)
+        wings.zRotation = bug.zRotation
+        let flutter = sin(time * 52 + phase)
+        wings.xScale = 1 + 0.16 * flutter * motion
+        wings.alpha = 0.55 + 0.35 * abs(flutter)
+        let back = CGPoint(x: -cos(heading) * body * 0.2, y: -sin(heading) * body * 0.2)
         core.position = back
-        core.size = CGSize(width: sz * 0.95, height: sz * 0.95)
-        core.alpha = 0.95 * flick
-        core.color = tint.lighter(0.3).ui
+        core.size = CGSize(width: body * 0.62, height: body * 0.62)
+        core.alpha = 0.7 * flick * (0.7 + 0.3 * pulse)
+        core.color = tint.ui
+
+        // The 6-dot trail: points along its path, oldest the smallest and faintest.
+        historyClock += dt
+        let keep = GardenFirefly.trailCount + 1
+        if history.isEmpty {
+            for _ in 0..<keep { history.append(root.position) }
+        } else if historyClock >= 0.045 {
+            historyClock = 0
+            history.insert(root.position, at: 0)
+            if history.count > keep { history.removeLast(history.count - keep) }
+        }
+        for (i, d) in dots.enumerated() {
+            guard i + 1 < history.count else {
+                d.isHidden = true
+                continue
+            }
+            let h = history[i + 1]
+            let k = 1 - CGFloat(i) / CGFloat(GardenFirefly.trailCount)
+            let ds = sz * (0.25 + 0.4 * k)
+            d.isHidden = false
+            d.position = CGPoint(x: h.x - root.position.x, y: h.y - root.position.y)
+            d.size = CGSize(width: ds, height: ds)
+            d.alpha = 0.15 + 0.55 * k
+            d.color = tint.ui
+        }
     }
 
     /// The point just behind the tail (trail motes).

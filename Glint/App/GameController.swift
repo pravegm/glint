@@ -90,6 +90,8 @@ final class GameController: ObservableObject, GardenDriver {
     @Published var coverDismissed = false
     @Published private(set) var playMode: PlayMode = .level(1)
     @Published private(set) var toast: String?
+    /// R3: the level's 3rd-star target on the start card ("★★★ 1,400"); nil for endless / daily.
+    @Published private(set) var startStarLine: String?
     @Published private(set) var reduceMotion = false
 
     let hud: HUDModel
@@ -119,6 +121,11 @@ final class GameController: ObservableObject, GardenDriver {
     private var finishAt: TimeInterval?
     private var sunriseStars: Int?
     private var hintShownAt: TimeInterval = 0
+    /// R3 (REVIEW-2 fix 7): a raised hint waits here until its subject is on the field.
+    private var pendingHint: HintID?
+    private var pendingHintAt: TimeInterval = 0
+    /// R3 (REVIEW-2 fix 12): the filtered hinge's jitter while it drives the light (About trace).
+    private var jitter = JitterMeter()
     private var hintForced = false
     private var lastHUDPublish: TimeInterval = -1
     private var bannerUntil: TimeInterval = 0
@@ -230,7 +237,9 @@ final class GameController: ObservableObject, GardenDriver {
         let duo = AppRules.isDuo(window: canvas, hingeSeen: hingeSeen, demoFold: demoFold)
         if duo != isDuo { isDuo = duo }
         // Swap halves is a Duo setting (hidden on phones, where it would also put the lever under the pause button).
-        let fresh = GardenLayout.make(size: canvas, isDuo: duo, swapHalves: duo && settings.swapHalves)
+        // R3 (REVIEW-2 fix 12): only in book pose on a Duo (in laptop pose it would lay the mirror on the table).
+        let swap = AppRules.swapAllowed(isDuo: duo, size: canvas) && settings.swapHalves
+        let fresh = GardenLayout.make(size: canvas, isDuo: duo, swapHalves: swap)
         let changed = fresh != layout || scene == nil
         if fresh != layout { layout = fresh }
         drag.layout = fresh
@@ -450,6 +459,8 @@ final class GameController: ObservableObject, GardenDriver {
         setPause(PauseFlags())
         hint = nil
         hintForced = false
+        pendingHint = nil
+        startStarLine = mode.isLevel ? AppRules.starTargetLine(Self.starScore(for: mode)) : nil
         hud.update(HUDState())
         hud.setBanner(nil)
         store.noteStarted(mode)
@@ -520,6 +531,7 @@ final class GameController: ObservableObject, GardenDriver {
             logPrompt()
         }
         hint = nil
+        pendingHint = nil
         finishAt = nil
         demoFrozen = false
         freezeAt = nil
@@ -700,9 +712,10 @@ final class GameController: ObservableObject, GardenDriver {
             snap.creaseGlow = 1
         }
         publishHUD(snap, now: now, force: false)
-        tickHint(now: now)
+        tickHint(now: now, snapshot: snap)
         refreshPrompt()
         logBand(input: input, drawn: snap.band, phase: snap.phase, now: now)
+        if stepDT > 0, hingeDriven, let a = hinge.angle { jitter.add(angle: a, dt: stepDT) }
         if let at = finishAt, now >= at, !demoFrozen, route == .play {
             finishAt = nil
             showResults()
@@ -791,6 +804,7 @@ final class GameController: ObservableObject, GardenDriver {
     private static func describe(_ e: GameEvent) -> String? {
         switch e {
         case .started: return "started"
+        case let .surfaced(_, kind, _, d): return "surfaced kind=\(kind.rawValue) d=\(AppTrace.fixed(d, 2))"
         case let .popped(_, kind, _, _, chain, points): return "popped kind=\(kind.rawValue) chain=\(chain) points=\(points)"
         case let .swept(count, bonus): return "swept count=\(count) bonus=\(bonus)"
         case let .flowerEaten(lane, left, kind): return "flowerEaten lane=\(lane) left=\(left) by=\(kind.rawValue)"
@@ -847,11 +861,13 @@ final class GameController: ObservableObject, GardenDriver {
         #endif
     }
 
+    /// R3 (REVIEW-2 fix 7): a hint waits for its subject (up to `HintQueue.waitLimit`), and is marked seen only
+    /// once it has actually been shown.
     private func offerHint(_ id: HintID, now: TimeInterval) {
         guard !hintForced else { return }
         guard HintRules.shouldShow(id, seen: store.data.seenHints) else { return }
-        store.markSeen(id)
-        showHint(id, now: now, forced: false)
+        pendingHint = id
+        pendingHintAt = now
     }
 
     private func showHint(_ id: HintID, now: TimeInterval, forced: Bool) {
@@ -861,7 +877,20 @@ final class GameController: ObservableObject, GardenDriver {
         AppTrace.note("hint \(id.rawValue)")
     }
 
-    private func tickHint(now: TimeInterval) {
+    private func tickHint(now: TimeInterval, snapshot: DawnSnapshot) {
+        if let p = pendingHint, hint == nil || !hintForced {
+            let visible = AppRules.hintSubject(p, snapshot: snapshot) != nil
+            switch HintQueue.decide(subjectVisible: visible, raisedAt: pendingHintAt, now: now) {
+            case .show:
+                pendingHint = nil
+                store.markSeen(p)
+                showHint(p, now: now, forced: false)
+            case .drop:
+                pendingHint = nil
+            case .wait:
+                break
+            }
+        }
         guard let h = hint, !hintForced else { return }
         if now - hintShownAt >= HintRules.lifetime(h) || now < hintShownAt { hint = nil }
     }
@@ -877,6 +906,8 @@ final class GameController: ObservableObject, GardenDriver {
         s.flowersLeft = snap.flowersLeft
         s.sun = snap.sun
         s.phase = snap.phase
+        // R3: the wave comes from the session itself (a fast-forward skips the .waveUp events).
+        if let session, case .endless = playMode { s.wave = session.wave }
         hud.update(s)
         if let h = hint, let subject = AppRules.hintSubject(h, snapshot: snap) {
             hud.setHintTarget(layout.point(u: subject.u, d: max(subject.d, 0)))
@@ -893,7 +924,8 @@ final class GameController: ObservableObject, GardenDriver {
         let won = snap.phase == .won
         var stars = 0
         if won && playMode.isLevel {
-            stars = sunriseStars ?? DawnSession.stars(flowersLeft: snap.flowersLeft)
+            stars = sunriseStars ?? DawnSession.stars(flowersLeft: snap.flowersLeft, score: snap.score,
+                                                       starScore: Self.starScore(for: playMode) ?? 0)
         }
         let outcome = store.record(mode: playMode, won: won, stars: stars, score: snap.score, now: Date())
         let fresh = recordAchievements(stats: s.stats, phase: snap.phase)
@@ -920,6 +952,13 @@ final class GameController: ObservableObject, GardenDriver {
 
     /// R2: Core's `Achievements.earned` for this finished session and the saved progress; files the new ones and
     /// reports them (Game Center shows their banners now: the Results card is up). Never in demo runs' Game Center.
+    /// R3: a level's 3rd-star score target (Core's `LevelSpec.starScore`); nil for endless / daily or no target.
+    static func starScore(for mode: PlayMode) -> Int? {
+        guard case let .level(n) = mode else { return nil }
+        let target = LevelBook.level(n).starScore
+        return target > 0 ? target : nil
+    }
+
     private func recordAchievements(stats: DawnStats, phase: SessionPhase) -> [String] {
         let d = store.data
         var won = Set<Int>()
@@ -1001,6 +1040,7 @@ final class GameController: ObservableObject, GardenDriver {
         lines.append("device \(Self.machineName()) iOS \(UIDevice.current.systemVersion)")
         lines.append("canvas \(Int(canvas.width))x\(Int(canvas.height)) duo=\(isDuo ? 1 : 0) foldVertical="
                      + "\(layout.foldVertical ? 1 : 0) gardenAfter=\(layout.gardenAfter ? 1 : 0)")
+        lines.append("jitterDeg p95 \(jitter.p95.map { AppTrace.fixed($0, 2) } ?? "-") samples \(jitter.samples.count)")
         lines.append("hinge seen=\(hingeSeen ? 1 : 0) live=\(hinge.hasHinge ? 1 : 0) angle="
                      + "\(hinge.angle.map { AppTrace.fixed($0, 1) } ?? "-") shut=\(hinge.isShut ? 1 : 0) "
                      + "canResume=\(hinge.canResume ? 1 : 0)")
@@ -1168,8 +1208,17 @@ final class GameController: ObservableObject, GardenDriver {
         let s = DawnSession(mode: mode, seed: AppRules.seed(for: mode, rolling: rolling))
         session = s
         stage = .live
-        let pilot: PilotSource? = demo.outcome == .lost ? nil
-            : PilotSource(skill: demo.skill ?? 1.0, seed: demo.seed ?? DemoMode.defaultSeed)
+        // R3: a lost fixture with `ignore=<kind>` is a real game whose pilot never aims at that kind (real numbers,
+        // a known cause); without it, the light stays in the crease.
+        let pilot: PilotSource?
+        if demo.outcome == .lost && demo.ignoreKind == nil {
+            pilot = nil
+        } else {
+            let p = PilotSource(skill: demo.skill ?? (demo.outcome == .lost ? 0.85 : 1.0),
+                                seed: demo.seed ?? DemoMode.defaultSeed)
+            p.ignoring = demo.ignoreKind
+            pilot = p
+        }
         let fixed = FixedBandSource(band: Tuning.bandMin, first: 0)
         let cap: Double
         switch mode {

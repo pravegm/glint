@@ -39,14 +39,9 @@ struct ResultsView: View {
 
     private func card(compact: Bool) -> some View {
         VStack(spacing: compact ? 10 : 14) {
-            Group {
-                if summary.won {
-                    MenuSunriseArt()
-                } else {
-                    LongNightArt()
-                }
-            }
-            .frame(width: compact ? 180 : 220, height: compact ? 96 : 118)
+            // R3 (REVIEW-2 fix 14): the player's own garden at the end (its real flowers), not clip art.
+            ResultGardenArt(flowers: summary.flowers, won: summary.won, night: summary.mode == .endless)
+                .frame(width: compact ? 220 : 260, height: compact ? 104 : 124)
 
             Text(headline)
                 .font(GlintType.wordmark(compact ? 38 : 48))
@@ -199,9 +194,9 @@ struct ResultsView: View {
                 }
                 HStack(spacing: 12) {
                     Button("Levels") { controller.openLevels() }
-                        .buttonStyle(GlintButtonStyle(kind: .quiet, height: 48, compact: compact))
+                        .buttonStyle(GlintButtonStyle(kind: .secondary, height: 52, compact: compact))
                     Button("Home") { controller.goHome() }
-                        .buttonStyle(GlintButtonStyle(kind: .quiet, height: 48, compact: compact))
+                        .buttonStyle(GlintButtonStyle(kind: .secondary, height: 52, compact: compact))
                 }
             } else {
                 Button {
@@ -212,9 +207,9 @@ struct ResultsView: View {
                 .buttonStyle(GlintButtonStyle(kind: .primary, compact: compact))
                 HStack(spacing: 12) {
                     Button("Leaderboards") { controller.openGameCenter() }
-                        .buttonStyle(GlintButtonStyle(kind: .quiet, height: 48, compact: compact))
+                        .buttonStyle(GlintButtonStyle(kind: .secondary, height: 52, compact: compact))
                     Button("Home") { controller.goHome() }
-                        .buttonStyle(GlintButtonStyle(kind: .quiet, height: 48, compact: compact))
+                        .buttonStyle(GlintButtonStyle(kind: .secondary, height: 52, compact: compact))
                 }
             }
         }
@@ -226,6 +221,12 @@ struct ResultsView: View {
         let score = summary.score
         let reduce = controller.reduceMotion
         let unlocked = !summary.outcome.unlocked.isEmpty || !summary.newAchievements.isEmpty
+        if controller.demo != nil {
+            shownScore = score
+            shownStars = stars
+            showRest = true
+            return
+        }
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 350_000_000)
             let steps = 24
@@ -245,5 +246,56 @@ struct ResultsView: View {
             withAnimation(GlintTheme.settle(reduce)) { showRest = true }
             if unlocked { FeedbackDirector.shared.ui(.unlock) }
         }
+    }
+}
+
+/// The Results hero (R3): a small picture of the player's own garden as it ended. Sunrise (or the night, or Long
+/// Night's moon) over the grass, and the five flowers as they were: standing ones in bloom, eaten ones a bare stalk.
+struct ResultGardenArt: View {
+    let flowers: [Bool]
+    let won: Bool
+    let night: Bool
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            let h = geo.size.height
+            let lanes = max(flowers.count, 5)
+            ZStack {
+                LinearGradient(colors: won && !night ? [GlintTheme.plum, GlintTheme.rose, GlintTheme.peach, GlintTheme.goldLight]
+                                                     : [GlintTheme.night, GlintTheme.indigo, GlintTheme.dusk],
+                               startPoint: .top, endPoint: .bottom)
+                if night || !won {
+                    MenuMoonArt()
+                        .frame(width: h * 0.5, height: h * 0.5)
+                        .position(x: w * 0.78, y: h * 0.28)
+                } else {
+                    MenuSunArt(rays: 12)
+                        .frame(width: h * 0.85, height: h * 0.85)
+                        .position(x: w * 0.5, y: h * 0.5)
+                }
+                Rectangle()
+                    .fill(LinearGradient(colors: [GlintTheme.grass, GlintTheme.teal], startPoint: .top, endPoint: .bottom))
+                    .frame(width: w, height: h * 0.38)
+                    .position(x: w * 0.5, y: h * 0.81)
+                ForEach(0..<lanes, id: \.self) { i in
+                    let x = w * (CGFloat(i) + 0.5) / CGFloat(lanes)
+                    let standing = i < flowers.count ? flowers[i] : true
+                    Capsule()
+                        .fill(GlintTheme.leaf.opacity(standing ? 1 : 0.5))
+                        .frame(width: max(w * 0.012, 2), height: h * 0.2)
+                        .position(x: x, y: h * 0.8)
+                    if standing {
+                        MenuFlowerArt(petal: GlintTheme.petals[i % GlintTheme.petals.count])
+                            .frame(width: h * 0.24, height: h * 0.24)
+                            .position(x: x, y: h * 0.68)
+                    }
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: min(w, h) * 0.18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: min(w, h) * 0.18, style: .continuous)
+                .strokeBorder(GlintTheme.brassFace, lineWidth: 3))
+        }
+        .accessibilityHidden(true)
     }
 }

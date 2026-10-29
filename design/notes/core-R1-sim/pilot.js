@@ -16,8 +16,10 @@ module.exports = function (T, SPEC, RNG, cloudFactor) {
     speedOf(g) { if (g.tension >= 1 && g.kind === 'wisp') return T.splitFlingSpeed; return SPEC[g.kind].speed; }
     urgency(g, glooms, shades) {
       const sp = Math.max(this.speedOf(g), 0.02);
-      const arrive = (1 - g.d - (g.kind === 'splitter' ? 0.25 : 0)) / sp;
-      const trip = Math.abs(this.band - Math.max(g.d, T.creaseShade)) / this.cap;
+      const dEff = g.sub ? g.sd : g.d;
+      const under = g.sub ? Math.max(g.sd - g.d, 0) / (sp * T.submergedSpeed) : 0;
+      const arrive = (1 - dEff - (g.kind === 'splitter' ? 0.25 : 0)) / sp + under;
+      const trip = Math.abs(this.band - Math.max(dEff, T.creaseShade)) / this.cap;
       const raw = arrive - g.hp - trip;
       let slack = raw;
       let near = 0; for (const o of glooms) if (o.id !== g.id && Math.abs(o.d - g.d) < 0.06) near++;
@@ -52,7 +54,7 @@ module.exports = function (T, SPEC, RNG, cloudFactor) {
         }
         const newId = best !== null ? best.id : -1;
         if (best !== null && newId !== this.target) {
-          const jump = Math.max(best.d, T.creaseShade) - this.hand;
+          const jump = Math.max(best.sub ? best.sd : best.d, T.creaseShade) - this.hand;
           const roll = this.rng.unit();
           if (Math.abs(jump) > 0.15 && roll < this.overshootChance) {
             this.over = (jump > 0 ? 1 : -1) * (0.04 + 0.08 * this.rng.unit()) * (1 - s);
@@ -62,7 +64,8 @@ module.exports = function (T, SPEC, RNG, cloudFactor) {
       }
       let aim = T.creaseShade + 0.08, careless = false;
       if (tg !== null) {
-        if (tg.kind === 'hopper') aim = tg.tension < 0.02 ? tg.d + 0.06 : tg.d + 0.02 + 0.03 * s;
+        if (tg.sub) aim = tg.sd + this.speedOf(tg) * (this.reaction + 0.05) * s;
+        else if (tg.kind === 'hopper') aim = tg.tension < 0.02 ? tg.d + 0.06 : tg.d + 0.02 + 0.03 * s;
         else aim = tg.d + this.speedOf(tg) * (this.reaction + 0.05) * s;
         aim = Math.max(aim, T.creaseShade + 0.05);
         careless = tg.d > 0.6;

@@ -29,10 +29,11 @@ enum Tuning {
 
     /// The band value when it is fully hidden in the crease (θ ≤ 67°).
     static let bandMin: Double = -0.2
-    /// Full intensity within ± this of the band centre (floor d units).
-    static let bandCoreHalfWidth: Double = 0.050
-    /// Intensity falls (smoothstep) to 0 at ± this.
-    static let bandEdgeHalfWidth: Double = 0.085
+    /// Full intensity within ± this of the band centre (floor d units). R3 (REVIEW-2 #12): 0.065 (was 0.050) until
+    /// the filtered hinge jitter is measured on a device.
+    static let bandCoreHalfWidth: Double = 0.065
+    /// Intensity falls (smoothstep) to 0 at ± this. R3: 0.10 (was 0.085).
+    static let bandEdgeHalfWidth: Double = 0.10
     /// HP burned per second at full intensity.
     static let burnRate: Double = 1.0
     /// Light is measured at the gloom's centre, moved toward the band by this share of its radius.
@@ -40,6 +41,12 @@ enum Tuning {
     /// R2: the mirror shades the strip next to the crease. Light does nothing for d < this (glooms there are safe,
     /// drawn submerged). The band can still sit there; it's just dim.
     static let creaseShade: Double = 0.12
+    /// R3 (REVIEW-2 #1): a submerged gloom travels under the ground at this × its speed until it surfaces.
+    static let submergedSpeedFactor: Double = 1.6
+    /// R3: the authored surfacing depths: L1–3 surface within 0.15…0.35, later levels within 0.15…0.60.
+    static let surfaceMin: Double = 0.15
+    static let surfaceMaxGentle: Double = 0.35
+    static let surfaceMax: Double = 0.60
     /// R2: a cloud shadow's soft edge (u units, centred on its half-width).
     static let cloudEdge: Double = 0.03
 

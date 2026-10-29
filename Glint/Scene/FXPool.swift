@@ -402,7 +402,8 @@ final class GardenFX {
     init() {
         glow = GardenFXPool(capacity: 84, texture: GardenArt.sparkle, blend: .add)
         soft = GardenFXPool(capacity: 64, texture: GardenArt.soft, blend: .alpha)
-        rings = GardenRingPool(capacity: 10)
+        // R3: more rings (submerged glooms trail a soft ripple each).
+        rings = GardenRingPool(capacity: 24)
         soft.root.zPosition = 0
         glow.root.zPosition = 1
         rings.root.zPosition = 2
@@ -557,9 +558,25 @@ final class GardenFX {
         }
     }
 
-    /// R2: a gloom surfacing out of the crease shade: two flat cool rings on the seam and a few ink drops.
+    /// R3: clods of soil thrown up as a gloom surfaces (they arc up and drop).
+    func soil(at p: CGPoint, radius r: CGFloat, color: GardenInk) {
+        for _ in 0..<soft.scaled(7) {
+            let a = rng.range(0.25, CGFloat.pi - 0.25)
+            var q = GardenParticle()
+            q.position = CGPoint(x: p.x + rng.range(-0.5, 0.5) * r, y: p.y)
+            q.velocity = CGVector(dx: cos(a) * rng.range(40, 90), dy: sin(a) * rng.range(70, 140))
+            q.life = rng.range(0.35, 0.6)
+            q.drag = 1.2
+            q.gravity = 420
+            q.spin = rng.range(-6, 6)
+            q.alphaScale = 0.95
+            soft.spawn(q, size: rng.range(3.5, 7), color: color.ui, texture: GardenArt.inkDrop, rotation: a)
+        }
+    }
+
+    /// R2/R3: a gloom surfacing: two flat pale rings and a few ink drops (warm: cool blue is cloud shade only).
     func ripple(at p: CGPoint, radius r: CGFloat) {
-        let cool = GardenInk(hex: 0x9CCBFF).ui
+        let cool = GardenInk(hex: 0xE8DCC0).ui
         rings.spawn(at: p, fromRadius: r * 0.5, toRadius: r * 2.0, life: 0.5, color: cool, alpha: 0.7, squash: 0.38)
         rings.spawn(at: p, fromRadius: r * 0.3, toRadius: r * 1.3, life: 0.36, color: cool, alpha: 0.5, squash: 0.38)
         for _ in 0..<soft.scaled(3) {

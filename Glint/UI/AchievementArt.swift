@@ -56,7 +56,7 @@ struct AchievementBadge: View {
         ZStack {
             Color(appHex: 0x141A3A)
             RadialGradient(colors: [GlintTheme.gold.opacity(0.42), GlintTheme.peach.opacity(0.12), Color.clear],
-                           center: UnitPoint(x: 0.15, y: 0.12), startRadius: 0, endRadius: s * 0.85)
+                           center: .center, startRadius: s * 0.2, endRadius: s * 0.7)
             if tier == .gold {
                 MenuSunArt(rays: 20, glow: true)
                     .frame(width: s * 0.98, height: s * 0.98)
@@ -155,20 +155,35 @@ struct BadgeMotif: View {
                             .position(x: w * (0.28 + 0.22 * CGFloat(i)), y: h * (0.62 - 0.14 * CGFloat(i)))
                     }
                 case "brute":
-                    // A big grumpy gloom, squinting.
-                    MenuGloomArt(squint: 0.72)
-                        .frame(width: s * 0.92, height: s * 0.92)
+                    // R3: an angry big gloom popping: heavy frowning brows, a pop ring and sparks bursting off it.
+                    Circle()
+                        .strokeBorder(GlintTheme.goldLight.opacity(0.85), lineWidth: s * 0.035)
+                        .frame(width: s * 0.98, height: s * 0.98)
                         .position(x: w * 0.5, y: h * 0.55)
+                    ForEach(0..<8, id: \.self) { i in
+                        let a = Double(i) / 8.0 * 2.0 * Double.pi + 0.3
+                        MenuSparkle()
+                            .fill(i % 2 == 0 ? GlintTheme.goldLight : GlintTheme.cream)
+                            .frame(width: s * 0.13, height: s * 0.13)
+                            .position(x: w * 0.5 + CGFloat(cos(a)) * s * 0.42, y: h * 0.55 + CGFloat(sin(a)) * s * 0.42)
+                    }
+                    MenuGloomArt(squint: 0.35)
+                        .frame(width: s * 0.74, height: s * 0.74)
+                        .position(x: w * 0.5, y: h * 0.57)
                     Capsule()
-                        .fill(Color(appHex: 0x120822))
-                        .frame(width: s * 0.2, height: s * 0.06)
-                        .rotationEffect(.degrees(18))
-                        .position(x: w * 0.38, y: h * 0.4)
+                        .fill(Color(appHex: 0x0E0619))
+                        .frame(width: s * 0.2, height: s * 0.07)
+                        .rotationEffect(.degrees(24))
+                        .position(x: w * 0.41, y: h * 0.45)
                     Capsule()
-                        .fill(Color(appHex: 0x120822))
-                        .frame(width: s * 0.2, height: s * 0.06)
-                        .rotationEffect(.degrees(-18))
-                        .position(x: w * 0.62, y: h * 0.4)
+                        .fill(Color(appHex: 0x0E0619))
+                        .frame(width: s * 0.2, height: s * 0.07)
+                        .rotationEffect(.degrees(-24))
+                        .position(x: w * 0.59, y: h * 0.45)
+                    Capsule()
+                        .fill(Color(appHex: 0x0E0619))
+                        .frame(width: s * 0.18, height: s * 0.045)
+                        .position(x: w * 0.5, y: h * 0.72)
                 case "firefly":
                     // A firefly over a sprouting flower.
                     Capsule()
@@ -196,18 +211,18 @@ struct BadgeMotif: View {
                         .frame(width: s * 0.2, height: s * 0.2)
                         .position(x: w * 0.78, y: h * 0.26)
                 case "rooftops":
-                    // Rooftops with a band of light.
-                    Rectangle()
-                        .fill(LinearGradient(colors: [Color.clear, GlintTheme.goldLight.opacity(0.85), Color.clear],
-                                             startPoint: .top, endPoint: .bottom))
-                        .frame(width: w * 1.4, height: h * 0.22)
-                        .rotationEffect(.degrees(-12))
-                        .position(x: w * 0.5, y: h * 0.42)
+                    // R3: a clear roof line with the sun rising behind it.
+                    MenuSunArt(rays: 12)
+                        .frame(width: s * 0.72, height: s * 0.72)
+                        .position(x: w * 0.56, y: h * 0.5)
                     RoofsShape()
-                        .fill(LinearGradient(colors: [GlintTheme.rose, GlintTheme.plum], startPoint: .top,
-                                             endPoint: .bottom))
+                        .fill(Color(appHex: 0x2A1838))
                         .frame(width: w, height: h * 0.55)
-                        .position(x: w * 0.5, y: h * 0.78)
+                        .position(x: w * 0.5, y: h * 0.8)
+                    RoofsShape()
+                        .stroke(GlintTheme.goldLight, lineWidth: s * 0.025)
+                        .frame(width: w, height: h * 0.55)
+                        .position(x: w * 0.5, y: h * 0.8)
                 case "harbour":
                     // A harbour light over water.
                     LighthouseBeam()

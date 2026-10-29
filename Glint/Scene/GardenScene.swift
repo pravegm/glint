@@ -132,6 +132,15 @@ final class GardenScene: SKScene {
     /// R2: the crease shade (light does nothing for d < `Tuning.creaseShade`) and its cool rim.
     private let shadeStrip = SKSpriteNode()
     private let shadeRim = SKSpriteNode()
+    /// R3: the light that falls in the shade, drawn at 15 % and cool (it does nothing there).
+    private let shadeLight = SKSpriteNode(color: .white, size: CGSize(width: 4, height: 4))
+    private(set) var shadeLightAlpha: CGFloat = 0
+    /// R3: the phone rail's ends (scene points): d = 0 to the top of the flower row.
+    private(set) var railEnds: (CGPoint, CGPoint) = (.zero, .zero)
+    /// R3: the rail's d range (the grip rides the band, clamped to it).
+    private(set) var railRange: ClosedRange<Double> = 0...1
+    /// R3: the light layers' strengths this frame.
+    private(set) var lightAlphas = LightAlphas.of(.meadow, dawn: 0, swell: 0)
     /// R2: cloud shades' cool tint over the light's path.
     private var shadeTints: [SKSpriteNode] = []
     /// R2: the phone's 1:1 lever: a rail from d = bandMin to 1 and a grip pill on the band's edge.
@@ -260,6 +269,10 @@ final class GardenScene: SKScene {
     func gloomSubmerged(id: Int) -> Bool { glooms[id]?.isSubmerged ?? false }
     func gloomRadius(id: Int) -> CGFloat? { glooms[id]?.radiusPts }
     func gloomLook(id: Int) -> CGVector? { glooms[id]?.lookDir }
+    /// R3: gloom `id` is popping up out of the ground (`.surfaced`).
+    func gloomPoppingUp(id: Int) -> Bool { glooms[id]?.isPoppingUp ?? false }
+    /// R3: the dots in firefly `id`'s trail drawn now.
+    func fireflyTrailDots(id: Int) -> Int { fireflies[id]?.trailDotsShowing ?? 0 }
 
     /// R2: the rects the App's HUD must never cover (SwiftUI space): the flowers.
     /// Static and nonisolated, so App tests can call `GardenScene.hudSafeRects(layout:)` without a scene.
@@ -359,16 +372,23 @@ final class GardenScene: SKScene {
         }
         shadeStrip.texture = GardenArt.creaseShade
         shadeStrip.colorBlendFactor = 1
-        shadeStrip.color = GardenInk(hex: 0x03050F).ui
+        shadeStrip.color = GardenInk(hex: 0x02040C).ui
         shadeStrip.anchorPoint = CGPoint(x: 0, y: 0.5)
-        shadeStrip.alpha = 0.62
+        // R3 (REVIEW-2 P0-2): the light does nothing in the shade, so only 15 % of it may show there.
+        shadeStrip.alpha = 1 - GardenMath.shadeLightShare
         shadeStrip.zPosition = 7.5
+        shadeLight.blendMode = .add
+        shadeLight.color = GardenInk(hex: 0x8FB0E8).ui
+        shadeLight.anchorPoint = CGPoint(x: 0, y: 0.5)
+        shadeLight.alpha = 0
+        shadeLight.zPosition = 7.55
         shadeRim.texture = GardenArt.line
         shadeRim.blendMode = .add
         shadeRim.colorBlendFactor = 1
-        shadeRim.color = GardenInk(hex: 0x8FC4FF).ui
+        shadeRim.color = GardenInk(hex: 0x9CCBFF).ui
         shadeRim.zPosition = 7.6
         garden.addChild(shadeStrip)
+        garden.addChild(shadeLight)
         garden.addChild(shadeRim)
         creaseGlow.texture = GardenArt.creaseGlow
         creaseGlow.blendMode = .add
@@ -427,11 +447,8 @@ final class GardenScene: SKScene {
         floodRays.color = GardenPalette.goldHot.ui
         floodRays.isHidden = true
 
-        // R2: the phone's lever rides the band 1:1: a brass rail from d = bandMin (inside the mirror) to the flower
-        // edge, and a gold grip pill on the band's edge. The rail's mirror part sits over the glass; its garden part
-        // under the flowers.
-        railMirror.texture = MirrorArt.leverTrack
-        railMirror.zPosition = 45
+        // R2/R3: the phone's lever rides the band 1:1: a brass rail on the garden from d = 0 to the top of the flower
+        // row (R3, REVIEW-2 P1-5: never over a flower, no stub in the mirror), and a gold grip pill on the band's edge.
         railGarden.texture = MirrorArt.leverTrack
         railGarden.zPosition = 11
         gripGlow.texture = GardenArt.glow
@@ -441,7 +458,7 @@ final class GardenScene: SKScene {
         gripGlow.zPosition = 47
         grip.texture = MirrorArt.grip
         grip.zPosition = 47.5
-        let rail: [SKSpriteNode] = [railMirror, railGarden, gripGlow, grip]
+        let rail: [SKSpriteNode] = [railGarden, gripGlow, grip]
         for n in rail {
             n.isHidden = true
             world.addChild(n)
@@ -527,17 +544,18 @@ final class GardenScene: SKScene {
         shadeStrip.position = CGPoint(x: 0, y: span / 2)
         shadeStrip.size = CGSize(width: shadeX / GardenArt.shadeEnd, height: span)
         shadeRim.position = CGPoint(x: shadeX, y: span / 2)
-        shadeRim.size = CGSize(width: max(5, depth * 0.014), height: span)
-        // R2: the lever's rail runs along d at the grip's u, from bandMin to the flower edge.
+        shadeRim.size = CGSize(width: max(6, depth * 0.016), height: span)
+        shadeLight.position = CGPoint(x: 0, y: span / 2)
+        shadeLight.size = CGSize(width: shadeX, height: span)
+        // R3: the lever's rail runs along d at the grip's u, from the crease (d 0) to just above the flower row.
         let gu = gripU
-        let a = f.scene(u: gu, d: GardenMath.bandMin)
+        let top = max(railTopD, 0.2)
+        railRange = 0...top
         let z = f.scene(u: gu, d: 0)
-        let e = f.scene(u: gu, d: 1)
+        let e = f.scene(u: gu, d: top)
+        railEnds = (z, e)
         let railAngle = atan2(-f.dUnit.dx, f.dUnit.dy)
         let railW: CGFloat = 9
-        railMirror.position = CGPoint(x: (a.x + z.x) / 2, y: (a.y + z.y) / 2)
-        railMirror.size = CGSize(width: railW, height: max(GardenFrame.distance(a, z), 1))
-        railMirror.zRotation = railAngle
         railGarden.position = CGPoint(x: (z.x + e.x) / 2, y: (z.y + e.y) / 2)
         railGarden.size = CGSize(width: railW, height: max(GardenFrame.distance(z, e), 1))
         railGarden.zRotation = railAngle
@@ -579,8 +597,9 @@ final class GardenScene: SKScene {
             for i in 0..<GardenScene.glintCount {
                 guard !puddles.isEmpty else { break }
                 let pd = puddles[i % puddles.count]
-                let ox = dr.range(-0.5, 0.5) * pd.r
-                let oy = dr.range(-0.8, 0.8) * pd.r
+                // Inside the puddle's sheen (0.42 r across d, 1.25 r along u).
+                let ox = dr.range(-0.3, 0.3) * pd.r
+                let oy = dr.range(-0.9, 0.9) * pd.r
                 dewSpots.append(DewSpot(u: pd.u + Double(oy / span), d: pd.d + Double(ox / depth),
                                         phase: dr.range(0, 6.28), size: dr.range(12, 22)))
             }
@@ -681,6 +700,33 @@ final class GardenScene: SKScene {
     /// R2: the phone grip's lane: 30 pt in from the u = 1 edge.
     private var gripU: Double { Double(1 - 30 / max(gardenFrame.span, 60)) }
 
+    /// R3: the ground's dust (a gloom surfacing) and the faint ring that follows a submerged gloom, per ground.
+    private var soilDust: GardenInk {
+        switch groundStyle {
+        case .meadow: return GardenInk(hex: 0x8A7A5A)
+        case .moonlit: return GardenInk(hex: 0x6A7290)
+        case .rooftops: return GardenInk(hex: 0xB0705A)
+        case .harbour: return GardenInk(hex: 0x9A8A72)
+        }
+    }
+
+    private var soilGlow: GardenInk {
+        groundStyle == .moonlit ? GardenInk(hex: 0xA8B8E0) : GardenInk(hex: 0xD8C8A0)
+    }
+
+    /// R3: the ground for a mode; behind the menus Long Night's moonlit meadow becomes the sunlit meadow.
+    nonisolated static func style(for mode: PlayMode, attract: Bool) -> GroundStyle {
+        let s = GroundStyle.of(mode)
+        return attract && s == .moonlit ? .meadow : s
+    }
+
+    /// R3: the rail's far end: 6 pt above the top of the flower row's rects.
+    private var railTopD: Double {
+        let depth = max(gardenFrame.depth, 1)
+        let r = Double(flowerRadius * 1.3 + 6) / Double(depth)
+        return flowerD - r
+    }
+
     /// A kind's typical radius (points), for FX when the node isn't on screen.
     private func nominalRadius(_ kind: GloomKind) -> CGFloat {
         let d: CGFloat
@@ -761,17 +807,19 @@ final class GardenScene: SKScene {
         frameIndex += 1
         animTime += dt
         let motion: CGFloat = reduceMotion ? 0.35 : 1
-        let dawn = GardenMath.dawn(s)
+        // R3 (REVIEW-2 P1-13): behind the menus (attract) the mirror always shows a warm rising sun, never the moon.
+        let attractNight = attract && s.mode == .endless
+        let dawn: CGFloat = attractNight ? 0.5 : GardenMath.dawn(s)
         let w = GardenMath.world(for: s.mode)
         if mirror.world != w { mirror.setWorld(w) }
         // R2b: the world's ground (built on first use per world, then cached).
-        let style = GroundStyle.of(s.mode)
+        let style = GardenScene.style(for: s.mode, attract: attract)
         if style != groundStyle {
             groundStyle = style
             applyGround()
             applyLightPalette()
         }
-        mirror.moonDepth = GardenMath.nightDepth(s)
+        mirror.moonDepth = attractNight ? 0 : GardenMath.nightDepth(s)
 
         framePopped.removeAll(keepingCapacity: true)
         frameScorched.removeAll(keepingCapacity: true)
@@ -836,6 +884,18 @@ final class GardenScene: SKScene {
                 let p = f.scene(u: u, d: 0.03)
                 fx.ink(at: p, radius: nominalRadius(kind), count: 3, toward: f.dUnit)
                 fx.ripple(at: p, radius: nominalRadius(kind))
+            case .surfaced(let id, let kind, let u, let d):
+                // R3: it rises out of the ground: soil and dust burst, a ripple, and a little pop up.
+                var p = f.scene(u: u, d: d)
+                var r = nominalRadius(kind)
+                if let n = glooms[id] {
+                    n.popUp()
+                    p = n.surfacePoint
+                    r = n.radiusPts
+                }
+                fx.dust(at: p, radius: r, color: soilDust)
+                fx.soil(at: p, radius: r, color: soilDust.darker(0.35))
+                fx.ripple(at: p, radius: r)
             case .popped(let id, let kind, let u, let d, let chain, _):
                 framePopped.append(id)
                 var p = f.scene(u: u, d: d)
@@ -975,7 +1035,15 @@ final class GardenScene: SKScene {
             let towardBand = s.band >= g.d
             let look = towardBand ? f.dUnit : CGVector(dx: -f.dUnit.dx, dy: -f.dUnit.dy)
             node.update(g, at: p, radius: r, dir: look, dt: dt, time: animTime, motion: motion)
-            if node.surfacedThisFrame { fx.ripple(at: node.surfacePoint, radius: r) }
+            // R3: travelling under the ground: a soft ripple follows it so the player can read where it'll come up.
+            if g.submerged && dt > 0 {
+                node.rippleClock += dt * 3.2 * max(fx.density, 0.5)
+                if node.rippleClock >= 1 {
+                    node.rippleClock -= 1
+                    fx.rings.spawn(at: node.surfacePoint, fromRadius: r * 0.5, toRadius: r * 1.7, life: 0.6,
+                                   color: soilGlow.ui, alpha: 0.32, squash: 0.42)
+                }
+            }
             if g.lit > 0.02 && dt > 0 {
                 let lit = CGFloat(g.lit)
                 node.steamClock += dt * lit * 14 * fx.density
@@ -1077,13 +1145,7 @@ final class GardenScene: SKScene {
             } else if node.scorch < 0.02 {
                 node.warned = false
             }
-            if dt > 0 {
-                node.trailClock += dt * 16 * fx.density
-                while node.trailClock >= 1 {
-                    node.trailClock -= 1
-                    fx.trailMote(at: node.tailPoint, size: size * 0.7, color: node.tint, inky: false)
-                }
-            }
+            // (R3: the firefly draws its own 6-dot trail.)
         }
         scratch.removeAll(keepingCapacity: true)
         for (id, n) in fireflies where n.seenFrame != frameIndex { scratch.append(id) }
@@ -1154,21 +1216,26 @@ final class GardenScene: SKScene {
         let visible = band > CGFloat(GardenMath.bandMin) + 0.001
         GardenLightMath.pieces(shades: s.shades, into: &lightPieces)
         bandSwell = bandSwell > 0.01 ? bandSwell * exp(-dt * 4.5) : 0
-        trailBand = GardenMath.approach(trailBand, band, rate: 3.2, dt: dt)
-        let shimmer: CGFloat = motion > 0.5 ? 0.95 + 0.05 * sin(animTime * 2.3) : 1
+        // R3: the warm trail settles in about 0.4 s.
+        trailBand = GardenMath.approach(trailBand, band, rate: 7.5, dt: dt)
+        let shimmer: CGFloat = motion > 0.5 ? 0.96 + 0.04 * sin(animTime * 2.3) : 1
+        let la = LightAlphas.of(groundStyle, dawn: dawn, swell: bandSwell)
+        lightAlphas = la
+        let shadeX = CGFloat(GardenMath.creaseShade) * depth
         if visible {
-            let edgeW = CGFloat(GardenMath.bandEdge) * depth * 2
-            lightPool.draw(x: x, width: edgeW, anchorX: 0.5, span: span, pieces: lightPieces,
-                           alpha: (0.42 + 0.18 * bandSwell) * shimmer)
-            lightCore.draw(x: x, width: edgeW, anchorX: 0.5, span: span, pieces: lightPieces,
-                           alpha: (0.32 + 0.04 * dawn + 0.3 * bandSwell) * shimmer)
+            // R3: a soft pool with a 0.03 d feather past the profile on each side (no hard edge).
+            let poolW = CGFloat(GardenArt.lightHalfWidth) * depth * 2
+            lightPool.draw(x: x, width: poolW, anchorX: 0.5, span: span, pieces: lightPieces, alpha: la.pool * shimmer)
+            lightCore.draw(x: x, width: poolW, anchorX: 0.5, span: span, pieces: lightPieces, alpha: la.core * shimmer)
             lightHalo.draw(x: x, width: depth * 0.4 * (1 + 0.15 * bandSwell), anchorX: 0.5, span: span,
-                           pieces: lightPieces, alpha: 0.15 + 0.22 * bandSwell)
-            lightBeam.draw(x: 0, width: max(x, 0), anchorX: 0, span: span, pieces: lightPieces,
-                           alpha: 0.16 + 0.1 * bandSwell)
+                           pieces: lightPieces, alpha: la.halo)
+            // R3: the 18 % cone runs from the shade's edge to the band's near edge (never stacked under the band).
+            let coneEnd = (band - CGFloat(GardenMath.bandEdge)) * depth
+            lightBeam.draw(x: shadeX, width: max(coneEnd - shadeX, 0), anchorX: 0, span: span, pieces: lightPieces,
+                           alpha: la.beam + 0.08 * bandSwell)
             let lag = abs(band - trailBand)
-            lightTrail.draw(x: trailBand * depth, width: edgeW * 1.3, anchorX: 0.5, span: span, pieces: lightPieces,
-                            alpha: GardenMath.clamp(lag / 0.12, 0, 1) * 0.32)
+            lightTrail.draw(x: trailBand * depth, width: poolW * 1.15, anchorX: 0.5, span: span, pieces: lightPieces,
+                            alpha: GardenMath.clamp(lag / 0.12, 0, 1) * la.trail)
         } else {
             lightPool.hide()
             lightCore.hide()
@@ -1192,10 +1259,17 @@ final class GardenScene: SKScene {
             t.alpha = 0.3 * k
         }
 
-        // R2: the crease shade's cool rim brightens where the light reaches it (and stops).
+        // R2/R3: the crease shade's cool rim brightens where the light reaches it (and stops), and the light that falls
+        // in the shade shows at 15 %, cool.
         let atEdge = CGFloat(GardenMath.intensity(d: GardenMath.creaseShade, band: s.band))
         let lit = max(glowIn, band >= 0 ? 1 : 0)
-        shadeRim.alpha = (0.16 + 0.5 * atEdge) * max(lit, 0.3)
+        shadeRim.alpha = (0.3 + 0.6 * atEdge) * max(lit, 0.35)
+        let shade = GardenMath.creaseShade
+        let gap: Double = s.band < 0 ? -s.band : max(s.band - shade, 0)
+        let inShade = visible ? GardenArt.poolValue(distance: gap) : 0
+        shadeLightAlpha = GardenMath.shadeLightShare * (la.pool + la.core + 0.2) * inShade
+        shadeLight.alpha = shadeLightAlpha
+        shadeLight.isHidden = shadeLightAlpha < 0.003
 
         // Dawn in the crease: light pooled at the seam while the band is still hidden.
         let hidden = GardenMath.clamp(1 - (band + 0.02) / 0.15, 0, 1)
@@ -1255,12 +1329,14 @@ final class GardenScene: SKScene {
         mirror.placeShadeClouds(centers: centers, widths: widths, strengths: strengths)
     }
 
-    /// R2 (REVIEW-1 P0-4): one control on phones. The grip sits on the band's edge at d = band exactly (the rail's ends
-    /// are bandMin and 1), and pulses until the band first moves.
+    /// R2/R3 (REVIEW-1 P0-4, REVIEW-2 P1-5): one control on phones. The grip sits on the band's edge at d = band
+    /// exactly while the band is on the rail (d 0 … the top of the flower row), parks at the rail's ends beyond it, and
+    /// pulses until the band first moves.
     private func drawLever(_ s: DawnSnapshot, motion: CGFloat) {
         let show = showsLever && !attract
         let parts: [SKSpriteNode] = [railMirror, railGarden, gripGlow, grip]
-        for n in parts { n.isHidden = !show }
+        railMirror.isHidden = true
+        for n in parts where n !== railMirror { n.isHidden = !show }
         guard show else {
             gripPulsing = false
             return
@@ -1269,7 +1345,8 @@ final class GardenScene: SKScene {
         if firstBand == nil { firstBand = b }
         let start = firstBand ?? b
         gripPulsing = abs(b - start) <= 0.02
-        let p = gardenFrame.scene(u: gripU, d: b)
+        let onRail = min(max(b, railRange.lowerBound), railRange.upperBound)
+        let p = gardenFrame.scene(u: gripU, d: onRail)
         grip.position = p
         gripGlow.position = p
         let pulse: CGFloat = gripPulsing ? 0.5 + 0.5 * sin(animTime * 5) : 0

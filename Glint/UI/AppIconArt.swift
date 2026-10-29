@@ -2,17 +2,16 @@ import CoreGraphics
 import SwiftUI
 import UIKit
 
-/// The App Store icon (R2). It matches the committed reference, Glint/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png
-/// (tools/make-icon.js):
-/// - a deep dawn-blue sky top-left, with a peach glow behind the mirror;
-/// - the dotted teal garden on the lower right, below a diagonal;
-/// - a tilted brass mirror (pale glass, one glint) throwing a gold band to the bottom-right corner;
-/// - a cheeky shadow blob in the band with half-lidded white eyes, and a few gold motes.
+/// The App Store icon (R3, REVIEW-2 fix 8). It matches the committed Glint/Assets.xcassets/AppIcon.appiconset/
+/// AppIcon-1024.png exactly, because it is the same per-pixel shader as tools/make-icon.js, ported line for line
+/// (`IconShader`):
+/// - a round, scalloped brass hand mirror catches the sun (top right) and throws a soft beam onto one squinting shadow;
+/// - one smooth indigo → dusk → teal background;
+/// - no stepped bands; readable at 60 px.
 ///
-/// The picture is painted with plain CoreGraphics (`IconPainter`, CPU only: no SpriteKit and no GPU effects, the R1
-/// "solid black" lesson). `AppIconArt` shows it, and `IconExport` renders `AppIconArt` through SwiftUI's
-/// `ImageRenderer`, checks the mean luminance and falls back to the painter's own image if the renderer comes back
-/// dark.
+/// It is painted on the CPU into a plain bitmap: no SpriteKit and no GPU effects (the R1 "solid black" lesson).
+/// `AppIconArt` shows it, and `IconExport` renders `AppIconArt` through SwiftUI's `ImageRenderer`, checks the mean
+/// luminance and falls back to the painter's own image if the renderer comes back dark.
 struct AppIconArt: View {
     var side: CGFloat = 1024
 
@@ -23,11 +22,143 @@ struct AppIconArt: View {
                     .resizable()
                     .interpolation(.high)
             } else {
-                Color(appHex: 0x141A3A)
+                Color(appHex: 0x18164A)
             }
         }
         .frame(width: side, height: side)
         .accessibilityHidden(true)
+    }
+}
+
+/// tools/make-icon.js's `shade(x, y)`, ported line for line (x, y in 0…1, y down; colours 0…255). Pure.
+enum IconShader {
+    typealias RGB = (r: Double, g: Double, b: Double)
+
+    static let sun: (Double, Double) = (0.78, 0.20)
+    static let sunR = 0.115
+    static let mirror: (Double, Double) = (0.36, 0.40)
+    static let mirrorR = 0.185
+    static let gloom: (Double, Double) = (0.66, 0.76)
+
+    @inline(__always) static func mix(_ a: Double, _ b: Double, _ t: Double) -> Double { a + (b - a) * t }
+    @inline(__always) static func clamp(_ x: Double, _ lo: Double = 0, _ hi: Double = 1) -> Double {
+        max(lo, min(hi, x))
+    }
+    @inline(__always) static func smooth(_ e0: Double, _ e1: Double, _ x: Double) -> Double {
+        let t = clamp((x - e0) / (e1 - e0))
+        return t * t * (3 - 2 * t)
+    }
+    @inline(__always) static func lerp(_ a: RGB, _ b: RGB, _ t: Double) -> RGB {
+        (mix(a.r, b.r, t), mix(a.g, b.g, t), mix(a.b, b.b, t))
+    }
+    @inline(__always) static func over(_ dst: RGB, _ src: RGB, _ a: Double) -> RGB { lerp(dst, src, clamp(a)) }
+    @inline(__always) static func add(_ c: RGB, _ r: Double, _ g: Double, _ b: Double) -> RGB {
+        (min(255, c.r + r), min(255, c.g + g), min(255, c.b + b))
+    }
+
+    static func shade(_ x: Double, _ y: Double) -> RGB {
+        // Background: deep indigo at the top, warm dusk violet, then teal garden at the bottom, all smooth.
+        var c: RGB = lerp((24, 22, 70), (92, 46, 104), smooth(0.0, 0.62, y))
+        c = lerp(c, (14, 66, 72), smooth(0.55, 1.0, y))
+        // Sun glow and disc.
+        let ds = hypot(x - sun.0, y - sun.1)
+        c = over(c, (255, 170, 96), 0.75 * exp(-ds * ds / 0.035))
+        let sunFace = lerp((255, 236, 150), (255, 150, 60), clamp((y - sun.1 + sunR) / (2 * sunR)))
+        c = over(c, sunFace, 1 - smooth(sunR - 0.004, sunR + 0.004, ds))
+        // The beam: a soft cone from the mirror towards the gloom (additive warm light, feathered edges).
+        let vx = gloom.0 - mirror.0
+        let vy = gloom.1 - mirror.1
+        let vl = hypot(vx, vy)
+        let ux = vx / vl
+        let uy = vy / vl
+        let px = x - mirror.0
+        let py = y - mirror.1
+        let along = px * ux + py * uy
+        let across = abs(-px * uy + py * ux)
+        if along > 0 {
+            let w = 0.07 + along * 0.22
+            let a = (1 - smooth(w * 0.35, w, across)) * smooth(0.02, 0.18, along)
+                * (1 - smooth(vl * 1.05, vl * 1.45, along))
+            c = add(c, 220 * a, 175 * a, 40 * a)
+        }
+        // A pool of light on the ground under the gloom.
+        let pdx = (x - gloom.0) / 1.6
+        let pdy = (y - gloom.1 - 0.10) / 0.7
+        let pd = hypot(pdx, pdy)
+        let pool = exp(-pd * pd / 0.012) * 0.6
+        c = add(c, 180 * pool, 140 * pool, 60 * pool)
+        // The mirror, in its own tilted oval space (rotated −24°, 1.28 taller than wide).
+        let ca = cos(-0.42)
+        let sa = sin(-0.42)
+        let lx = (x - mirror.0) * ca - (y - mirror.1) * sa
+        let ly = (x - mirror.0) * sa + (y - mirror.1) * ca
+        // Handle: short and stout, with a collar and a round knob.
+        let hy0 = mirrorR * 1.28 - 0.01
+        let hw = 0.034 + 0.010 * sin(clamp((ly - hy0) / 0.16) * Double.pi * 2.2)
+        let handle = (1 - smooth(hw - 0.004, hw + 0.002, abs(lx))) * smooth(hy0 - 0.01, hy0, ly)
+            * (1 - smooth(hy0 + 0.15, hy0 + 0.16, ly))
+        let knob = 1 - smooth(0.040, 0.046, hypot(lx, ly - (hy0 + 0.17)))
+        c = over(c, lerp((140, 88, 36), (240, 196, 110), clamp(0.55 - lx * 10)), max(handle, knob))
+        let dm = hypot(lx, ly / 1.28)
+        let theta = atan2(ly / 1.28, lx)
+        let scallop = mirrorR + 0.010 * cos(theta * 14)
+        let rim = 1 - smooth(scallop - 0.004, scallop + 0.003, dm)
+        let rimShade = clamp(0.5 + (lx * -0.7 + ly * -0.5) * 4)
+        c = over(c, lerp((160, 102, 40), (255, 224, 142), rimShade), rim)
+        // An inner groove line on the brass.
+        c = over(c, (120, 72, 28), (1 - smooth(0.0025, 0.006, abs(dm - (mirrorR - 0.022)))) * 0.8)
+        let gr = mirrorR - 0.032
+        let glass = 1 - smooth(gr - 0.003, gr + 0.003, dm)
+        // Reflection: sky, with the image of the sun towards the upper right of the glass.
+        var g: RGB = lerp((255, 232, 190), (150, 120, 190), clamp((ly + gr * 1.28) / (2 * gr * 1.28)))
+        let ri = hypot(lx - 0.045, ly + 0.07)
+        g = over(g, (255, 200, 100), 0.7 * exp(-ri * ri / 0.006))
+        g = over(g, (255, 240, 170), 1 - smooth(0.040, 0.050, ri))
+        g = over(g, (255, 255, 255), 0.30 * (1 - smooth(0.0, 0.018, abs(lx + ly * 0.7 + 0.05))))
+        c = over(c, g, glass)
+        // Glint: a small 4-point sparkle on the glass edge.
+        let sx = x - (mirror.0 + 0.085)
+        let sy = y - (mirror.1 - 0.095)
+        let star = exp(-(sx * sx) / 0.00003 - (sy * sy) / 0.0016) + exp(-(sy * sy) / 0.00003 - (sx * sx) / 0.0016)
+        c = over(c, (255, 255, 255), clamp(star))
+        // The gloom: wobbly inky blob, rim-lit from the beam side, squinting.
+        let cx = gloom.0
+        let cy = gloom.1
+        let an = atan2(y - cy, x - cx)
+        let r = 0.16 * (1 + 0.045 * sin(an * 5 + 0.6) + 0.03 * sin(an * 3 - 1.1))
+        let d = hypot(x - cx, (y - cy) * 1.1)
+        let body = 1 - smooth(r - 0.004, r + 0.004, d)
+        let lit = clamp(0.5 - ((x - cx) * ux + (y - cy) * uy) * 5)
+        c = over(c, lerp((34, 16, 56), (70, 34, 92), clamp(0.5 - (y - cy) * 3)), body)
+        c = over(c, (255, 196, 120), smooth(r - 0.035, r - 0.002, d) * body * lit * 0.9)
+        let eyes: [Double] = [cx - 0.055, cx + 0.052]
+        for ex in eyes {
+            let ey = cy - 0.02
+            let e = hypot((x - ex) / 0.042, (y - ey) / 0.034)
+            let lid = smooth(ey - 0.010, ey - 0.003, y)
+            let white = (1 - smooth(0.92, 1.03, e)) * lid
+            c = over(c, (252, 250, 255), white)
+            let pe = hypot((x - ex + 0.012) / 0.017, (y - ey + 0.002) / 0.017)
+            c = over(c, (22, 10, 32), (1 - smooth(0.85, 1.05, pe)) * white)
+            // Heavy brow on the squint, slanting down towards the middle.
+            let slope = ex < cx ? -0.28 : 0.28
+            let browLine = abs(y - (ey - 0.011 - (x - ex) * slope))
+            let brow = (1 - smooth(0.004, 0.009, browLine)) * (1 - smooth(0.04, 0.05, abs(x - ex)))
+            c = over(c, (18, 8, 28), brow)
+        }
+        // A small grimace.
+        let mx = x - cx
+        let my = y - (cy + 0.055)
+        let mouth = (1 - smooth(0.004, 0.009, abs(my - mx * mx * 6))) * (1 - smooth(0.03, 0.04, abs(mx)))
+        c = over(c, (250, 240, 250), mouth * 0.9)
+        // Sparks where the light hits.
+        let sparks: [(Double, Double, Double)] = [(0.52, 0.62, 0.012), (0.57, 0.56, 0.008), (0.49, 0.70, 0.007),
+                                                  (0.80, 0.62, 0.009)]
+        for spark in sparks {
+            let dd = hypot(x - spark.0, y - spark.1)
+            c = over(c, (255, 240, 170), 1 - smooth(spark.2 * 0.4, spark.2, dd))
+        }
+        return c
     }
 }
 
@@ -43,200 +174,44 @@ enum IconPainter {
         return made
     }
 
-    /// The icon at `side` × `side` px, opaque.
+    /// The icon at `side` × `side` px, opaque. Supersampled 2×2 up to 512 px (make-icon.js uses 3×3 at 1024; a
+    /// Debug build on the CI simulator can't afford that, and the committed PNG is the one that ships).
     static func image(side: CGFloat) -> CGImage? {
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        format.opaque = true
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format)
-        let ui = renderer.image { context in
-            paint(context.cgContext, side: side)
-        }
-        return ui.cgImage
+        IconPainter.render(side: Int(side.rounded()), supersample: side <= 512 ? 2 : 1)
     }
 
-    private static func rgb(_ hex: UInt32, _ alpha: CGFloat = 1) -> CGColor {
-        let r = CGFloat((hex >> 16) & 0xFF) / 255
-        let g = CGFloat((hex >> 8) & 0xFF) / 255
-        let b = CGFloat(hex & 0xFF) / 255
-        return CGColor(red: r, green: g, blue: b, alpha: alpha)
-    }
-
-    private static func gradient(_ colors: [CGColor], _ locations: [CGFloat]) -> CGGradient? {
-        CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors as CFArray, locations: locations)
-    }
-
-    /// Paints the icon in a y-down context of `side` points.
-    static func paint(_ c: CGContext, side s: CGFloat) {
-        let full = CGRect(x: 0, y: 0, width: s, height: s)
-        let p: (CGFloat, CGFloat) -> CGPoint = { fx, fy in CGPoint(x: fx * s, y: fy * s) }
-
-        // 1. Sky: deep dawn blue, darker towards the bottom left.
-        c.setFillColor(rgb(0x161A44))
-        c.fill(full)
-        if let sky = gradient([rgb(0x241D52), rgb(0x18204E), rgb(0x0F2746)], [0, 0.55, 1]) {
-            c.drawLinearGradient(sky, start: p(0.3, 0), end: p(0.1, 1), options: [])
-        }
-        // 2. The peach glow behind the mirror.
-        if let glow = gradient([rgb(0xC98A6A, 0.75), rgb(0x8A5A6A, 0.35), rgb(0x241D52, 0)], [0, 0.45, 1]) {
-            c.drawRadialGradient(glow, startCenter: p(0.27, 0.2), startRadius: 0, endCenter: p(0.27, 0.2),
-                                 endRadius: s * 0.42, options: [])
-        }
-
-        // 3. The garden: teal below the diagonal, with a fine dot texture.
-        let garden = CGMutablePath()
-        garden.move(to: p(0.86, 0))
-        garden.addLine(to: p(1, 0))
-        garden.addLine(to: p(1, 1))
-        garden.addLine(to: p(0, 1))
-        garden.addLine(to: p(0, 0.97))
-        garden.closeSubpath()
-        c.saveGState()
-        c.addPath(garden)
-        c.clip()
-        if let grass = gradient([rgb(0x0E3F40), rgb(0x0B3436)], [0, 1]) {
-            c.drawLinearGradient(grass, start: p(1, 0), end: p(0, 1), options: [])
-        }
-        c.setFillColor(rgb(0xBFE6DA, 0.16))
-        let step = s / 40
-        let dot = s * 0.0036
-        var y = step / 2
-        var row = 0
-        while y < s {
-            var x = step / 2 + (row % 2 == 0 ? 0 : step / 2)
-            while x < s {
-                c.fillEllipse(in: CGRect(x: x - dot / 2, y: y - dot / 2, width: dot, height: dot))
-                x += step
-            }
-            y += step
-            row += 1
-        }
-        c.restoreGState()
-
-        // 4. The band: from the mirror's lower end to the far corner, soft edges then a bright core.
-        let a = p(0.43, 0.42)
-        let b = p(1.12, 1.1)
-        let nx: CGFloat = 0.7071
-        let ny: CGFloat = -0.7071
-        let widths: [CGFloat] = [0.115, 0.092, 0.078, 0.04]
-        let colours: [CGColor] = [rgb(0xE8B94C, 0.22), rgb(0xE8BC52, 0.55), rgb(0xEABF55, 0.95), rgb(0xF5DC8E, 0.85)]
-        for i in 0..<widths.count {
-            let w = widths[i] * s
-            let band = CGMutablePath()
-            band.move(to: CGPoint(x: a.x + nx * w, y: a.y + ny * w))
-            band.addLine(to: CGPoint(x: b.x + nx * w, y: b.y + ny * w))
-            band.addLine(to: CGPoint(x: b.x - nx * w, y: b.y - ny * w))
-            band.addLine(to: CGPoint(x: a.x - nx * w, y: a.y - ny * w))
-            band.closeSubpath()
-            c.setFillColor(colours[i])
-            c.addPath(band)
-            c.fillPath()
-        }
-        // Gold motes in the beam.
-        c.setFillColor(rgb(0xFFE7A0, 0.95))
-        let motes: [CGPoint] = [p(0.58, 0.53), p(0.53, 0.58), p(0.5, 0.66)]
-        let moteSizes: [CGFloat] = [0.016, 0.014, 0.01]
-        for i in 0..<motes.count {
-            let d = moteSizes[i] * s
-            c.fillEllipse(in: CGRect(x: motes[i].x - d / 2, y: motes[i].y - d / 2, width: d, height: d))
-        }
-
-        // 5. The mirror: a brass frame tilted 40°, pale glass, one glint.
-        c.saveGState()
-        c.translateBy(x: 0.305 * s, y: 0.305 * s)
-        c.rotate(by: 40 * CGFloat.pi / 180)
-        let length = 0.5 * s
-        let thick = 0.15 * s
-        let rim = CGRect(x: -length / 2, y: -thick / 2, width: length, height: thick)
-        let rimPath = CGPath(roundedRect: rim, cornerWidth: 0.045 * s, cornerHeight: 0.045 * s, transform: nil)
-        c.setShadow(offset: CGSize.zero, blur: 0.04 * s, color: rgb(0xF2C066, 0.6))
-        c.addPath(rimPath)
-        c.setFillColor(rgb(0xE0A646))
-        c.fillPath()
-        c.setShadow(offset: CGSize.zero, blur: 0, color: nil)
-        c.saveGState()
-        c.addPath(rimPath)
-        c.clip()
-        if let brass = gradient([rgb(0xF4CF7A), rgb(0xDDA040), rgb(0xB47A2A)], [0, 0.5, 1]) {
-            c.drawLinearGradient(brass, start: CGPoint(x: 0, y: -thick / 2), end: CGPoint(x: 0, y: thick / 2),
-                                 options: [])
-        }
-        c.restoreGState()
-        let glass = rim.insetBy(dx: 0.024 * s, dy: 0.024 * s)
-        let glassPath = CGPath(roundedRect: glass, cornerWidth: 0.026 * s, cornerHeight: 0.026 * s, transform: nil)
-        c.saveGState()
-        c.addPath(glassPath)
-        c.clip()
-        if let sky = gradient([rgb(0xF4EDCF), rgb(0xCFE3E4), rgb(0x9CCDEB)], [0, 0.5, 1]) {
-            c.drawLinearGradient(sky, start: CGPoint(x: glass.minX, y: 0), end: CGPoint(x: glass.maxX, y: 0),
-                                 options: [])
-        }
-        c.restoreGState()
-        // The glint: a small four-point star near the upper end.
-        let gx = -length * 0.3
-        let gy: CGFloat = -thick * 0.08
-        let r = 0.05 * s
-        let k = r * 0.16
-        let star = CGMutablePath()
-        star.move(to: CGPoint(x: gx, y: gy - r))
-        star.addQuadCurve(to: CGPoint(x: gx + r, y: gy), control: CGPoint(x: gx + k, y: gy - k))
-        star.addQuadCurve(to: CGPoint(x: gx, y: gy + r), control: CGPoint(x: gx + k, y: gy + k))
-        star.addQuadCurve(to: CGPoint(x: gx - r, y: gy), control: CGPoint(x: gx - k, y: gy + k))
-        star.addQuadCurve(to: CGPoint(x: gx, y: gy - r), control: CGPoint(x: gx - k, y: gy - k))
-        star.closeSubpath()
-        c.setFillColor(rgb(0xFFFFFF, 0.95))
-        c.addPath(star)
-        c.fillPath()
-        c.restoreGState()
-
-        // 6. The shadow: a wobbly inky blob with a warm rim where the light hits, half-lidded eyes.
-        let centre = p(0.7, 0.745)
-        let radius = 0.15 * s
-        let blob = CGMutablePath()
-        let count = 72
-        for i in 0...count {
-            let t = CGFloat(i) / CGFloat(count) * 2 * CGFloat.pi
-            let wobble: CGFloat = 1 + 0.07 * sin(3 * t + 0.6) + 0.04 * cos(5 * t)
-            let q = CGPoint(x: centre.x + cos(t) * radius * wobble, y: centre.y + sin(t) * radius * wobble * 0.96)
-            if i == 0 {
-                blob.move(to: q)
-            } else {
-                blob.addLine(to: q)
+    /// The shader into an RGBX bitmap (row 0 = the top). Pure given its inputs.
+    nonisolated static func render(side n: Int, supersample ss: Int) -> CGImage? {
+        guard n > 0, ss > 0 else { return nil }
+        var bytes = [UInt8](repeating: 255, count: n * n * 4)
+        let inv = 1.0 / Double(n)
+        let k = 1.0 / Double(ss * ss)
+        for j in 0..<n {
+            for i in 0..<n {
+                var r = 0.0
+                var g = 0.0
+                var b = 0.0
+                for sj in 0..<ss {
+                    for si in 0..<ss {
+                        let x = (Double(i) + (Double(si) + 0.5) / Double(ss)) * inv
+                        let y = (Double(j) + (Double(sj) + 0.5) / Double(ss)) * inv
+                        let c = IconShader.shade(x, y)
+                        r += c.r
+                        g += c.g
+                        b += c.b
+                    }
+                }
+                let o = (j * n + i) * 4
+                bytes[o] = UInt8(IconShader.clamp((r * k).rounded(), 0, 255))
+                bytes[o + 1] = UInt8(IconShader.clamp((g * k).rounded(), 0, 255))
+                bytes[o + 2] = UInt8(IconShader.clamp((b * k).rounded(), 0, 255))
             }
         }
-        blob.closeSubpath()
-        c.setShadow(offset: CGSize.zero, blur: 0.035 * s, color: rgb(0xE59A62, 0.85))
-        c.setFillColor(rgb(0x2A1240))
-        c.addPath(blob)
-        c.fillPath()
-        c.setShadow(offset: CGSize.zero, blur: 0, color: nil)
-        c.saveGState()
-        c.addPath(blob)
-        c.clip()
-        if let inner = gradient([rgb(0x3A1C55, 0.9), rgb(0x23103A, 0)], [0, 1]) {
-            c.drawRadialGradient(inner, startCenter: CGPoint(x: centre.x - radius * 0.3, y: centre.y - radius * 0.35),
-                                 startRadius: 0, endCenter: centre, endRadius: radius * 1.1, options: [])
-        }
-        c.restoreGState()
-        let eyeXs: [CGFloat] = [0.645, 0.755]
-        for ex in eyeXs {
-            let eye = CGRect(x: (ex - 0.04) * s, y: 0.695 * s, width: 0.08 * s, height: 0.05 * s)
-            let lidY = eye.midY - eye.height * 0.12
-            c.saveGState()
-            // Half-lidded: only the lower part of the eye shows, under a flat lid.
-            c.clip(to: CGRect(x: eye.minX, y: lidY, width: eye.width, height: eye.maxY - lidY))
-            c.setFillColor(rgb(0xF4F1FA))
-            c.fillEllipse(in: eye)
-            c.setFillColor(rgb(0x1A0B28))
-            let pr = 0.017 * s
-            c.fillEllipse(in: CGRect(x: eye.midX + 0.004 * s - pr, y: eye.midY - pr * 0.6, width: pr * 2, height: pr * 2))
-            c.restoreGState()
-            c.setStrokeColor(rgb(0x14081F))
-            c.setLineWidth(0.006 * s)
-            c.move(to: CGPoint(x: eye.minX + eye.width * 0.04, y: lidY))
-            c.addLine(to: CGPoint(x: eye.maxX - eye.width * 0.04, y: lidY))
-            c.strokePath()
-        }
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let provider = CGDataProvider(data: Data(bytes) as CFData) else { return nil }
+        return CGImage(width: n, height: n, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: n * 4, space: space,
+                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue), provider: provider,
+                       decode: nil, shouldInterpolate: true, intent: .defaultIntent)
     }
 
     /// Mean luminance (0…1, Rec. 709) and distinct colours (5 bits per channel) on a 64 × 64 sample. Pure given the

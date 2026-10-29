@@ -251,6 +251,41 @@ enum FeelSoundBook {
         ]
     }
 
+    // MARK: Surfacing (R3)
+
+    /// The bloop's pitch (Hz) for a kind: low and round, bigger lower (wisp ~308 … brute 180), well under every pop's
+    /// bubble (≥ 380 Hz) and pluck (≥ 261 Hz for a brute, ≥ 523 Hz otherwise), so "it's up" never reads as "it popped".
+    static func bloopHz(_ kind: GloomKind) -> Float {
+        340 - 160 * popSize(kind)
+    }
+
+    /// A gloom surfaces: a soft rising "bl-oop" (a low bubble and its octave a breath later) over a little splash.
+    /// Quiet: it's information, not a reward.
+    static func bloop(kind: GloomKind, dice: inout FeelDice) -> [FeelSynthCommand] {
+        let f = bloopHz(kind) * dice.float(0.95, 1.05)
+        let size = popSize(kind)
+        return [
+            .drop(FeelDropSpec(frequency: f, chirp: 1.9, decay: 0.045 + 0.02 * size, gain: 0.05 + 0.015 * size)),
+            .drop(FeelDropSpec(frequency: f * 2, chirp: 1.5, decay: 0.03, gain: 0.025, delay: 0.035)),
+            .noise(FeelNoiseSpec(.lowPass, cutoff: 650, q: 0.8, attack: 0.004, decay: 0.03, gain: 0.025)),
+        ]
+    }
+
+    /// A flock surfaces together: one little soft chord (C4 E4 G4 marimba, strummed; a big flock lands a fifth up) and
+    /// a deeper bubble under it, instead of a bloop each.
+    static func surfaceChord(count: Int, dice: inout FeelDice) -> [FeelSynthCommand] {
+        let chord: [Float] = [261.63, 329.63, 392.0]
+        let lift: Float = count >= 5 ? 1.5 : 1
+        var commands: [FeelSynthCommand] = []
+        for (index, f) in chord.enumerated() {
+            commands.append(.ring(FeelRingSpec(.marimba, fundamental: f * lift, partials: 3, decay: 0.25,
+                                               brightness: 0.35, gain: 0.03, delay: 0.025 * Float(index),
+                                               seed: dice.seed32())))
+        }
+        commands.append(.drop(FeelDropSpec(frequency: dice.float(170, 190), chirp: 1.8, decay: 0.06, gain: 0.04)))
+        return commands
+    }
+
     // MARK: Fireflies
 
     /// A firefly drifts out: two faint glass twinkles (G6, C7).
@@ -593,7 +628,7 @@ enum FeelSoundBook {
     static func shadedBurn(glooms: [GloomState], shades: [ShadeState], band: Double) -> Double {
         guard !shades.isEmpty, band.isFinite else { return 0 }
         var sum = 0.0
-        for gloom in glooms where gloom.hp > 0 {
+        for gloom in glooms where gloom.hp > 0 && !gloom.submerged { // R3: underground glooms are immune
             let cover = shadeCover(u: gloom.u, shades: shades)
             guard cover > 0.001 else { continue }
             let pad = 0.4 * max(gloom.radius, 0)

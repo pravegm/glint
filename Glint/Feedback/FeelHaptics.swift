@@ -207,6 +207,11 @@ enum FeelHapticBook {
     static let split = FeelHapticCue(notes: [.tap(0.35, 1.0, at: 0.05), .tap(0.3, 1.0, at: 0.085)])
     static let hop = FeelHapticCue(notes: [.tap(0.3, 0.6), .tap(0.25, 0.3, at: 0.22)])
     static let bruteEmerged = FeelHapticCue(notes: [.tap(0.25, 0.2)])
+    /// R3: a gloom surfaces: the faintest round tick (a brute's a touch firmer). A flock: two soft ticks.
+    static func surfaced(_ kind: GloomKind) -> FeelHapticCue {
+        FeelHapticCue(notes: [.tap(kind == .brute ? 0.26 : 0.18, 0.3)])
+    }
+    static let surfaceChord = FeelHapticCue(notes: [.tap(0.22, 0.3), .tap(0.18, 0.3, at: 0.05)])
     static let fireflyArrived = FeelHapticCue(notes: [.tap(0.2, 1.0)])
     /// A firefly fizzles: two soft falling taps and a faint fade.
     static let fizzle = FeelHapticCue(notes: [.tap(0.45, 0.5), .tap(0.3, 0.3, at: 0.09),

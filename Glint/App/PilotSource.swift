@@ -19,6 +19,9 @@ final class PilotSource: MirrorSource {
     private var lastTime: TimeInterval?
     private(set) var band: Double = Tuning.bandMin
 
+    /// R3 demo `ignore=<kind>`: glooms of this kind are hidden from the brain (it never aims at them).
+    var ignoring: GloomKind?
+
     init(skill: Double, seed: UInt64) {
         let s = skill.isFinite ? min(max(skill, 0), 1) : 0.8
         self.skill = s
@@ -27,7 +30,13 @@ final class PilotSource: MirrorSource {
 
     /// The session's latest snapshot (call after every step).
     func observe(_ snapshot: DawnSnapshot) {
-        last = snapshot
+        guard let kind = ignoring else {
+            last = snapshot
+            return
+        }
+        var seen = snapshot
+        seen.glooms = snapshot.glooms.filter { $0.kind != kind }
+        last = seen
     }
 
     /// Forget the clock (a jump in time, e.g. after a headless fast-forward, is not a frame step).

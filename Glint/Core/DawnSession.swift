@@ -50,6 +50,9 @@ struct DawnStats: Equatable {
     var eatenAfterCloud: Int = 0
     /// R2: clouds that crossed the garden.
     var clouds: Int = 0
+    /// R3: light-seconds the band shone on glooms still under the ground, and glooms that surfaced.
+    var submergedBlockedSeconds: Double = 0
+    var surfaced: Int = 0
 
     /// Flowers eaten by `kind`.
     func eaten(by kind: GloomKind) -> Int { return flowersEatenBy[kind] ?? 0 }
@@ -85,6 +88,8 @@ struct PendingSpawn: Equatable {
     var phase: Double
     /// Creation order (ties on `time` keep it).
     var seq: Int
+    /// R3: where a gloom surfaces (0 = it doesn't travel submerged).
+    var surfaceD: Double = 0
 }
 
 /// A live gloom (the session's working copy; `state` is what the snapshot shows).
@@ -111,10 +116,13 @@ struct DawnGloom {
     var wasLit: Bool
     /// R2: a cloud kept it mostly dark under the band at least once.
     var clouded: Bool = false
+    /// R3: travelling under the ground to `surfaceD` (immune to light).
+    var submerged: Bool = false
+    var surfaceD: Double = 0
 
     var state: GloomState {
         return GloomState(id: id, kind: kind, u: u, d: d, radius: radius, hp: max(hp, 0), maxHP: maxHP, lit: lit,
-                          age: age, tension: tension)
+                          age: age, tension: tension, submerged: submerged, surfaceD: submerged ? surfaceD : 0)
     }
 }
 
@@ -217,6 +225,15 @@ final class DawnSession {
     }
 
     /// 5 → 3, 3–4 → 2, 1–2 → 1, 0 → 0.
+    /// R3: the stars a sunrise gives: 3 = all five flowers AND `score ≥ starScore` (0 = flowers only); five flowers
+    /// below the score = 2; 3–4 = 2; 1–2 = 1; 0 = 0.
+    static func stars(flowersLeft: Int, score: Int, starScore: Int) -> Int {
+        let byFlowers: Int = stars(flowersLeft: flowersLeft)
+        if byFlowers == 3 && score < starScore { return 2 }
+        return byFlowers
+    }
+
+    /// The flowers-only rule (R1/R2; kept for callers that don't know the score): 5 → 3, 3–4 → 2, 1–2 → 1, 0 → 0.
     static func stars(flowersLeft: Int) -> Int {
         if flowersLeft >= 5 { return 3 }
         if flowersLeft >= 3 { return 2 }
@@ -289,9 +306,13 @@ final class DawnSession {
                     t += max(gap, 0) * Double(i)
                 }
                 let phase: Double = rng.unit()
+                var sd: Double = 0
+                if case .gloom = g.kind {
+                    sd = g.surface.lowerBound + (g.surface.upperBound - g.surface.lowerBound) * rng.unit()
+                }
                 u = min(max(u, Tuning.spawnUMin), Tuning.spawnUMax)
                 queue.append(PendingSpawn(time: t, kind: g.kind, u: u, speedScale: g.speedScale, phase: phase,
-                                          seq: seqCounter))
+                                          seq: seqCounter, surfaceD: sd))
                 seqCounter += 1
                 i += 1
             }
@@ -369,13 +390,17 @@ final class DawnSession {
     }
 
     private func spawnGloom(_ kind: GloomKind, u: Double, d: Double?, speedScale: Double, flung: Bool,
-                            events: inout [GameEvent]) {
+                            surfaceD: Double = 0, events: inout [GameEvent]) {
         let spec: GloomSpec = GloomSpec.of(kind)
         let scale: Double = max(speedScale, 0.05)
-        let g = DawnGloom(id: nextID, kind: kind, u: u, d: d ?? -spec.radius, radius: spec.radius, hp: spec.hp,
+        var g = DawnGloom(id: nextID, kind: kind, u: u, d: d ?? -spec.radius, radius: spec.radius, hp: spec.hp,
                           maxHP: spec.hp, lit: 0, age: 0, tension: flung ? 1 : 0, speed: spec.speed * scale,
                           speedScale: scale, rest: Tuning.hopperRest / scale, timer: 0, hopping: false, hopFrom: 0,
                           fling: flung ? Tuning.splitFlingTime : 0, wasLit: false)
+        if !flung && surfaceD > g.d {
+            g.submerged = true
+            g.surfaceD = surfaceD
+        }
         nextID += 1
         glooms.append(g)
         stats.emerged += 1
@@ -432,7 +457,8 @@ final class DawnSession {
             case .firefly:
                 spawnFirefly(e, events: &events)
             case .gloom(let kind):
-                spawnGloom(kind, u: e.u, d: nil, speedScale: e.speedScale, flung: false, events: &events)
+                spawnGloom(kind, u: e.u, d: nil, speedScale: e.speedScale, flung: false, surfaceD: e.surfaceD,
+                           events: &events)
             }
         }
         moveClouds(h, now: now)
@@ -451,6 +477,23 @@ final class DawnSession {
                 continue
             }
             let raw: Double = lightOn ? Tuning.unshadedIntensity(d: g.d, radius: g.radius, band: b) : 0
+            if g.submerged {
+                // R3: under the ground: immune, hurrying to its surfacing depth.
+                if raw > 0 { stats.submergedBlockedSeconds += raw * h }
+                g.lit = 0
+                g.wasLit = false
+                g.age += h
+                g.tension = 0
+                g.d += g.speed * Tuning.submergedSpeedFactor * h
+                if g.d >= g.surfaceD {
+                    g.submerged = false
+                    stats.surfaced += 1
+                    events.append(.surfaced(id: g.id, kind: g.kind, u: g.u, d: g.d))
+                }
+                glooms[w] = g
+                w += 1
+                continue
+            }
             let cf: Double = clouded ? Tuning.cloudFactor(u: g.u, shades: shades) : 1
             let inCrease: Bool = Tuning.isShaded(d: g.d)
             let lit: Double = inCrease ? 0 : raw * cf
@@ -686,7 +729,7 @@ final class DawnSession {
         shades.removeAll(keepingCapacity: true)
         shadeDrift.removeAll(keepingCapacity: true)
         snapshot.phase = left > 0 ? .won : .lost
-        var stars: Int = DawnSession.stars(flowersLeft: left)
+        var stars: Int = DawnSession.stars(flowersLeft: left, score: snapshot.score, starScore: spec?.starScore ?? 0)
         if case .daily = mode { stars = 0 }
         events.append(.sunrise(stars: stars, flowerBonus: bonus))
     }

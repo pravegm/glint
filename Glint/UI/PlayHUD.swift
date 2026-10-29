@@ -1,62 +1,80 @@
 import SwiftUI
 
-/// The play overlay. R2: score and chain sit in the MIRROR half's far corner on the u = 0 side, the pause button in
-/// its far corner on the u = 1 side (away from the crease; `AppRules.hudCenter`), so no SwiftUI plate ever covers a
-/// flower (`GardenScene.flowerRects`, tested in all four layouts). The start line sits on the garden towards the crease
-/// (nothing moves there yet), the one-line hints and banners on the mirror half. Nothing here draws light: the scene
-/// draws only what the hinge (or the finger) makes.
+/// The play overlay. Score and chain sit in the MIRROR half's far corner on the u = 0 side, the pause button in its far
+/// corner on the u = 1 side (away from the crease; `AppRules.hudCenter`), R3: at least 12 pt inside the brass frame
+/// (`AppRules.hudMargin`). No SwiftUI plate ever covers a flower (`GardenScene.hudSafeRects`, tested in all four
+/// layouts). Today's Dawn adds a date chip at the mirror's far edge, centred. The start line sits on the garden towards
+/// the crease, with the 3rd-star target under it; hints sit on the garden, only while their subject is on the field,
+/// with an arrow and a ring at it. Nothing here draws light: the scene draws only what the hinge (or the finger) makes.
 struct PlayHUD: View {
     @ObservedObject var controller: GameController
     @ObservedObject var hud: HUDModel
     let canvas: AppCanvas
 
-    /// The HUD plates' sizes (the overlap test uses the same numbers).
-    static func scoreSize(compact: Bool) -> CGSize { CGSize(width: compact ? 120 : 140, height: compact ? 52 : 58) }
+    /// The HUD plates' sizes (the overlap tests use the same numbers).
+    static func scoreSize(compact: Bool) -> CGSize { CGSize(width: compact ? 132 : 152, height: compact ? 54 : 60) }
     static let pauseSize = CGSize(width: 56, height: 56)
-    static let margin: CGFloat = 10
+    static let dateChipSize = CGSize(width: 128, height: 36)
 
     var body: some View {
         let layout = canvas.layout
         let c = canvas.compact
         let scoreSize = Self.scoreSize(compact: c)
         let pauseSize = Self.pauseSize
+        let margin = AppRules.hudMargin(layout: layout)
         let mirror = layout.mirrorRect
+        let dailyDay: Int? = AppRules.dailyDay(controller.playMode)
         ZStack {
             ScorePill(state: hud.state, compact: c)
                 .frame(width: scoreSize.width, height: scoreSize.height)
                 .position(AppRules.hudCenter(u: 0, item: scoreSize, layout: layout, insets: canvas.insets,
-                                             margin: Self.margin))
+                                             margin: margin))
                 .allowsHitTesting(false)
 
             RoundIconButton(symbol: "pause.fill", label: "Pause", size: pauseSize.width) {
                 controller.pauseTapped()
             }
-            .position(AppRules.hudCenter(u: 1, item: pauseSize, layout: layout, insets: canvas.insets,
-                                         margin: Self.margin))
+            .position(AppRules.hudCenter(u: 1, item: pauseSize, layout: layout, insets: canvas.insets, margin: margin))
             .opacity(controller.pause.menu ? 0 : 1)
+
+            if let day = dailyDay {
+                // REVIEW-2 fix 11: Today's Dawn's date chip, top centre of the mirror.
+                Text(AppRules.dateChip(day: day))
+                    .font(GlintType.caption(c))
+                    .foregroundStyle(GlintTheme.ink)
+                    .padding(.horizontal, 14)
+                    .frame(height: Self.dateChipSize.height)
+                    .background(Capsule().fill(GlintTheme.goldFace))
+                    // Centred along the far edge, one row in from the score and pause plates (never under them).
+                    .position(AppRules.farEdgeCenter(item: Self.dateChipSize, layout: layout, insets: canvas.insets,
+                                                     margin: margin + scoreSize.height + 8))
+                    .allowsHitTesting(false)
+            }
 
             if let prompt = controller.prompt {
                 let maxSize = AppRules.promptMaxSize(layout: layout)
-                PromptCard(prompt: prompt, compact: c)
+                PromptCard(prompt: prompt, compact: c, starLine: controller.startStarLine,
+                           reduceMotion: controller.reduceMotion)
                     .frame(maxWidth: maxSize.width, maxHeight: maxSize.height)
                     .position(AppRules.promptCenter(layout: layout))
                     .allowsHitTesting(false)
                     .transition(.opacity)
             }
 
-            if let hint = controller.hint {
-                // R2 addendum: on the garden (never over the sun), with a small arrow at the thing it is about.
+            if let hint = controller.hint, let target = hud.hintTarget {
+                // On the garden (never over the sun), only while its subject is on the field, pointing at it.
                 let at = AppRules.hintCenter(layout: layout)
+                HintRing(target: target, firefly: hint == .spareTheFireflies, reduceMotion: controller.reduceMotion)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
                 HintLine(text: HintRules.text(hint), compact: c)
                     .frame(maxWidth: min(AppRules.promptMaxSize(layout: layout).width, 420))
                     .position(at)
                     .allowsHitTesting(false)
                     .transition(.opacity)
-                if let target = hud.hintTarget {
-                    HintArrow(from: at, to: target)
-                        .allowsHitTesting(false)
-                        .transition(.opacity)
-                }
+                HintArrow(from: at, to: target)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
             }
 
             if let banner = hud.banner {
@@ -64,7 +82,7 @@ struct PlayHUD: View {
                     .font(GlintType.wordmark(c ? 34 : 44))
                     .foregroundStyle(GlintTheme.goldFace)
                     .shadow(color: GlintTheme.night.opacity(0.8), radius: 8)
-                    .position(x: mirror.midX, y: mirror.midY + (controller.hint == nil ? 0 : 64))
+                    .position(x: mirror.midX, y: mirror.midY)
                     .allowsHitTesting(false)
                     .transition(.opacity)
             }
@@ -101,7 +119,7 @@ struct HintArrow: View {
         let dy = to.y - from.y
         let dist = (dx * dx + dy * dy).squareRoot()
         // Just short of the subject, pointing at it (the hint plate stays where it is).
-        let back: CGFloat = 34
+        let back: CGFloat = 40
         let ux = dist > 0 ? dx / dist : 0
         let uy = dist > 0 ? dy / dist : 0
         let angle = AppRules.angle(from: from, to: to)
@@ -111,7 +129,28 @@ struct HintArrow: View {
             .shadow(color: GlintTheme.night.opacity(0.8), radius: 4)
             .rotationEffect(.radians(angle))
             .position(x: to.x - ux * back, y: to.y - uy * back)
-            .opacity(dist > 70 ? 1 : 0)
+            .opacity(dist > 80 ? 1 : 0)
+    }
+}
+
+/// REVIEW-2 fix 7: a soft ring around the hint's subject (lime-green for a firefly, gold for a shadow), breathing.
+struct HintRing: View {
+    let target: CGPoint
+    let firefly: Bool
+    let reduceMotion: Bool
+    @State private var breathe = false
+
+    var body: some View {
+        Circle()
+            .strokeBorder(firefly ? Color(appHex: 0xC8FF6A) : GlintTheme.gold, lineWidth: 3)
+            .frame(width: 58, height: 58)
+            .scaleEffect(breathe ? 1.12 : 0.94)
+            .opacity(breathe ? 0.65 : 1)
+            .position(target)
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { breathe = true }
+            }
     }
 }
 
@@ -127,21 +166,19 @@ struct ScorePill: View {
                 .contentTransition(.numericText())
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
-            if state.chain >= 2 {
-                // R2 (review P2-16): a whole count, no arithmetic to read.
-                Text("Chain \(state.chain)")
+            // R2: the chain as a whole count. R3 (REVIEW-2 fix 11): Long Night's wave always shows beside it.
+            if let line = AppRules.scoreSubline(chain: state.chain, wave: state.wave) {
+                Text(line)
                     .font(GlintType.caption(compact))
                     .foregroundStyle(GlintTheme.gold)
-            } else if state.wave > 0 {
-                Text("Wave \(state.wave)")
-                    .font(GlintType.caption(compact))
-                    .foregroundStyle(GlintTheme.mist)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
             ZStack {
-                Capsule().fill(GlintTheme.night.opacity(0.55))
+                Capsule().fill(GlintTheme.night.opacity(0.6))
                 Capsule().strokeBorder(GlintTheme.brassLight.opacity(0.4), lineWidth: 1)
             }
         )
@@ -150,22 +187,27 @@ struct ScorePill: View {
     }
 }
 
+/// The start card. R3 (REVIEW-2 fix 6): one line of instruction only (no second line saying the same thing) and an
+/// animated drawing; the level's 3rd-star target under it ("★★★ 1,400").
 struct PromptCard: View {
     let prompt: PromptLine
     let compact: Bool
+    var starLine: String? = nil
+    var reduceMotion = false
 
     var body: some View {
         VStack(spacing: 8) {
-            PromptArt(prompt: prompt)
+            PromptArt(prompt: prompt, reduceMotion: reduceMotion)
                 .frame(width: compact ? 64 : 80, height: compact ? 64 : 80)
             Text(prompt.text)
                 .font(GlintType.headline(compact))
                 .foregroundStyle(GlintTheme.cream)
                 .multilineTextAlignment(.center)
-            Text(prompt.detail)
-                .font(GlintType.caption(compact))
-                .foregroundStyle(GlintTheme.mist)
-                .multilineTextAlignment(.center)
+            if let starLine {
+                Text(starLine)
+                    .font(GlintType.caption(compact))
+                    .foregroundStyle(GlintTheme.goldLight)
+            }
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
@@ -174,9 +216,12 @@ struct PromptCard: View {
     }
 }
 
-/// A tiny phone drawing for the start line: shut (close), half-open with light (open), or a finger (drag).
+/// A tiny drawing for the start line: the phone shutting (close), half open with the sun (open), or a finger sliding
+/// the way the light grows (drag; R3: it animates, unless Reduce motion).
 struct PromptArt: View {
     let prompt: PromptLine
+    var reduceMotion = false
+    @State private var slide = false
 
     var body: some View {
         GeometryReader { geo in
@@ -191,8 +236,7 @@ struct PromptArt: View {
                     RoundedRectangle(cornerRadius: s * 0.1, style: .continuous)
                         .fill(GlintTheme.cardRaised)
                         .frame(width: s * 0.7, height: s * 0.16)
-                        .rotationEffect(.degrees(-28), anchor: .leading)
-                        .offset(y: s * 0.0)
+                        .rotationEffect(.degrees(slide ? -6 : -32), anchor: .leading)
                     Image(systemName: "arrow.down")
                         .font(.system(size: s * 0.24, weight: .black))
                         .foregroundStyle(GlintTheme.goldLight)
@@ -200,21 +244,38 @@ struct PromptArt: View {
                 case .openToLight:
                     MenuSunArt(rays: 8)
                         .frame(width: s * 0.6, height: s * 0.6)
-                        .offset(y: -s * 0.15)
+                        .offset(y: slide ? -s * 0.2 : -s * 0.08)
                     RoundedRectangle(cornerRadius: s * 0.1, style: .continuous)
                         .fill(GlintTheme.brassFace)
                         .frame(width: s * 0.7, height: s * 0.16)
                         .offset(y: s * 0.22)
-                case .drag:
+                case let .drag(direction):
+                    let travel = s * 0.22
+                    let v = PromptArt.unit(direction)
                     Image(systemName: "hand.point.up.left.fill")
-                        .font(.system(size: s * 0.5, weight: .bold))
+                        .font(.system(size: s * 0.46, weight: .bold))
                         .foregroundStyle(GlintTheme.goldLight)
+                        .offset(x: v.dx * (slide ? travel : -travel), y: v.dy * (slide ? travel : -travel))
                 }
             }
             .frame(width: s, height: s)
             .position(x: geo.size.width / 2, y: geo.size.height / 2)
         }
         .accessibilityHidden(true)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) { slide = true }
+        }
+    }
+
+    /// The finger's direction for the drag word.
+    static func unit(_ direction: String) -> CGVector {
+        switch direction {
+        case "up": return CGVector(dx: 0, dy: -1)
+        case "left": return CGVector(dx: -1, dy: 0)
+        case "right": return CGVector(dx: 1, dy: 0)
+        default: return CGVector(dx: 0, dy: 1)
+        }
     }
 }
 
@@ -242,7 +303,7 @@ struct ShutCard: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            MenuMoonArt().frame(width: 64, height: 64)
+            MenuMirrorArt(sun: 0.4).frame(width: 90, height: 64)
             Text(CoverLine.paused(score: score).text)
                 .font(GlintType.headline(compact))
                 .foregroundStyle(GlintTheme.cream)

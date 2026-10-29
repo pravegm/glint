@@ -62,7 +62,8 @@ enum Achievements {
     }
 
     /// Night Watch's score (achievements.md). R2 balance note: the mirror's 0.6 pilot's median Long Night is ~17,000,
-    /// so R2 raised it from 10,000 to 20,000 (between the 0.6 and 0.9 medians).
+    /// so R2 raised it from 10,000 to 20,000 (between the 0.6 and 0.9 medians). R3's Long Night was retuned to keep it
+    /// there: the mirror's medians are ~17,800 (skill 0.6) and ~23,600 (0.9).
     static let nightWatchScore: Int = 20_000
     /// Ninety Suns: every level's three stars.
     static var allStarsTotal: Int { return LevelBook.count * 3 }

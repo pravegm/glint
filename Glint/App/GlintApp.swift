@@ -11,7 +11,9 @@ struct GlintApp: App {
         // Demo runs never touch the player's saved progress or settings.
         let store: ProgressStore
         if let demo {
-            store = ProgressStore(inMemory: DemoPresets.progress(demo.progress, now: Date()))
+            var seeded = DemoPresets.progress(demo.progress, now: Date())
+            DemoPresets.applyStreak(demo.streakDays, to: &seeded, now: Date())
+            store = ProgressStore(inMemory: seeded)
         } else {
             store = ProgressStore(defaults: .standard)
         }

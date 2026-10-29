@@ -113,11 +113,12 @@ struct GardenRNG {
 // MARK: - Maths
 
 enum GardenMath {
-    /// The band's profile, copied from Core so the art never waits on Core to compile:
-    /// `Tuning.bandCoreHalfWidth` = 0.050, `Tuning.bandEdgeHalfWidth` = 0.085, `Tuning.bandMin` = −0.2.
-    static let bandCore: Double = 0.050
-    static let bandEdge: Double = 0.085
-    static let bandMin: Double = -0.2
+    /// The band's profile, straight from Core (R3: Core widens the core to ±0.065 / edge ±0.10).
+    static var bandCore: Double { Tuning.bandCoreHalfWidth }
+    static var bandEdge: Double { Tuning.bandEdgeHalfWidth }
+    static var bandMin: Double { Tuning.bandMin }
+    /// R3: the light's soft feather beyond the profile on each side (no hard edge), floor d.
+    static let bandFeather: Double = 0.03
     /// Flowers per row (`Tuning.flowerCount`); the scene follows `snapshot.flowers.count` when it differs.
     static let flowerCount: Int = 5
 
@@ -125,12 +126,11 @@ enum GardenMath {
     static var creaseShade: Double { Tuning.creaseShade }
     static func isShaded(d: Double) -> Bool { Tuning.isShaded(d: d) }
 
-    /// How sunk a gloom at `d` is drawn: 1 deep in the shade's seam, 0 out in the garden, smooth across the edge.
-    static func sink(d: Double) -> CGFloat {
-        let s = CGFloat(creaseShade)
-        let x: CGFloat = d.isFinite ? CGFloat(d) : 1
-        return 1 - smooth(s - 0.025, s + 0.01, x)
-    }
+    /// R3: how sunk a gloom is drawn: Core says (`GloomState.submerged`: travelling under the ground to `surfaceD`).
+    static func sink(_ g: GloomState) -> CGFloat { g.submerged ? 1 : 0 }
+
+    /// R3: how much of the light shows inside the crease shade (it does nothing there): 15 %, cool.
+    static let shadeLightShare: CGFloat = 0.15
 
     /// R2: glooms are drawn 15 % bigger on phones (the 0.58 garden split) so their faces read on the small screen.
     static func gloomArtScale(layout: GardenLayout) -> CGFloat { layout.gardenFraction > 0.54 ? 1.15 : 1 }
@@ -667,12 +667,23 @@ enum GardenArt {
         case beam
     }
 
+    /// R3: the pool and core run across ±(edge + feather): Core's profile, softened so it has no hard edge anywhere.
+    static var lightHalfWidth: Double { GardenMath.bandEdge + GardenMath.bandFeather }
+
+    /// The pool's value at floor distance `x` from the band's centre (R3: 1 inside core − feather, a smoothstep to 0
+    /// at edge + feather).
+    static func poolValue(distance x: Double) -> CGFloat {
+        let e0 = CGFloat(GardenMath.bandCore - GardenMath.bandFeather)
+        let e1 = CGFloat(GardenMath.bandEdge + GardenMath.bandFeather)
+        return 1 - GardenMath.smooth(e0, e1, CGFloat(abs(x)))
+    }
+
     static func lightValue(_ p: LightProfile, _ f: CGFloat) -> CGFloat {
         switch p {
         case .pool:
-            return CGFloat(GardenMath.intensity(d: Double(f * 2 - 1) * GardenMath.bandEdge, band: 0))
+            return poolValue(distance: Double(f * 2 - 1) * lightHalfWidth)
         case .core:
-            let v = CGFloat(GardenMath.intensity(d: Double(f * 2 - 1) * GardenMath.bandEdge, band: 0))
+            let v = poolValue(distance: Double(f * 2 - 1) * lightHalfWidth)
             return v * v
         case .halo:
             let x = f * 2 - 1
@@ -693,13 +704,8 @@ enum GardenArt {
                 colors.append(w(lightValue(p, f)))
                 locs.append(f)
             }
+            // (R3: no lips: REVIEW-2 read them as the slab's hard edge.)
             GardenPainter.linear(ctx, colors, locs, from: CGPoint(x: 0, y: 0), to: CGPoint(x: s.width, y: 0))
-            if p == .core {
-                let core = CGFloat(GardenMath.bandCore / GardenMath.bandEdge)
-                ctx.setFillColor(w(0.3).cg)
-                ctx.fill(CGRect(x: s.width * (0.5 - core / 2) - 1, y: 0, width: 2, height: s.height))
-                ctx.fill(CGRect(x: s.width * (0.5 + core / 2) - 1, y: 0, width: 2, height: s.height))
-            }
             if ramp {
                 ctx.setBlendMode(.destinationIn)
                 GardenPainter.linear(ctx, [w(0), w(1)], [0, 1], from: CGPoint(x: 0, y: 0), to: CGPoint(x: 0, y: s.height))
@@ -722,12 +728,13 @@ enum GardenArt {
     }
 
     /// R2: where the shade ends along the crease-shade texture's width.
-    static let shadeEnd: CGFloat = 0.82
+    static let shadeEnd: CGFloat = 0.94
 
-    /// R2: the crease shade (white; tint it dark): solid from the crease, easing to `shadeEnd`, then soft to 0.
+    /// R2/R3: the crease shade (white; tint it dark): solid to `shadeEnd` (the light does nothing there), then a short
+    /// soft lip under the rim.
     static var creaseShade: SKTexture {
-        make("crease-shade", size: CGSize(width: 256, height: 4), scale: 1) { ctx, s in
-            GardenPainter.linear(ctx, [w(1), w(0.86), w(0.66), w(0.2), w(0)], [0, 0.4, 0.78, 0.88, 1],
+        make("crease-shade-3", size: CGSize(width: 256, height: 4), scale: 1) { ctx, s in
+            GardenPainter.linear(ctx, [w(1), w(0.96), w(0.9), w(0)], [0, 0.6, 0.94, 1],
                                  from: CGPoint(x: 0, y: 2), to: CGPoint(x: s.width, y: 2))
         }
     }

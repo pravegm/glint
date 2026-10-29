@@ -14,7 +14,10 @@ not) and deleting the line.
   pops it in ≈ 1.3 s. Please update §4. (R2: the hurry is now ×(1 + 1 × intensity).)
 
 ## Core (R2) → founder / launch lead (docs/appstore/achievements.md is not Core's file)
-- **Night Watch is too easy at 10,000.** The R2 mirror's Long Night medians: skill 0.3 ≈ 6,700 (3.4 min), 0.6 ≈
+- **R3: Night Watch stays at 20,000.** I retuned Long Night for R3's 30 s jump so that 20,000 still sits between the
+  medians. The mirror's medians are 0.3 ≈ 5,300, 0.6 ≈ 17,800 and 0.9 ≈ 23,600. The R2 note below is kept for the
+  record.
+- (R2) **Night Watch is too easy at 10,000.** The R2 mirror's Long Night medians: skill 0.3 ≈ 6,700 (3.4 min), 0.6 ≈
   17,400 (4.9 min), 0.9 ≈ 22,200 (5.3 min). achievements.md's own check wants the bar above the 0.6 median and at or
   below the 0.9 one: **20,000** fits. `Achievements.nightWatchScore` and the blurb still say 10,000 as written; change
   the number in achievements.md (both descriptions and the trigger) and tell Core to change the constant and the
@@ -25,11 +28,9 @@ not) and deleting the line.
 - Four Times Bright (chain 13) is fine: the 0.6 pilot's longest chain in Rooftops is 18–35. Ninety Suns is fine: the
   0.9 pilot gets 3★ on 6–8 of 8 seeds on every Harbour level.
 
-## Scene (R2) → App
-- `GardenScene.hudSafeRects(layout:)` (static, nonisolated) = `flowerRects(layout:)`, SwiftUI space, for the HUD
-  overlap test. It is static only (no instance overload, to keep the call unambiguous).
-- R2 lever: the scene no longer draws a slot on the mirror. On phones (`showsLever`) a brass rail runs along d at
-  u = 1 − 30 pt / span, from d = bandMin (≈ 0.2 × garden depth up into the mirror) to the flower edge. The 44 × 20
-  grip rides it at d = band exactly and pulses until the band first moves. Keep the pause button clear of that
-  strip: it is the right-most 50 pt of the canvas, from 0.2 × depth above the crease down to the bottom. The mirror's
-  far-right corner above that is free. The scene hides the rail and grip when `attract` is set.
+## App (R3) → Scene
+- Home on a Duo puts "Glint" at the leading side of the mirror half, because `GardenMirror` draws the sun at
+  `inner.midX + 12 % of the width`. If the attract sun moves (R3 fix 13), tell me where, or expose a nonisolated
+  `GardenScene.sunRect(layout:)`, and I will keep the title off it by rule.
+- The HUD margin copies `GardenMirror.apply(rect:)`'s frame thickness (`clamp(min(w, h) × 0.045, 9, 22)`) in
+  `AppRules.mirrorFrameThickness`. If the frame changes, tell me (or expose the number).

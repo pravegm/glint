@@ -388,23 +388,21 @@ enum CreatureArt {
 
     // MARK: Firefly (top-down: wings, body, a glowing tail)
 
+    /// R3 (REVIEW-2 P2-17): the body only (the wings are their own sprite, so they flicker), with a big lime lantern.
     static var firefly: SKTexture {
-        GardenArt.make("firefly", size: CGSize(width: 28, height: 28), scale: 3) { ctx, s in
+        GardenArt.make("firefly-3", size: CGSize(width: 28, height: 28), scale: 3) { ctx, s in
             ctx.translateBy(x: s.width / 2, y: s.height / 2)
             ctx.scaleBy(x: 12, y: 12)
-            for side in [CGFloat(-1), CGFloat(1)] {
-                let wing = CGMutablePath()
-                GardenPainter.addEllipse(wing, CGPoint(x: side * 0.36, y: 0.12), 0.3, 0.6, angle: -side * 0.5)
-                GardenPainter.fill(ctx, wing, GardenInk(1, 1, 1, 0.45))
-                GardenPainter.stroke(ctx, wing, GardenInk(1, 1, 1, 0.7), width: 0.06)
-            }
-            GardenPainter.fill(ctx, GardenPainter.ellipse(CGPoint(x: 0, y: 0.05), 0.21, 0.45), GardenInk(hex: 0x3A3322))
-            GardenPainter.fill(ctx, GardenPainter.circle(CGPoint(x: 0, y: 0.55), 0.16), GardenInk(hex: 0x2A2418))
-            let tail = GardenPainter.ellipse(CGPoint(x: 0, y: -0.42), 0.24, 0.32)
-            GardenPainter.fill(ctx, tail, GardenInk(hex: 0xE8FF8C))
+            GardenPainter.fill(ctx, GardenPainter.ellipse(CGPoint(x: 0, y: 0.12), 0.24, 0.42), GardenInk(hex: 0x2E3A14))
+            GardenPainter.stroke(ctx, GardenPainter.ellipse(CGPoint(x: 0, y: 0.12), 0.24, 0.42),
+                                 GardenInk(hex: 0x141A08), width: 0.06)
+            GardenPainter.fill(ctx, GardenPainter.circle(CGPoint(x: 0, y: 0.6), 0.17), GardenInk(hex: 0x1E2410))
+            let tail = GardenPainter.ellipse(CGPoint(x: 0, y: -0.38), 0.34, 0.44)
+            GardenPainter.stroke(ctx, tail, GardenInk(hex: 0x4A7A10), width: 0.08)
+            GardenPainter.fill(ctx, tail, GardenPalette.firefly)
             GardenPainter.clipped(ctx, tail) {
-                GardenPainter.radial(ctx, [GardenInk.white, GardenInk(1, 1, 1, 0)], [0, 1],
-                                     center: CGPoint(x: 0, y: -0.42), radius: 0.26)
+                GardenPainter.radial(ctx, [GardenInk(hex: 0xF4FFC8), GardenPalette.firefly.with(alpha: 0)], [0, 1],
+                                     center: CGPoint(x: -0.06, y: -0.3), radius: 0.32)
             }
             let ant = CGMutablePath()
             for side in [CGFloat(-1), CGFloat(1)] {
@@ -412,6 +410,20 @@ enum CreatureArt {
                 ant.addQuadCurve(to: CGPoint(x: side * 0.3, y: 0.98), control: CGPoint(x: side * 0.06, y: 0.9))
             }
             GardenPainter.stroke(ctx, ant, GardenInk(hex: 0x2A2418), width: 0.05)
+        }
+    }
+
+    /// R3: the firefly's two wings (they flicker), pale lime-white.
+    static var fireflyWings: SKTexture {
+        GardenArt.make("firefly-wings", size: CGSize(width: 28, height: 28), scale: 3) { ctx, s in
+            ctx.translateBy(x: s.width / 2, y: s.height / 2)
+            ctx.scaleBy(x: 12, y: 12)
+            for side in [CGFloat(-1), CGFloat(1)] {
+                let wing = CGMutablePath()
+                GardenPainter.addEllipse(wing, CGPoint(x: side * 0.42, y: 0.22), 0.34, 0.62, angle: -side * 0.55)
+                GardenPainter.fill(ctx, wing, GardenInk(hex: 0xEFFFD8, alpha: 0.5))
+                GardenPainter.stroke(ctx, wing, GardenInk(hex: 0xEFFFD8, alpha: 0.85), width: 0.06)
+            }
         }
     }
 
@@ -594,6 +606,7 @@ enum CreatureArt {
     /// Builds every flower and firefly texture now.
     static func warmFlowers(count: Int) {
         _ = firefly
+        _ = fireflyWings
         for i in 0..<max(count, 1) {
             _ = flowerPetals(i)
             _ = flowerLeaves(i)

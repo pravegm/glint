@@ -12,7 +12,8 @@ struct GloomSpec: Equatable {
     let points: Int
 
     /// R1: the brute's HP is 3.6 (GAME-DESIGN's 2.2 let a parked band finish it, against "parked light can't finish
-    /// it": a parked band gives a brute about 3.1 s of light). Hopper `speed` is its mean speed (one hop per rest).
+    /// it": a parked band gave a brute about 3.1 s of light). R3: 4.5, because the wider band core (±0.065) gives a
+    /// parked brute ≈ 3.6–3.8 s. Hopper `speed` is its mean speed (one hop per rest).
     static func of(_ kind: GloomKind) -> GloomSpec {
         switch kind {
         case .murk:
@@ -20,7 +21,7 @@ struct GloomSpec: Equatable {
         case .wisp:
             return GloomSpec(kind: .wisp, hp: 0.12, speed: 0.21, radius: 0.030, points: 5)
         case .brute:
-            return GloomSpec(kind: .brute, hp: 3.6, speed: 0.065, radius: 0.085, points: 40)
+            return GloomSpec(kind: .brute, hp: 4.5, speed: 0.065, radius: 0.085, points: 40)
         case .splitter:
             return GloomSpec(kind: .splitter, hp: 0.7, speed: 0.09, radius: 0.060, points: 15)
         case .hopper:
@@ -52,6 +53,9 @@ struct SpawnGroup: Equatable {
     var u: ClosedRange<Double>
     var formation: Formation
     var speedScale: Double
+    /// R3: where its members surface (each draws a depth in the range; equal bounds = all at one depth, in a line).
+    /// 0…0 = never submerged (they can be lit as soon as they leave the crease shade).
+    var surface: ClosedRange<Double> = 0...0
 }
 
 /// R2: one cloud shadow. It appears at `time` just off one edge (`fromLeft`: off u = 0, moving right) and slides
@@ -72,6 +76,8 @@ struct LevelSpec: Equatable {
     var duration: Double
     var groups: [SpawnGroup]
     var clouds: [CloudSpec] = []
+    /// R3: the third star needs all five flowers AND a final score ≥ this (0 = flowers only).
+    var starScore: Int = 0
 }
 
 extension LevelSpec {

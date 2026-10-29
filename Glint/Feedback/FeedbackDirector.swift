@@ -120,6 +120,8 @@ final class FeedbackDirector {
     private var fireflyThrottle = FeelThrottle(gap: 0.3)
     /// R2: clouds that have slid onto the band (the cool hush).
     private var shadeWatcher = FeelShadeWatcher()
+    /// R3: groups surfacings (one bloop, then one chord for a flock).
+    private var surfaceGate = FeelSurfaceGate()
     /// The pad brightness of the last game bed (a pause keeps it).
     private var lastPadBright: Float = 0.06
     /// Glooms on the last frame (sunrise evaporates them silently: the ripple counts them).
@@ -200,6 +202,17 @@ final class FeedbackDirector {
                 guard emergeThrottle.allow(at: now) else { break }
                 playSound(FeelSoundBook.emerge(kind: kind, dice: &dice))
                 if kind == .brute { playHaptic(FeelHapticBook.bruteEmerged) }
+            case .surface(let kind):
+                switch surfaceGate.next(at: now) {
+                case .bloop:
+                    playSound(FeelSoundBook.bloop(kind: kind, dice: &dice))
+                    playHaptic(FeelHapticBook.surfaced(kind))
+                case .chord(let count):
+                    playSound(FeelSoundBook.surfaceChord(count: count, dice: &dice))
+                    playHaptic(FeelHapticBook.surfaceChord)
+                case .quiet:
+                    break
+                }
             case .sweep(let count):
                 // With the pop that made it (the run's last slot so far).
                 let at = Float(runEnd)

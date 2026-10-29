@@ -11,7 +11,8 @@ struct SettingsView: View {
         ZStack {
             MenuScrim()
             // R2: on a Duo the title and art on the mirror half, every switch on the garden half (off the crease).
-            SplitMenu(canvas: canvas) {
+            // R3 (REVIEW-2 fix 16): the title at the top safe area, no empty band above it.
+            SplitMenu(canvas: canvas, alignTop: true) {
                 VStack(spacing: c ? 14 : 18) {
                     MenuHeader(title: "Settings", compact: c) {
                         controller.back()
@@ -30,8 +31,8 @@ struct SettingsView: View {
                         divider
                         SettingRow(symbol: "hand.tap.fill", title: "Haptics", detail: "Feel every pop",
                                    isOn: $settings.hapticsOn, compact: c)
-                        if canvas.isDuo {
-                            // Only a Duo has two halves to swap (review P1-15).
+                        if AppRules.swapAllowed(isDuo: canvas.isDuo, size: canvas.size) {
+                            // Only a Duo in book pose swaps halves (REVIEW-2 fix 12; laptop pose would lay the mirror flat).
                             divider
                             SettingRow(symbol: "rectangle.split.2x1.fill", title: "Swap halves",
                                        detail: "Put the garden on the other half of the screen",

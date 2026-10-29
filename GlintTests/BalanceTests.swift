@@ -16,7 +16,10 @@ import Testing
 // L8 on (Meadow 6–7 and a few Rooftops/Harbour openers sit near 3).
 // The asserts are loose sanity only: levels 1–3 won by 0.3 every time, level 30 lost by 0.3 most of the time, every
 // level won at least once by 0.9, and in Harbour the 0.9 hand keeps more flowers than the 0.3 hand.
-// Each line also prints three=<runs with 5 flowers> and field=<mean glooms on the field from 25 % to 90 % of the level>.
+// Each line also prints three=<runs with 3 stars> and field=<mean glooms on the field from 25 % to 90 % of the level>.
+// R3 (design/notes/core-R3.md): glooms travel submerged to authored depths, the band core is ±0.065, the third star
+// needs LevelSpec.starScore. A ParkedPilot (the band held at one d all level) must lose ≥ 2 flowers on L6 and L11 and
+// fail L21, for d = 0.15, 0.25, 0.4, 0.6, 0.8 (the mirror: L6 loses 3–5, L11 and L21 lose all 5 at every d).
 
 struct BalanceRun {
     var won: Bool
@@ -26,6 +29,8 @@ struct BalanceRun {
     var scorched: Int
     /// R2: mean glooms on the field between 25 % and 90 % of the level.
     var field: Double = 0
+    /// R3: the stars the run earned (score-gated third star).
+    var stars: Int = 0
 }
 
 /// The parallel runs' results (one lock; written from DispatchQueue.concurrentPerform's workers).
@@ -108,8 +113,13 @@ final class GlintBalanceMemo: @unchecked Sendable {
                 fieldN += 1
             }
         }
+        let stars: Int = s.snapshot.phase == .won
+            ? DawnSession.stars(flowersLeft: s.snapshot.flowersLeft, score: s.snapshot.score,
+                                starScore: s.spec?.starScore ?? 0)
+            : 0
         return BalanceRun(won: s.snapshot.phase == .won, flowers: s.snapshot.flowersLeft, score: s.snapshot.score,
-                          eaten: eaten, scorched: scorched, field: fieldN > 0 ? fieldSum / Double(fieldN) : 0)
+                          eaten: eaten, scorched: scorched, field: fieldN > 0 ? fieldSum / Double(fieldN) : 0,
+                          stars: stars)
     }
 
     private func build() {
@@ -183,7 +193,7 @@ final class GlintBalanceMemo: @unchecked Sendable {
         var three: Int = 0
         for r in runs {
             field += r.field
-            if r.flowers == Tuning.flowerCount { three += 1 }
+            if r.stars == 3 { three += 1 }
             flowers += Double(r.flowers)
             score += Double(r.score)
             eaten += Double(r.eaten)
@@ -195,7 +205,48 @@ final class GlintBalanceMemo: @unchecked Sendable {
     }
 }
 
+/// R3: the band held at one depth for a whole level (the camping line REVIEW-2 #1 kills).
+enum ParkedPilot {
+    static let bands: [Double] = [0.15, 0.25, 0.4, 0.6, 0.8]
+    static let seeds: Int = 3
+
+    /// (flowers left, won) for level `level`, band parked at `band`, session seed index `i`.
+    static func run(level: Int, band: Double, seedIndex i: Int) -> (Int, Bool) {
+        let s = DawnSession(mode: .level(level), seed: GlintBalanceMemo.sessionSeed(i))
+        let input = MirrorInput(band: band, creaseGlow: Tuning.creaseGlow(band: band))
+        var t: Double = 0
+        while !s.isFinished && t < GlintBalanceMemo.capSeconds {
+            _ = s.step(dt: GlintBalanceMemo.frameDt, input: input)
+            t += GlintBalanceMemo.frameDt
+        }
+        return (s.snapshot.flowersLeft, s.snapshot.phase == .won)
+    }
+}
+
 struct BalanceTests {
+
+    @Test(arguments: [6, 11, 21])
+    func aParkedBandLoses(level: Int) {
+        var lines: [String] = []
+        var ok: Bool = true
+        for b in ParkedPilot.bands {
+            var i: Int = 0
+            while i < ParkedPilot.seeds {
+                let r = ParkedPilot.run(level: level, band: b, seedIndex: i)
+                let lost: Int = Tuning.flowerCount - r.0
+                lines.append(String(format: "GLINT-BAL parked level=%d band=%.2f seed=%d lost=%d won=%d", level, b, i,
+                                    lost, r.1 ? 1 : 0))
+                if level == 21 {
+                    if r.1 { ok = false }
+                } else if lost < 2 {
+                    ok = false
+                }
+                i += 1
+            }
+        }
+        FileHandle.standardOutput.write(Data((lines.joined(separator: "\n") + "\n").utf8))
+        #expect(ok, "\(lines.joined(separator: "; "))")
+    }
 
     @Test(arguments: [1, 2, 3])
     func firstLevelsAreWonByAWeakHand(level: Int) {

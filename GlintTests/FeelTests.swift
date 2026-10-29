@@ -468,6 +468,7 @@ struct FeelTests {
     @Test func eventsMapToCues() {
         let events: [GameEvent] = [
             .emerged(id: 1, kind: .wisp, u: 0.2),
+            .surfaced(id: 1, kind: .wisp, u: 0.2, d: 0.3),
             .popped(id: 1, kind: .murk, u: 0.5, d: 0.3, chain: 2, points: 10),
             .swept(count: 3, bonus: 90),
             .split(u: 0.4, d: 0.5),
@@ -488,6 +489,7 @@ struct FeelTests {
         let cues = FeelCueMap.cues(for: events)
         let expected: [FeelCue] = [
             .emerge(.wisp),
+            .surface(.wisp),
             .pop(.murk, chain: 2),
             .sweep(count: 3),
             .split,
@@ -505,6 +507,47 @@ struct FeelTests {
         #expect(cues == expected)
         #expect(FeelCueMap.cue(for: .hint(.hoppers)) == nil)
         #expect(FeelCueMap.cue(for: .chainEnded(was: 9)) == nil)
+    }
+
+    // MARK: R3: surfacing
+
+    @Test func aFlockSurfacingIsOneBloopAndOneChord() {
+        var gate = FeelSurfaceGate()
+        var actions: [FeelSurfaceGate.Action] = []
+        for _ in 0..<8 {
+            actions.append(gate.next(at: 10))
+        }
+        #expect(actions[0] == .bloop)
+        #expect(actions[1] == .chord(count: 2))
+        #expect(actions.dropFirst(2).allSatisfy { $0 == .quiet })
+        // A lone gloom surfacing later bloops again.
+        let later = gate.next(at: 10 + FeelSurfaceGate.window + 0.05)
+        #expect(later == .bloop)
+    }
+
+    @Test func theBloopIsQuietLowAndUnlikeAPop() {
+        #expect(FeelSoundBook.bloopHz(.brute) < FeelSoundBook.bloopHz(.murk))
+        #expect(FeelSoundBook.bloopHz(.murk) < FeelSoundBook.bloopHz(.wisp))
+        var dice = FeelDice(seed: 13)
+        for kind in GloomKind.allCases {
+            let bloop = FeelSoundBook.bloop(kind: kind, dice: &dice)
+            #expect(!bloop.isEmpty)
+            let loudest = bloop.map { $0.gain }.max() ?? 1
+            let pop = FeelSoundBook.pop(kind: kind, chain: 1, dice: &dice)
+            let popLoudest = pop.map { $0.gain }.max() ?? 0
+            #expect(loudest < popLoudest)
+            #expect(FeelSoundBook.bloopHz(kind) * 1.05 < FeelSoundBook.bubbleHz(kind))
+        }
+        #expect(!FeelSoundBook.surfaceChord(count: 6, dice: &dice).isEmpty)
+        #expect(FeelHapticBook.surfaced(.brute).notes[0].intensity > FeelHapticBook.surfaced(.wisp).notes[0].intensity)
+        #expect(FeelHapticBook.surfaced(.wisp).notes[0].intensity < FeelHapticBook.popIntensity(.wisp))
+    }
+
+    @Test func submergedGloomsNeverMuffleTheSizzle() {
+        let under = GloomState(id: 1, kind: .murk, u: 0.5, d: 0.5, radius: 0.05, hp: 0.5, maxHP: 0.55,
+                               submerged: true, surfaceD: 0.6)
+        let cloud = ShadeState(id: 1, u: 0.5, halfWidth: 0.2, strength: 1)
+        #expect(FeelSoundBook.shadedBurn(glooms: [under], shades: [cloud], band: 0.5) == 0)
     }
 
     @Test func popsOnOneFrameBecomeARisingRun() {

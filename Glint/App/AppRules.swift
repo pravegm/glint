@@ -430,11 +430,11 @@ enum AppRules {
             guard let f = snapshot.fireflies.first else { return nil }
             return (f.u, f.d)
         case .lightTheShadows:
-            guard let g = snapshot.glooms.first else { return nil }
+            guard let g = snapshot.glooms.first(where: { !$0.submerged }) else { return nil }
             return (g.u, g.d)
         case .followTheBigOnes, .splitters, .hoppers:
             let kind: GloomKind = id == .followTheBigOnes ? .brute : (id == .splitters ? .splitter : .hopper)
-            guard let g = snapshot.glooms.first(where: { $0.kind == kind }) else { return nil }
+            guard let g = snapshot.glooms.first(where: { $0.kind == kind && !$0.submerged }) else { return nil }
             return (g.u, g.d)
         }
     }
@@ -545,7 +545,8 @@ enum LevelMapGeometry {
         let rows = (count + cols - 1) / cols
         let cellW = size.width / CGFloat(cols)
         let cellH = size.height / CGFloat(max(rows, 1))
-        return min(max(min(cellW * 0.62, cellH * 0.6), 40), 96)
+        // R3: room under each medallion for its stars, name and 3rd-star target.
+        return min(max(min(cellW * 0.56, cellH * 0.44), 36), 84)
     }
 }
 
@@ -578,5 +579,126 @@ enum TipRules {
         if let kind = stats.worstKind { return text(for: kind) }
         if stats.firefliesScorched >= 2 { return fireflies }
         return nil
+    }
+}
+
+// MARK: - Round 3 (design/ROUND-3.md "App", REVIEW-2 fixes 5–16; pure, tested)
+
+extension AppRules {
+    /// The mirror's brass frame thickness as the Scene draws it (`GardenMirror.apply(rect:)`: 4.5 % of the mirror's
+    /// short side, 9…22 pt).
+    static func mirrorFrameThickness(layout: GardenLayout) -> CGFloat {
+        let m = layout.mirrorRect
+        return min(max(min(m.width, m.height) * 0.045, 9), 22)
+    }
+
+    /// REVIEW-2 fix 5: HUD plates sit at least 12 pt inside the brass frame.
+    static func hudMargin(layout: GardenLayout) -> CGFloat {
+        mirrorFrameThickness(layout: layout) + 12
+    }
+
+    /// REVIEW-2 fix 12: Swap halves exists only in book pose on a Duo (a landscape canvas, fold running top to
+    /// bottom). In laptop pose it would lay the mirror on the table.
+    static func swapAllowed(isDuo: Bool, size: CGSize) -> Bool {
+        isDuo && size.width > size.height
+    }
+
+    /// Today's Dawn's date chip ("Thu 29 Oct") for a day number (days since 1 Jan 2026, UTC). Locale-independent
+    /// English (the game's copy is English).
+    static func dateChip(day: Int) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC") ?? TimeZone(secondsFromGMT: 0) ?? calendar.timeZone
+        var start = DateComponents()
+        start.year = 2026
+        start.month = 1
+        start.day = 1
+        guard let first = calendar.date(from: start),
+              let date = calendar.date(byAdding: .day, value: day, to: first) else { return "Today" }
+        let weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        let months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        let wd = calendar.component(.weekday, from: date)       // 1 = Sunday
+        let dd = calendar.component(.day, from: date)
+        let mm = calendar.component(.month, from: date)
+        guard wd >= 1, wd <= 7, mm >= 1, mm <= 12 else { return "Today" }
+        return "\(weekdays[wd - 1]) \(dd) \(months[mm - 1])"
+    }
+
+    /// The day of a Today's Dawn mode (nil otherwise).
+    static func dailyDay(_ mode: PlayMode) -> Int? {
+        if case let .daily(day) = mode { return day }
+        return nil
+    }
+
+    /// The score pill's second line: "Chain 7", "Wave 3", or both ("Chain 7 · Wave 3"); nil for neither.
+    static func scoreSubline(chain: Int, wave: Int) -> String? {
+        let chainText: String? = chain >= 2 ? "Chain \(chain)" : nil
+        let waveText: String? = wave > 0 ? "Wave \(wave)" : nil
+        switch (chainText, waveText) {
+        case let (c?, w?): return c + " · " + w
+        case let (c?, nil): return c
+        case let (nil, w?): return w
+        case (nil, nil): return nil
+        }
+    }
+
+    /// The centre of an item at the mirror's far edge, centred along u (the date chip), `margin` in.
+    static func farEdgeCenter(item: CGSize, layout: GardenLayout, insets: EdgeInsets, margin: CGFloat) -> CGPoint {
+        let corner = hudCenter(u: 0, item: item, layout: layout, insets: insets, margin: margin)
+        let mirror = layout.mirrorRect
+        if layout.foldVertical { return CGPoint(x: corner.x, y: mirror.midY) }
+        return CGPoint(x: mirror.midX, y: corner.y)
+    }
+
+    /// The 3rd-star line ("★★★ 1,400") for a score target; nil without one.
+    static func starTargetLine(_ starScore: Int?) -> String? {
+        guard let s = starScore, s > 0 else { return nil }
+        return "★★★ \(grouped(s))"
+    }
+}
+
+/// REVIEW-2 fix 7: a hint waits for its subject. A raised hint is held (up to `waitLimit` s) until its subject is on
+/// the field, then shows for its lifetime (or until done).
+enum HintQueue {
+    static let waitLimit: Double = 25
+
+    enum Decision: Equatable { case wait, show, drop }
+
+    /// What to do with a hint raised at `raisedAt`, now, given whether its subject is visible.
+    static func decide(subjectVisible: Bool, raisedAt: Double, now: Double) -> Decision {
+        if subjectVisible { return .show }
+        return now - raisedAt > waitLimit ? .drop : .wait
+    }
+}
+
+/// REVIEW-2 fix 12: the filtered hinge's jitter, for the About trace (`jitterDeg p95`). Fed the filtered angle each
+/// play frame while the hinge drives the light; measures |angle − its 0.5 s running mean| while the phone is nearly
+/// still. Pure value type; tested.
+struct JitterMeter: Equatable {
+    static let capacity = 900
+    private(set) var samples: [Double] = []
+    private var mean: Double?
+
+    mutating func add(angle: Double, dt: Double) {
+        guard angle.isFinite, dt.isFinite, dt > 0 else { return }
+        guard let m = mean else {
+            mean = angle
+            return
+        }
+        let k = min(dt / 0.5, 1)
+        let next = m + (angle - m) * k
+        mean = next
+        let dev = abs(angle - next)
+        // Only while nearly still (a real move is not jitter).
+        guard dev < 4 else { return }
+        samples.append(dev)
+        if samples.count > JitterMeter.capacity { samples.removeFirst(samples.count - JitterMeter.capacity) }
+    }
+
+    /// The 95th percentile (degrees), nil with fewer than 30 samples.
+    var p95: Double? {
+        guard samples.count >= 30 else { return nil }
+        let sorted = samples.sorted()
+        let i = min(Int((Double(sorted.count - 1) * 0.95).rounded()), sorted.count - 1)
+        return sorted[i]
     }
 }

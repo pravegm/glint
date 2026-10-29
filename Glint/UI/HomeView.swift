@@ -14,8 +14,11 @@ struct HomeView: View {
         ZStack {
             HomeScrim()
             // R2: on a Duo the title sits on the mirror half and every control on the garden half, clear of the crease.
-            SplitMenu(canvas: canvas) {
+            // R3 (REVIEW-2 fix 13): phones push the cards to the bottom (no empty band); on a Duo the title sits to
+            // the leading side of the mirror, clear of the sun disc (drawn a little right of centre).
+            SplitMenu(canvas: canvas, spread: !canvas.isDuo) {
                 titleBlock(compact: c)
+                    .frame(maxWidth: .infinity, alignment: canvas.isDuo ? .leading : .center)
             } bottom: {
                 VStack(spacing: c ? 16 : 20) {
                     playButton(next: next, compact: c)
@@ -125,6 +128,13 @@ struct HomeView: View {
 struct HomeScrim: View {
     var body: some View {
         ZStack {
+            // R3: a soft blur over the lower half too, so the attract light never smears behind the cards.
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .mask {
+                    LinearGradient(colors: [Color.clear, Color.white.opacity(0.9)], startPoint: .center,
+                                   endPoint: .bottom)
+                }
             LinearGradient(stops: [
                 Gradient.Stop(color: GlintTheme.night.opacity(0.86), location: 0),
                 Gradient.Stop(color: GlintTheme.indigo.opacity(0.45), location: 0.45),

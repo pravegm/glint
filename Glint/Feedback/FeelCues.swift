@@ -5,6 +5,9 @@ import Foundation
 enum FeelCue: Equatable, Sendable {
     /// A gloom seeped out of the crease (quiet; throttled by the director).
     case emerge(GloomKind)
+    /// R3: a submerged gloom rose out of the ground and can now be lit (a soft "bloop"; a flock gets one bloop and a
+    /// little chord, `FeelSurfaceGate`).
+    case surface(GloomKind)
     /// A pop on the ladder: `chain` is the chain count after it (1 = first).
     case pop(GloomKind, chain: Int)
     /// "Sweep!" reached 3 (`count` 3: the full stab) or grew (`count` > 3: one more rung).
@@ -34,6 +37,8 @@ enum FeelCueMap {
         switch event {
         case .emerged(_, let kind, _):
             return .emerge(kind)
+        case .surfaced(_, let kind, _, _):
+            return .surface(kind)
         case .popped(_, let kind, _, _, let chain, _):
             return .pop(kind, chain: chain)
         case .swept(let count, _):
@@ -137,6 +142,46 @@ struct FeelThrottle {
 
     mutating func reset() {
         last = -Double.infinity
+    }
+}
+
+/// R3: surfacings are grouped so a flock rising together isn't eight bloops. The first surfacing of a `window`
+/// bloops; the next one in the same window plays one little chord (for the whole group); the rest are silent. A new
+/// window starts once `window` s have passed since the last one began. Pure, with explicit times.
+struct FeelSurfaceGate {
+    enum Action: Equatable, Sendable {
+        case bloop
+        /// The group grew past one: a little chord (`count` = surfacings so far in the window).
+        case chord(count: Int)
+        case quiet
+    }
+
+    static let window = 0.25
+
+    private(set) var windowStart = -Double.infinity
+    private(set) var count = 0
+    private var chordPlayed = false
+
+    init() {}
+
+    mutating func next(at now: Double) -> Action {
+        guard now.isFinite else { return .quiet }
+        if !windowStart.isFinite || now - windowStart > Self.window || now < windowStart {
+            windowStart = now
+            count = 1
+            chordPlayed = false
+            return .bloop
+        }
+        count += 1
+        guard !chordPlayed else { return .quiet }
+        chordPlayed = true
+        return .chord(count: count)
+    }
+
+    mutating func reset() {
+        windowStart = -Double.infinity
+        count = 0
+        chordPlayed = false
     }
 }
 

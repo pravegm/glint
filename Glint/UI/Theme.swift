@@ -118,19 +118,25 @@ struct AppCanvas: Equatable {
 /// A menu page in two parts. On a phone: one scrolling column (`top` then `bottom`), centred. On a Duo split layout:
 /// `top` (titles, art) on the mirror half and `bottom` (the controls) on the garden half, each in its own region
 /// `AppRules.creaseClearance` clear of the crease, so nothing tappable ever sits across the fold (R2 addendum).
-/// `scrolls` false: no scroll views (the level map lays itself out in the region it gets).
+/// `scrolls` false: no scroll views (the level map lays itself out in the region it gets). R3: `spread` (phones) pushes
+/// the bottom part down to the bottom of the screen (no empty band under the cards); `alignTop` pins the content to
+/// the top of its region (Settings' title at the top safe area).
 struct SplitMenu<Top: View, Bottom: View>: View {
     let canvas: AppCanvas
     let scrolls: Bool
     let maxWidth: CGFloat
+    let spread: Bool
+    let alignTop: Bool
     let top: () -> Top
     let bottom: () -> Bottom
 
-    init(canvas: AppCanvas, scrolls: Bool = true, maxWidth: CGFloat = 560, @ViewBuilder top: @escaping () -> Top,
-         @ViewBuilder bottom: @escaping () -> Bottom) {
+    init(canvas: AppCanvas, scrolls: Bool = true, maxWidth: CGFloat = 560, spread: Bool = false,
+         alignTop: Bool = false, @ViewBuilder top: @escaping () -> Top, @ViewBuilder bottom: @escaping () -> Bottom) {
         self.canvas = canvas
         self.scrolls = scrolls
         self.maxWidth = maxWidth
+        self.spread = spread
+        self.alignTop = alignTop
         self.top = top
         self.bottom = bottom
     }
@@ -139,10 +145,18 @@ struct SplitMenu<Top: View, Bottom: View>: View {
         let regions = canvas.regions
         ZStack {
             if let secondary = regions.secondary {
-                SplitRegion(rect: secondary, scrolls: scrolls, maxWidth: maxWidth) { top() }
-                SplitRegion(rect: regions.primary, scrolls: scrolls, maxWidth: maxWidth) { bottom() }
+                SplitRegion(rect: secondary, scrolls: scrolls, maxWidth: maxWidth, alignTop: alignTop) { top() }
+                SplitRegion(rect: regions.primary, scrolls: scrolls, maxWidth: maxWidth, alignTop: alignTop) { bottom() }
+            } else if spread {
+                SplitRegion(rect: regions.primary, scrolls: scrolls, maxWidth: maxWidth, fill: true) {
+                    VStack(spacing: canvas.compact ? 14 : 18) {
+                        top()
+                        Spacer(minLength: 16)
+                        bottom()
+                    }
+                }
             } else {
-                SplitRegion(rect: regions.primary, scrolls: scrolls, maxWidth: maxWidth) {
+                SplitRegion(rect: regions.primary, scrolls: scrolls, maxWidth: maxWidth, alignTop: alignTop) {
                     VStack(spacing: canvas.compact ? 14 : 18) {
                         top()
                         bottom()
@@ -159,12 +173,19 @@ struct SplitRegion<Content: View>: View {
     let rect: CGRect
     let scrolls: Bool
     let maxWidth: CGFloat
+    /// Pin the content to the top (else centred).
+    let alignTop: Bool
+    /// The content fills the region's height (a Spacer inside it pushes the rest down).
+    let fill: Bool
     let content: () -> Content
 
-    init(rect: CGRect, scrolls: Bool, maxWidth: CGFloat, @ViewBuilder content: @escaping () -> Content) {
+    init(rect: CGRect, scrolls: Bool, maxWidth: CGFloat, alignTop: Bool = false, fill: Bool = false,
+         @ViewBuilder content: @escaping () -> Content) {
         self.rect = rect
         self.scrolls = scrolls
         self.maxWidth = maxWidth
+        self.alignTop = alignTop
+        self.fill = fill
         self.content = content
     }
 
@@ -176,10 +197,11 @@ struct SplitRegion<Content: View>: View {
                 ScrollView(.vertical) {
                     content()
                         .frame(maxWidth: maxWidth)
+                        .frame(minHeight: fill ? max(h - 24, 1) : nil)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
                         .frame(maxWidth: .infinity)
-                        .frame(minHeight: h)
+                        .frame(minHeight: h, alignment: alignTop ? .top : .center)
                 }
                 .scrollIndicators(.hidden)
                 .scrollBounceBehavior(.basedOnSize)

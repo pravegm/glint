@@ -25,3 +25,15 @@
 - Critic panel R1 (design/REVIEW-1.md): 5/4/5/4. P0s folded into R2 (addendum): cloud shadows (lateral choice), light
   as a soft pool + cone, edge 135°, lever = band, nothing on the crease, black CI icon, hints on the garden, loss tips,
   daily streak. Store pipeline ported (store.yml, ci/store-*, ci/duo-store.sh).
+
+## Thu 29 Oct: the night gap, then R3
+- R2 green (CI 40789455196: 183 tests, 22 frames, 10 badges, icon renders). Duo sim R2 (40793416148): 6/7 PASS;
+  PAUSE-SHUT ran on a level 1 that was already won (a parked band at 0.25 wins it: the camping problem the panel
+  found). First real 951×669 book-pose frames look right; the Duo Home frame was the bare launch colour (re-shoot added).
+- Critic panel R2 (design/REVIEW-2.md): 6/5/5/5 → P0: camping at ~91° still wins world 1, black boxes under submerged
+  glooms, grass light still a slab, world 1 can't be lost.
+- **The session process died ~00:40 and nothing ran until 10:00** (agents died with it). The founder asked why; the
+  machine is now kept awake for the session (keep-awake, session_idle) and work stays in flight.
+- R3 (design/ROUND-3.md): submerged travel to authored surfacing depths, parked-pilot balance test, world-1 stakes,
+  ★3 score target, band core ±0.065, light pool on grass, warm grounds (no blue), icon redrawn as a brass hand mirror
+  catching the sun, ASC tool "all" vs "allStars" fix.

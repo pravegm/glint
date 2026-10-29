@@ -641,10 +641,10 @@ struct R2LayoutTests {
             let compact = min(layout.size.width, layout.size.height) < 500
             let scoreSize = PlayHUD.scoreSize(compact: compact)
             let score = AppRules.rect(center: AppRules.hudCenter(u: 0, item: scoreSize, layout: layout,
-                                                                 insets: item.insets, margin: PlayHUD.margin),
+                                                                 insets: item.insets, margin: AppRules.hudMargin(layout: layout)),
                                       size: scoreSize)
             let pause = AppRules.rect(center: AppRules.hudCenter(u: 1, item: PlayHUD.pauseSize, layout: layout,
-                                                                 insets: item.insets, margin: PlayHUD.margin),
+                                                                 insets: item.insets, margin: AppRules.hudMargin(layout: layout)),
                                       size: PlayHUD.pauseSize)
             let flowers = GardenScene.hudSafeRects(layout: layout)
             #expect(flowers.count == 5)
@@ -919,11 +919,124 @@ struct R2LeverTests {
         let phone = GardenLayout.make(size: CGSize(width: 402, height: 874), isDuo: false, swapHalves: false)
         let insets = EdgeInsets(top: 59, leading: 0, bottom: 34, trailing: 0)
         let pause = AppRules.rect(center: AppRules.hudCenter(u: 1, item: PlayHUD.pauseSize, layout: phone,
-                                                             insets: insets, margin: PlayHUD.margin),
+                                                             insets: insets, margin: AppRules.hudMargin(layout: phone)),
                                   size: PlayHUD.pauseSize)
         let creaseY = phone.gardenRect.minY
         let top = creaseY - phone.gardenDepth * 0.2
         let rail = CGRect(x: 402 - 50, y: top, width: 50, height: 874 - top)
         #expect(!pause.intersects(rail))
+    }
+}
+
+// MARK: - Round 3 (design/ROUND-3.md "App", REVIEW-2 fixes 5–16)
+
+struct R3Tests {
+    @Test @MainActor func hudSitsInsideTheBrassFrame() {
+        // Real layouts only: a phone never folds vertically (its narrow mirror there is a test artefact).
+        for item in r2Layouts() where item.isDuo || !item.layout.foldVertical {
+            let layout = item.layout
+            let frame = AppRules.mirrorFrameThickness(layout: layout)
+            #expect(frame >= 9 && frame <= 22)
+            let margin = AppRules.hudMargin(layout: layout)
+            #expect(margin >= frame + 12 - 1e-9)
+            let compact = min(layout.size.width, layout.size.height) < 500
+            let sizes = [PlayHUD.scoreSize(compact: compact), PlayHUD.pauseSize]
+            let mirror = layout.mirrorRect
+            let inner = mirror.insetBy(dx: frame + 12 - 0.5, dy: frame + 12 - 0.5)
+            for (k, size) in sizes.enumerated() {
+                let r = AppRules.rect(center: AppRules.hudCenter(u: k == 0 ? 0 : 1, item: size, layout: layout,
+                                                                 insets: EdgeInsets(), margin: margin),
+                                      size: size)
+                #expect(inner.contains(r))
+            }
+        }
+    }
+
+    @Test func swapOnlyInBookPose() {
+        #expect(AppRules.swapAllowed(isDuo: true, size: CGSize(width: 951, height: 669)))
+        #expect(!AppRules.swapAllowed(isDuo: true, size: CGSize(width: 669, height: 951)))
+        #expect(!AppRules.swapAllowed(isDuo: false, size: CGSize(width: 874, height: 402)))
+    }
+
+    @Test func dateChips() {
+        #expect(AppRules.dateChip(day: 0) == "Thu 1 Jan")
+        #expect(AppRules.dateChip(day: 301) == "Thu 29 Oct")
+        #expect(AppRules.dateChip(day: 364) == "Thu 31 Dec")
+        #expect(AppRules.dailyDay(.daily(day: 7)) == 7)
+        #expect(AppRules.dailyDay(.endless) == nil)
+    }
+
+    @Test func scoreSublineAlwaysShowsTheWave() {
+        #expect(AppRules.scoreSubline(chain: 0, wave: 0) == nil)
+        #expect(AppRules.scoreSubline(chain: 1, wave: 0) == nil)
+        #expect(AppRules.scoreSubline(chain: 7, wave: 0) == "Chain 7")
+        #expect(AppRules.scoreSubline(chain: 0, wave: 3) == "Wave 3")
+        #expect(AppRules.scoreSubline(chain: 7, wave: 3) == "Chain 7 · Wave 3")
+    }
+
+    @Test func starTargets() {
+        #expect(AppRules.starTargetLine(1_400) == "★★★ 1,400")
+        #expect(AppRules.starTargetLine(0) == nil)
+        #expect(AppRules.starTargetLine(nil) == nil)
+    }
+
+    @Test func hintsWaitForTheirSubject() {
+        #expect(HintQueue.decide(subjectVisible: true, raisedAt: 0, now: 100) == .show)
+        #expect(HintQueue.decide(subjectVisible: false, raisedAt: 0, now: 3) == .wait)
+        #expect(HintQueue.decide(subjectVisible: false, raisedAt: 0, now: HintQueue.waitLimit + 1) == .drop)
+        // A submerged gloom is not a subject yet (it can't be lit).
+        var snap = DawnSnapshot(mode: .level(2))
+        snap.glooms = [GloomState(id: 1, kind: .brute, u: 0.5, d: 0.2, radius: 0.08, hp: 2, maxHP: 2, submerged: true)]
+        #expect(AppRules.hintSubject(.followTheBigOnes, snapshot: snap) == nil)
+        #expect(AppRules.hintSubject(.lightTheShadows, snapshot: snap) == nil)
+        snap.glooms[0].submerged = false
+        #expect(AppRules.hintSubject(.followTheBigOnes, snapshot: snap) != nil)
+        #expect(AppRules.hintSubject(.spareTheFireflies, snapshot: snap) == nil)
+    }
+
+    @Test func jitterMeter() {
+        var m = JitterMeter()
+        #expect(m.p95 == nil)
+        for i in 0..<200 {
+            let wobble = i % 2 == 0 ? 0.6 : -0.6
+            m.add(angle: 120 + wobble, dt: 1.0 / 60.0)
+        }
+        #expect(m.p95 != nil)
+        if let p = m.p95 { #expect(p > 0.3 && p < 1.0) }
+        // A real move (a big step) is not counted as jitter.
+        let before = m.samples.count
+        m.add(angle: 60, dt: 1.0 / 60.0)
+        #expect(m.samples.count == before)
+    }
+
+    @Test func demoKeysR3() {
+        let d = DemoMode.parse("screen=results;results=lost;level=13;ignore=brute;streak=3")
+        #expect(d.ignoreKind == .brute)
+        #expect(d.streakDays == 3)
+        #expect(DemoMode.parse("ignore=nonsense").ignoreKind == nil)
+        var p = DemoPresets.progress(.fresh, now: Date())
+        DemoPresets.applyStreak(3, to: &p, now: Date())
+        let today = DailySeed.day(for: Date())
+        #expect(ProgressRules.dailyStreak(p, today: today) == 3)
+        #expect(ProgressRules.dailyBest(p, day: today) == 2_140)
+        #expect(ProgressRules.dailyUnlocked(p))
+        #expect(AppRules.dailyCardStatus(open: true, playedToday: ProgressRules.playedDaily(p, day: today),
+                                         todayBest: 2_140, streak: 3) == "✓ Day 3 streak")
+    }
+
+    @Test func starsUseTheScoreTarget() {
+        #expect(DawnSession.stars(flowersLeft: 5, score: 2_000, starScore: 1_400) == 3)
+        #expect(DawnSession.stars(flowersLeft: 5, score: 1_000, starScore: 1_400) == 2)
+        #expect(DawnSession.stars(flowersLeft: 5, score: 0, starScore: 0) == 3)
+    }
+
+    @Test func iconMatchesTheShaderSpots() {
+        // A few pixels of tools/make-icon.js's design: the sun disc is warm and bright, the top-left sky is deep indigo.
+        let sun = IconShader.shade(0.78, 0.2)
+        #expect(sun.r > 240 && sun.g > 150)
+        let sky = IconShader.shade(0.02, 0.02)
+        #expect(sky.b > sky.r && sky.r < 60)
+        let gloom = IconShader.shade(0.66, 0.70)
+        #expect(gloom.r < 120 && gloom.b > gloom.g)
     }
 }

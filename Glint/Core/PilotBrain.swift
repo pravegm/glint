@@ -151,7 +151,7 @@ struct PilotBrain {
             }
             let newID: Int = best >= 0 ? gl[best].id : -1
             if best >= 0 && newID != targetID {
-                let jump: Double = max(gl[best].d, Tuning.creaseShade) - hand
+                let jump: Double = max(PilotBrain.reachD(gl[best]), Tuning.creaseShade) - hand
                 let roll: Double = rng.unit()
                 if abs(jump) > 0.15 && roll < overshootChance {
                     let size: Double = (0.04 + 0.08 * rng.unit()) * (1 - s)
@@ -166,7 +166,10 @@ struct PilotBrain {
         var careless: Bool = false
         if tgIndex >= 0 {
             let tg: GloomState = gl[tgIndex]
-            if tg.kind == .hopper {
+            if tg.submerged {
+                // R3: wait where it will surface.
+                aim = tg.surfaceD + PilotBrain.speed(of: tg) * (reaction + 0.05) * s
+            } else if tg.kind == .hopper {
                 aim = tg.tension < 0.02 ? tg.d + 0.06 : tg.d + 0.02 + 0.03 * s
             } else {
                 aim = tg.d + PilotBrain.speed(of: tg) * (reaction + 0.05) * s
@@ -233,8 +236,10 @@ struct PilotBrain {
     func urgency(_ g: GloomState, in glooms: [GloomState], shades: [ShadeState] = []) -> Double {
         let sp: Double = max(PilotBrain.speed(of: g), 0.02)
         let ahead: Double = g.kind == .splitter ? 0.25 : 0
-        let arrive: Double = (1 - g.d - ahead) / sp
-        let trip: Double = abs(lagged - max(g.d, Tuning.creaseShade)) / speedCap
+        let dEff: Double = PilotBrain.reachD(g)
+        let under: Double = g.submerged ? max(g.surfaceD - g.d, 0) / (sp * Tuning.submergedSpeedFactor) : 0
+        let arrive: Double = (1 - dEff - ahead) / sp + under
+        let trip: Double = abs(lagged - max(dEff, Tuning.creaseShade)) / speedCap
         let raw: Double = arrive - g.hp - trip
         var slack: Double = raw
         var near: Int = 0
@@ -248,6 +253,11 @@ struct PilotBrain {
         }
         if raw < -0.3 { slack += 8 }
         return -slack
+    }
+
+    /// R3: where a gloom can first be lit: its surfacing depth while submerged, else where it is.
+    static func reachD(_ g: GloomState) -> Double {
+        return g.submerged ? g.surfaceD : g.d
     }
 
     /// The speed it expects of a gloom (it can't see a group's speed scale): a flung wisp flies at the fling speed.

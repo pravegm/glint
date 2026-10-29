@@ -29,6 +29,9 @@ import UIKit
 //                  `freezeAfter=<s>` alone: freeze after s s of play (`GLINT-T freeze after`). Without `t=`/`skill=`
 //                  these use the pilot only when no real hinge has reported.
 // - `prompt=close|open|drag`  force that start line (static frames; the light stays in the crease).
+// - `streak=<n>`   (R3) Today's Dawn finished on the last n days, today included (today's best 2,140).
+// - `ignore=<kind>`  (R3) the pilot never aims at that kind (with `results=lost`: a loss with a known cause, so the
+//                  tip matches it: `results=lost;level=13;ignore=brute`).
 // - `duolog=1`     changes nothing (how CI launches on the Duo simulator: `screen=play;level=1;duolog=1`).
 //
 // Log lines (DEBUG + `-glintDemo` only, via FeelDemoLog): `GLINT-T demo '<args>' starts`, `GLINT-T screen <name>`,
@@ -97,6 +100,10 @@ struct DemoMode: Equatable, Sendable {
     var sound = true
     var prompt: PromptKey?
     var duoLog = false
+    /// R3 `streak=<n>`: Today's Dawn finished on the last n days, today included (best today 2,140): the streak frames.
+    var streakDays: Int?
+    /// R3 `ignore=<kind>`: the pilot never aims at that gloom kind (lost-result fixtures whose cause is known).
+    var ignoreKind: GloomKind?
 
     init(raw: String) { self.raw = raw }
 
@@ -166,6 +173,9 @@ struct DemoMode: Equatable, Sendable {
             case "sound": config.sound = flag(value)
             case "prompt": config.prompt = PromptKey(rawValue: value.lowercased())
             case "duolog": config.duoLog = flag(value)
+            case "streak":
+                if let n = Int(value) { config.streakDays = min(max(n, 0), 365) }
+            case "ignore": config.ignoreKind = GloomKind(rawValue: value.lowercased())
             default: break
             }
         }
@@ -196,6 +206,20 @@ enum DemoPresets {
     static let midStars: [Int] = [3, 3, 2, 3, 2, 3, 3, 2, 3, 2, 3, 2, 1]
     /// done: every level won, mostly ★★★.
     static let doneTwoStarLevels: Set<Int> = [7, 18, 26, 29]
+
+    /// `streak=<n>`: Today's Dawn finished on the last n days (today included), today's best 2,140.
+    static func applyStreak(_ days: Int?, to data: inout ProgressData, now: Date) {
+        guard let days, days > 0 else { return }
+        let today = DailySeed.day(for: now)
+        let played = (0..<days).map { today - $0 }
+        data.dailyPlayed = ProgressRules.cleanDays(data.dailyPlayed + played)
+        data.dailyBests[String(today)] = max(data.dailyBests[String(today)] ?? 0, 2_140)
+        data.bestDailyEver = max(data.bestDailyEver, 2_140)
+        // Today's Dawn must be open for the card to show it.
+        if ProgressRules.stars(data, level: ProgressRules.dailyLevel) == 0 {
+            for i in 0..<min(ProgressRules.dailyLevel, data.levelStars.count) { data.levelStars[i] = max(data.levelStars[i], 2) }
+        }
+    }
 
     static func progress(_ preset: DemoMode.Preset?, now: Date) -> ProgressData {
         var d = ProgressData()

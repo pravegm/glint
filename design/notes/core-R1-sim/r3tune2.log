@@ -1,0 +1,40 @@
+L11 speed=0.827 -> 3.33 (target 4.00)
+L12 speed=0.623 -> 4.67 (target 3.91)
+L13 speed=0.795 -> 3.00 (target 3.82)
+L14 speed=0.748 -> 4.00 (target 3.73)
+L15 speed=0.607 -> 3.50 (target 3.64)
+L16 speed=0.702 -> 3.17 (target 3.55)
+L17 speed=0.607 -> 3.17 (target 3.46)
+L18 speed=0.623 -> 1.83 (target 3.37)
+L19 speed=0.607 -> 1.33 (target 3.28)
+L20 speed=0.607 -> 0.83 (target 3.19)
+L21 speed=0.795 -> 4.17 (target 3.90)
+L22 speed=0.982 -> 3.50 (target 3.76)
+L23 speed=0.686 -> 2.67 (target 3.62)
+L24 speed=0.607 -> 2.67 (target 3.48)
+L25 speed=0.607 -> 2.83 (target 3.34)
+L26 speed=0.843 -> 3.67 (target 3.20)
+L27 speed=0.655 -> 3.33 (target 3.06)
+L28 speed=0.639 -> 2.00 (target 2.92)
+L29 speed=0.748 -> 2.67 (target 2.78)
+L30 speed=0.639 -> 2.00 (target 2.64)
+L11 murks 55->52 cost=0.15 tuned=8/8 4.00 mid=8/8 4.75 weak=- strong=- parked minLost=5 anyWin=false target fl 4.00
+L12 murks 53->56 cost=0.24 tuned=8/8 4.00 mid=8/8 5.00 weak=- strong=- target fl 3.91
+L13 murks 56->59 cost=0.07 tuned=7/8 3.75 mid=8/8 5.00 weak=- strong=- target fl 3.82
+L14 murks 63->62 cost=0.17 tuned=8/8 3.75 mid=8/8 4.88 weak=- strong=- target fl 3.73
+L15 murks 65->66 cost=0.29 tuned=8/8 3.50 mid=8/8 4.63 weak=- strong=- target fl 3.64
+L16 murks 67->66 cost=0.20 tuned=8/8 3.50 mid=8/8 5.00 weak=- strong=- target fl 3.55
+L17 murks 65->63 cost=0.33 tuned=7/8 3.13 mid=8/8 4.75 weak=- strong=- target fl 3.46
+L18 murks 73->70 cost=0.12 tuned=7/8 3.25 mid=8/8 5.00 weak=- strong=- target fl 3.37
+L19 murks 78->77 cost=0.43 tuned=8/8 3.00 mid=8/8 4.50 weak=- strong=- target fl 3.28
+L20 murks 77->80 cost=0.19 tuned=7/8 3.00 mid=8/8 4.88 weak=- strong=- target fl 3.19
+L21 murks 55->55 cost=0.23 tuned=8/8 4.13 mid=- weak=2/8 0.25 strong=8/8 4.88 parked minLost=5 anyWin=false target fl 3.90
+L22 murks 56->56 cost=0.51 tuned=8/8 3.25 mid=- weak=2/8 0.63 strong=8/8 5.00 target fl 3.76
+L23 murks 64->63 cost=0.90 tuned=8/8 3.38 mid=- weak=5/8 1.25 strong=8/8 4.88 target fl 3.62
+L24 murks 58->57 cost=0.60 tuned=8/8 3.13 mid=- weak=2/8 0.38 strong=8/8 4.38 target fl 3.48
+L25 murks 67->69 cost=0.69 tuned=8/8 3.38 mid=- weak=5/8 1.25 strong=8/8 5.00 target fl 3.34
+L26 murks 64->64 cost=0.43 tuned=8/8 3.63 mid=- weak=1/8 0.25 strong=8/8 4.88 target fl 3.20
+L27 murks 67->67 cost=0.47 tuned=8/8 3.38 mid=- weak=3/8 0.63 strong=8/8 4.50 target fl 3.06
+L28 murks 69->70 cost=0.17 tuned=8/8 2.75 mid=- weak=1/8 0.13 strong=8/8 5.00 target fl 2.92
+L29 murks 75->75 cost=0.03 tuned=7/8 2.75 mid=- weak=0/8 0.00 strong=8/8 5.00 target fl 2.78
+L30 murks 74->72 cost=0.74 tuned=7/8 3.38 mid=- weak=2/8 0.88 strong=8/8 5.00 target fl 2.64

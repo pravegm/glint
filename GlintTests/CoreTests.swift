@@ -7,6 +7,7 @@ import Testing
 // determinism, the pilot, and a 30-level smoke run with a strong pilot.
 // Round 2: the crease shade, cloud shadows, the 135° edge, DawnStats by kind and by shade, the human-hinge pilot,
 // achievements (each just below and at its threshold).
+// Round 3: submerged travel and surfacing, the ±0.065 band core, the score-gated third star, Long Night's jump.
 
 /// Shared drivers for Core tests and BalanceTests.
 enum CoreHarness {
@@ -127,10 +128,10 @@ struct CoreTests {
         #expect(abs(Tuning.intensity(d: 0.4, band: 0.4) - 1) < 1e-12)
         #expect(abs(Tuning.intensity(d: 0.45, band: 0.4) - 1) < 1e-9)
         #expect(abs(Tuning.intensity(d: 0.35, band: 0.4) - 1) < 1e-9)
-        #expect(abs(Tuning.intensity(d: 0.485, band: 0.4) - 0) < 1e-9)
+        #expect(abs(Tuning.intensity(d: 0.5, band: 0.4) - 0) < 1e-9)
         #expect(abs(Tuning.intensity(d: 0.6, band: 0.4) - 0) < 1e-12)
-        // Halfway down the edge the smoothstep is exactly 0.5.
-        #expect(abs(Tuning.intensity(distance: 0.0675) - 0.5) < 1e-9)
+        // Halfway down the edge (R3: 0.065…0.10) the smoothstep is exactly 0.5.
+        #expect(abs(Tuning.intensity(distance: 0.0825) - 0.5) < 1e-9)
         // Symmetric and never rising with distance.
         var last: Double = 2
         var x: Double = 0
@@ -150,7 +151,7 @@ struct CoreTests {
         let r: Double = GloomSpec.of(.brute).radius
         #expect(abs(Tuning.intensity(d: 0.5 + 0.05 + 0.4 * r, radius: r, band: 0.5) - 1) < 1e-9)
         #expect(Tuning.intensity(d: 0.5 + 0.09, radius: r, band: 0.5) > 0.9)
-        #expect(Tuning.intensity(d: 0.5 + 0.09, radius: 0, band: 0.5) < 1e-12)
+        #expect(Tuning.intensity(d: 0.5 + 0.11, radius: 0, band: 0.5) < 1e-12)
     }
 
     @Test func multiplierAndLanes() {
@@ -176,6 +177,13 @@ struct CoreTests {
         #expect(DawnSession.stars(flowersLeft: 2) == 1)
         #expect(DawnSession.stars(flowersLeft: 1) == 1)
         #expect(DawnSession.stars(flowersLeft: 0) == 0)
+        // R3: the third star also needs the level's score.
+        #expect(DawnSession.stars(flowersLeft: 5, score: 1999, starScore: 2000) == 2)
+        #expect(DawnSession.stars(flowersLeft: 5, score: 2000, starScore: 2000) == 3)
+        #expect(DawnSession.stars(flowersLeft: 5, score: 10, starScore: 0) == 3)
+        #expect(DawnSession.stars(flowersLeft: 4, score: 99_999, starScore: 2000) == 2)
+        #expect(DawnSession.stars(flowersLeft: 2, score: 99_999, starScore: 2000) == 1)
+        #expect(DawnSession.stars(flowersLeft: 0, score: 99_999, starScore: 0) == 0)
     }
 
     @Test func tuningMatchesTheDesign() {
@@ -184,8 +192,9 @@ struct CoreTests {
         #expect(abs(Tuning.edgeAngle - 135) < 1e-12)
         #expect(abs(Tuning.resumeAngle - 25) < 1e-12)
         #expect(abs(Tuning.shutDwell - 0.25) < 1e-12)
-        #expect(abs(Tuning.bandCoreHalfWidth - 0.05) < 1e-12)
-        #expect(abs(Tuning.bandEdgeHalfWidth - 0.085) < 1e-12)
+        #expect(abs(Tuning.bandCoreHalfWidth - 0.065) < 1e-12)
+        #expect(abs(Tuning.bandEdgeHalfWidth - 0.10) < 1e-12)
+        #expect(abs(Tuning.submergedSpeedFactor - 1.6) < 1e-12)
         #expect(Tuning.flowerCount == 5)
         #expect(abs(Tuning.chainWindow - 1.6) < 1e-12)
         #expect(abs(Tuning.sweepWindow - 0.35) < 1e-12)
@@ -395,8 +404,9 @@ struct CoreTests {
         }
         #expect(LevelBook.level(10).clouds.isEmpty)
         #expect(!LevelBook.daily(day: 300).clouds.isEmpty)
-        #expect(LevelBook.endlessRecipe(3).clouds == 0)
-        #expect(LevelBook.endlessRecipe(4).clouds == 1)
+        // R3: Long Night brings a cloud from wave 2 and two from wave 9.
+        #expect(LevelBook.endlessRecipe(1).clouds == 0)
+        #expect(LevelBook.endlessRecipe(2).clouds == 1)
         #expect(LevelBook.endlessRecipe(9).clouds == 2)
     }
 
@@ -567,10 +577,9 @@ struct CoreTests {
             if let g = session.snapshot.glooms.first { return g.d + (g.tension < 0.02 ? 0.06 : 0.02) }
             return 0
         }
-        // R2: with the crease shade both start late; riding the hopper is still no slower than parking.
-        #expect(led <= parked + 0.05)
+        // R3: with the wider band a parked band never finishes a hopper; riding on it does.
+        #expect(led < parked)
         #expect(led < 5)
-        #expect(parked < 20)
     }
 
     @Test func hoppersHopAndTheLightStartlesThem() {
@@ -1057,6 +1066,132 @@ struct CoreTests {
         }
         #expect(seen)
         #expect(s.cloudQueue.count == LevelBook.level(12).clouds.count)
+    }
+
+    // MARK: R3: submerged travel, surfacing, the score star
+
+    private static func surfacing(_ depth: Double) -> SpawnGroup {
+        var g: SpawnGroup = CoreHarness.group(.gloom(.murk), at: 0.5)
+        g.surface = depth...depth
+        return g
+    }
+
+    @Test func gloomsTravelSubmergedAndSurface() {
+        let s = DawnSession(spec: CoreHarness.spec([CoreTests.surfacing(0.4)]))
+        var sawSubmerged: Bool = false
+        var litWhileSubmerged: Bool = false
+        let events = CoreHarness.run(s, seconds: 20) { (_: Double, session: DawnSession) -> Double in
+            for g in session.snapshot.glooms where g.submerged {
+                sawSubmerged = true
+                if g.lit > 0 { litWhileSubmerged = true }
+                if abs(g.surfaceD - 0.4) > 1e-9 { litWhileSubmerged = true }
+            }
+            return 0.2
+        }
+        var surfacedAt: Double = -1
+        for e in events {
+            if case .surfaced(_, let kind, _, let d) = e.event {
+                #expect(kind == .murk)
+                #expect(d >= 0.4 && d < 0.41)
+                surfacedAt = e.time
+            }
+        }
+        // (0.4 + 0.05) / (0.1 × 1.6) ≈ 2.8 s after it emerged at 0.5 s.
+        #expect(abs(surfacedAt - 3.3) < 0.05)
+        #expect(sawSubmerged)
+        #expect(!litWhileSubmerged)
+        // It travelled under the band parked at 0.2 and surfaced beyond it: never popped.
+        #expect(CoreHarness.pops(events).isEmpty)
+        #expect(CoreHarness.count(events, CoreHarness.isEaten) == 1)
+        #expect(s.stats.submergedBlockedSeconds > 0.5)
+        #expect(s.stats.surfaced == 1)
+
+        let deeper = DawnSession(spec: CoreHarness.spec([CoreTests.surfacing(0.4)]))
+        let e2 = CoreHarness.runParked(deeper, at: 0.6, seconds: 20)
+        #expect(CoreHarness.pops(e2).count == 1)
+    }
+
+    @Test func onlyScriptedGloomsSubmerge() {
+        // No surface range (R1/R2 scripts): never submerged. Splitters' wisps and fireflies never submerge either.
+        let plain = DawnSession(spec: CoreHarness.spec([CoreHarness.group(.gloom(.murk), at: 0.1)]))
+        _ = CoreHarness.runParked(plain, at: 0.9, seconds: 0.5)
+        #expect(plain.snapshot.glooms.first?.submerged == false)
+        var split: SpawnGroup = CoreHarness.group(.gloom(.splitter), at: 0.5)
+        split.surface = 0.3...0.3
+        let s = DawnSession(spec: CoreHarness.spec([split, CoreHarness.group(.firefly, at: 0.5)]))
+        var wispsSubmerged: Bool = false
+        _ = CoreHarness.run(s, seconds: 12) { (_: Double, session: DawnSession) -> Double in
+            for g in session.snapshot.glooms where g.kind == .wisp && g.submerged { wispsSubmerged = true }
+            return 0.45
+        }
+        #expect(!wispsSubmerged)
+        #expect(s.stats.splits == 1)
+    }
+
+    @Test func levelsAuthorSurfacingDepths() {
+        var n: Int = 1
+        var deep: Bool = false
+        while n <= LevelBook.count {
+            let l: LevelSpec = LevelBook.level(n)
+            let top: Double = n <= 3 ? Tuning.surfaceMaxGentle : Tuning.surfaceMax
+            #expect(l.starScore > 0)
+            for g in l.groups {
+                switch g.kind {
+                case .firefly:
+                    #expect(g.surface.upperBound == 0)
+                case .gloom(let k):
+                    #expect(g.surface.lowerBound >= Tuning.surfaceMin - 1e-9)
+                    #expect(g.surface.upperBound <= top + 1e-9)
+                    if k == .wisp { #expect(g.surface.lowerBound == g.surface.upperBound) }
+                    if k == .brute { #expect(g.surface.upperBound <= 0.3 + 1e-9) }
+                    if g.surface.upperBound > 0.45 { deep = true }
+                }
+            }
+            n += 1
+        }
+        #expect(deep)
+        #expect(LevelBook.daily(day: 300).starScore == 0)
+    }
+
+    @Test func theThirdStarNeedsTheScore() {
+        var spec: LevelSpec = CoreHarness.spec([CoreHarness.group(.gloom(.murk), at: 0.5)], duration: 10)
+        spec.starScore = 5000
+        let s = DawnSession(spec: spec)
+        let events = CoreHarness.runParked(s, at: 0.3, seconds: 12)
+        var stars: Int = -1
+        for e in events {
+            if case .sunrise(let st, _) = e.event { stars = st }
+        }
+        #expect(s.snapshot.flowersLeft == 5)
+        #expect(stars == 2)
+    }
+
+    @Test func longNightJumpsAfterTheFirstWave() {
+        let one: LevelRecipe = LevelBook.endlessRecipe(1)
+        #expect(one.brutes == 0 && one.splitters == 0 && one.clouds == 0)
+        #expect(abs(one.surfaceMax - Tuning.surfaceMaxGentle) < 1e-12)
+        let two: LevelRecipe = LevelBook.endlessRecipe(2)
+        #expect(two.brutes >= 1 && two.splitters >= 1 && two.flocks >= 1 && two.clouds >= 1)
+        #expect(abs(two.surfaceMax - Tuning.surfaceMax) < 1e-12)
+        #expect(two.murks > one.murks)
+        let six: LevelRecipe = LevelBook.endlessRecipe(6)
+        #expect(six.clouds == 1 && six.hoppers >= 1 && six.speed > two.speed && six.flockSize <= 6)
+        #expect(LevelBook.endlessRecipe(40).speed <= 1.2 + 1e-12)
+    }
+
+    @Test func thePilotWaitsWhereAGloomWillSurface() {
+        let shot = DawnSnapshot(mode: .level(5), phase: .playing, glooms: [
+            GloomState(id: 1, kind: .murk, u: 0.5, d: 0.05, radius: 0.05, hp: 0.55, maxHP: 0.55, submerged: true,
+                       surfaceD: 0.45),
+        ])
+        var p = PilotBrain(skill: 1, seed: 6)
+        var i: Int = 0
+        while i < 240 {
+            _ = p.band(for: shot, dt: 1.0 / 120.0)
+            i += 1
+        }
+        #expect(abs(p.position - 0.46) < 0.05)
+        #expect(abs(PilotBrain.reachD(shot.glooms[0]) - 0.45) < 1e-12)
     }
 
     // MARK: R2: the human-hinge pilot

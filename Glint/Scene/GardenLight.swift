@@ -9,6 +9,34 @@ struct LightPiece: Equatable {
     var f1: CGFloat
 }
 
+/// R3 (REVIEW-2 P0-3): how strong each light layer is drawn (additive peak opacity). On grass (the meadow and Long
+/// Night's moonlit meadow) the pool is gentle, so the lawn under the band stays under 1.8 × its unlit brightness (a
+/// pool of light, not a slab); tiles and planks are lighter and take the R2 strength. The cone (beam) runs from the
+/// crease shade to the band's near edge at 18 %, so it never stacks under the band.
+struct LightAlphas: Equatable {
+    var pool: CGFloat
+    var core: CGFloat
+    var halo: CGFloat
+    var beam: CGFloat
+    var trail: CGFloat
+
+    static func of(_ style: GroundStyle, dawn: CGFloat, swell: CGFloat) -> LightAlphas {
+        let sw = min(max(swell, 0), 1)
+        switch style {
+        case .meadow:
+            return LightAlphas(pool: 0.09 + 0.06 * sw, core: 0.065 + 0.02 * dawn + 0.08 * sw, halo: 0.015 + 0.08 * sw,
+                               beam: 0.18, trail: 0.2)
+        case .moonlit:
+            // Moonlight on the darker blue lawn: gentler still.
+            return LightAlphas(pool: 0.07 + 0.05 * sw, core: 0.05 + 0.07 * sw, halo: 0.01 + 0.06 * sw,
+                               beam: 0.14, trail: 0.16)
+        case .rooftops, .harbour:
+            return LightAlphas(pool: 0.34 + 0.12 * sw, core: 0.24 + 0.04 * dawn + 0.2 * sw, halo: 0.1 + 0.18 * sw,
+                               beam: 0.18, trail: 0.3)
+        }
+    }
+}
+
 /// R2: how much of the mirror's light reaches each `u` (REVIEW-1 P0-2/P0-3): the band fades over the outer 6 % of the
 /// garden's width, and each cloud shade multiplies it by `1 − strength` with a soft 0.03 edge (Contracts'
 /// `ShadeState`). Pure, so the art and the tests agree.

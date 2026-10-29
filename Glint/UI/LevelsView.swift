@@ -150,7 +150,9 @@ struct LevelMap: View {
                         onPick(n)
                     } label: {
                         SunMedallion(number: n, stars: ProgressRules.stars(data, level: n), unlocked: unlocked,
-                                     isNext: unlocked && n == next, size: node, reduceMotion: reduceMotion)
+                                     isNext: unlocked && n == next, size: node, reduceMotion: reduceMotion,
+                                     title: LevelBook.level(n).title,
+                                     target: AppRules.starTargetLine(GameController.starScore(for: .level(n))))
                     }
                     .buttonStyle(PressScaleStyle())
                     .position(points[i])
@@ -182,7 +184,8 @@ struct LevelPath: Shape {
     }
 }
 
-/// A level: a little sun (warmer with more stars), its number, its stars; a lock when closed; the next one glows.
+/// A level: a little gold sun, its number, its stars, its name (R3) and, until it has ★★★, the 3rd-star target
+/// ("★★★ 1,400"); a closed level is a dark disc with a shadow peeking and a lock; the next one glows.
 struct SunMedallion: View {
     let number: Int
     let stars: Int
@@ -190,6 +193,8 @@ struct SunMedallion: View {
     let isNext: Bool
     let size: CGFloat
     let reduceMotion: Bool
+    var title: String = ""
+    var target: String? = nil
     @State private var pulse = false
 
     var body: some View {
@@ -219,16 +224,37 @@ struct SunMedallion: View {
                         .foregroundStyle(GlintTheme.ink)
                         .minimumScaleFactor(0.5)
                 } else {
+                    // R3 (REVIEW-2 fix 15): a shadow peeks out of a closed level.
+                    MenuGloomArt(squint: 0.5)
+                        .frame(width: size * 0.62, height: size * 0.62)
+                        .opacity(0.55)
+                        .saturation(0.3)
                     Image(systemName: "lock.fill")
-                        .font(.system(size: size * 0.3, weight: .black))
-                        .foregroundStyle(GlintTheme.haze)
+                        .font(.system(size: size * 0.2, weight: .black))
+                        .foregroundStyle(GlintTheme.cream.opacity(0.85))
+                        .offset(x: size * 0.3, y: size * 0.3)
                 }
             }
             .frame(width: size * 1.2, height: size * 1.2)
             if unlocked {
-                MenuStarRow(filled: stars, size: size * 0.2)
+                MenuStarRow(filled: stars, size: size * 0.18)
             } else {
-                Color.clear.frame(height: size * 0.2)
+                Color.clear.frame(height: size * 0.18)
+            }
+            if !title.isEmpty {
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(unlocked ? GlintTheme.cream : GlintTheme.haze)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .frame(maxWidth: size * 1.6)
+            }
+            if let shownTarget = (unlocked && stars < 3 ? target : nil) {
+                Text(shownTarget)
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(GlintTheme.goldLight.opacity(0.85))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
         }
         .onAppear {
@@ -241,9 +267,8 @@ struct SunMedallion: View {
         let warm: [Color]
         switch stars {
         case 3: warm = [GlintTheme.goldLight, GlintTheme.gold]
-        case 2: warm = [GlintTheme.goldLight, GlintTheme.peach]
-        case 1: warm = [GlintTheme.peach, GlintTheme.rose]
-        default: warm = [GlintTheme.mist, GlintTheme.peach]
+        case 0: warm = [GlintTheme.goldLight, Color(appHex: 0xF2C46A)]
+        default: warm = [GlintTheme.goldLight, Color(appHex: 0xF6BE55)]
         }
         return LinearGradient(colors: warm, startPoint: .top, endPoint: .bottom)
     }

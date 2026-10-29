@@ -66,10 +66,11 @@ enum GroundWorlds {
         let th = GardenMath.clamp(w * 0.05, 18, 30)
         let tw = th * 0.92
         let colours: [GardenInk] = warm
+            // R3 (REVIEW-2 P1-9): the slate patches are warm charcoal-brown (cool blue is cloud shade only).
             ? [GardenInk(hex: 0xC2603A), GardenInk(hex: 0xD4784A), GardenInk(hex: 0xA85032), GardenInk(hex: 0xE08A58),
-               GardenInk(hex: 0x5E6E86), GardenInk(hex: 0x74849A)]
+               GardenInk(hex: 0x6E5A4C), GardenInk(hex: 0x7E6A5A)]
             : [GardenInk(hex: 0x5C3842), GardenInk(hex: 0x6C4248), GardenInk(hex: 0x50303C), GardenInk(hex: 0x764A4E),
-               GardenInk(hex: 0x2E3A52), GardenInk(hex: 0x3A4862)]
+               GardenInk(hex: 0x3E3430), GardenInk(hex: 0x4A3E36)]
         var buckets: [CGMutablePath] = []
         for _ in 0..<colours.count { buckets.append(CGMutablePath()) }
         let shadow = CGMutablePath()
@@ -156,20 +157,21 @@ enum GroundWorlds {
         // The gutter: a metal half-pipe with brackets.
         let gr = CGRect(x: tilesEnd, y: 0, width: gutterW, height: h)
         GardenPainter.clipped(ctx, CGPath(rect: gr, transform: nil)) {
-            let g0 = pick(warm, 0x1E2430, 0x4A5260)
-            let g1 = pick(warm, 0x5A6478, 0xC8D0D8)
+            // R3: zinc, warmed (no blue on the grounds).
+            let g0 = pick(warm, 0x2A2622, 0x5A5650)
+            let g1 = pick(warm, 0x6E6862, 0xD4CEC6)
             GardenPainter.linear(ctx, [g0, g1, g0.darker(0.2)], [0, 0.45, 1], from: CGPoint(x: gr.minX, y: 0),
                                  to: CGPoint(x: gr.maxX, y: 0))
         }
         var by: CGFloat = 24
-        ctx.setFillColor(pick(warm, 0x101420, 0x30343C).cg)
+        ctx.setFillColor(pick(warm, 0x16120E, 0x36322C).cg)
         while by < h {
             ctx.fill(CGRect(x: gr.minX + gutterW * 0.15, y: by, width: gutterW * 0.7, height: 3))
             by += 72
         }
 
         // The stone ledge (the flower edge) with window boxes.
-        let ledge = pick(warm, 0x3A3446, 0xB8A890)
+        let ledge = pick(warm, 0x40383A, 0xB8A890)
         let lr = CGRect(x: ledgeX, y: 0, width: w - ledgeX, height: h)
         GardenPainter.clipped(ctx, CGPath(rect: lr, transform: nil)) {
             GardenPainter.linear(ctx, [ledge.darker(0.25), ledge, ledge.darker(0.12)], [0, 0.3, 1],
@@ -221,14 +223,14 @@ enum GroundWorlds {
         let plankEnd = w - beamW
 
         // The seams between planks.
-        ctx.setFillColor(pick(warm, 0x12151A, 0x3A2C20).cg)
+        ctx.setFillColor(pick(warm, 0x17120E, 0x3A2C20).cg)
         ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
 
-        // Planks run along u; their joints are staggered.
+        // Planks run along u; their joints are staggered. R3: warm weathered greys and browns at night too (no blue).
         let pw = GardenMath.clamp(w * 0.065, 22, 38)
         let colours: [GardenInk] = warm
             ? [GardenInk(hex: 0x9A8268), GardenInk(hex: 0xA88E72), GardenInk(hex: 0x8A735C), GardenInk(hex: 0xB49C7E)]
-            : [GardenInk(hex: 0x3A4048), GardenInk(hex: 0x444A50), GardenInk(hex: 0x34383E), GardenInk(hex: 0x4C5056)]
+            : [GardenInk(hex: 0x46403A), GardenInk(hex: 0x504840), GardenInk(hex: 0x3E3832), GardenInk(hex: 0x58504A)]
         var buckets: [CGMutablePath] = []
         for _ in 0..<colours.count { buckets.append(CGMutablePath()) }
         let grain = CGMutablePath()
@@ -257,36 +259,38 @@ enum GroundWorlds {
             x0 += pw
         }
         for (i, path) in buckets.enumerated() { GardenPainter.fill(ctx, path, colours[i]) }
-        GardenPainter.stroke(ctx, grain, pick(warm, 0x5A6068, 0x6A5440, 0.4), width: 0.8)
-        GardenPainter.fill(ctx, nails, pick(warm, 0x7A848E, 0x3A3028, 0.9))
+        GardenPainter.stroke(ctx, grain, pick(warm, 0x645A50, 0x6A5440, 0.4), width: 0.8)
+        GardenPainter.fill(ctx, nails, pick(warm, 0x8A8070, 0x3A3028, 0.9))
 
         // Weathering: salt-bleached and damp patches.
         for _ in 0..<Int(min(70, w * h / 4000)) {
             let c = CGPoint(x: rng.range(0, plankEnd), y: rng.range(0, h))
             let light = rng.unit() < 0.5
-            let col = light ? pick(warm, 0x6A7480, 0xD8C8A8) : pick(warm, 0x0E1218, 0x4A3828)
+            let col = light ? pick(warm, 0x7A7066, 0xD8C8A8) : pick(warm, 0x120E0A, 0x4A3828)
             GardenPainter.radial(ctx, [col.with(alpha: 0.14), col.with(alpha: 0)], [0, 1], center: c,
                                  radius: rng.range(12, 40))
         }
 
-        // Puddles (the band glints on them).
-        let water = pick(warm, 0x0A1A2C, 0x2E5A70)
-        let rim = pick(warm, 0x5E8AA8, 0xC8E4EE)
-        let sky = pick(warm, 0x7FA8C8, 0xFFF0D0)
-        for (i, pd) in GardenMath.puddles(depth: w, span: h).enumerated() {
+        // R3 (REVIEW-2 P1-9): puddles are smooth wet sheens along the planks (stadium shapes, warm grey with a bright
+        // streak), never blob-shaped and never blue, so they can't be mistaken for glooms. The band glints on them.
+        let water = pick(warm, 0x2E2A26, 0x6E6256)
+        let rim = pick(warm, 0x8A8276, 0xE8DCC8)
+        let sky = pick(warm, 0xB8AE9E, 0xFFF4DC)
+        for pd in GardenMath.puddles(depth: w, span: h) {
             let c = CGPoint(x: CGFloat(pd.d) * w, y: CGFloat(pd.u) * h)
             let r = pd.r
-            let ph = CGFloat(i) * 1.7
-            let blob = GardenPainter.loop(16) { t in
-                let k: CGFloat = 1 + 0.16 * sin(3 * t + ph) + 0.08 * sin(5 * t + ph * 2)
-                return CGPoint(x: c.x + cos(t) * r * 0.85 * k, y: c.y + sin(t) * r * 1.25 * k)
+            let sheen = CGRect(x: c.x - r * 0.42, y: c.y - r * 1.25, width: r * 0.84, height: r * 2.5)
+            let p = GardenPainter.roundRect(sheen, r * 0.42)
+            GardenPainter.fill(ctx, p, water.with(alpha: 0.7))
+            GardenPainter.clipped(ctx, p) {
+                GardenPainter.linear(ctx, [sky.with(alpha: 0), sky.with(alpha: 0.5), sky.with(alpha: 0)], [0, 0.5, 1],
+                                     from: CGPoint(x: sheen.minX, y: c.y), to: CGPoint(x: sheen.maxX, y: c.y))
             }
-            GardenPainter.fill(ctx, blob, water.with(alpha: 0.86))
-            GardenPainter.clipped(ctx, blob) {
-                GardenPainter.linear(ctx, [sky.with(alpha: 0), sky.with(alpha: 0.32), sky.with(alpha: 0)], [0, 0.5, 1],
-                                     from: CGPoint(x: c.x - r, y: c.y - r), to: CGPoint(x: c.x + r, y: c.y + r))
-            }
-            GardenPainter.stroke(ctx, blob, rim.with(alpha: 0.35), width: 1.4)
+            let streak = CGMutablePath()
+            streak.move(to: CGPoint(x: c.x - r * 0.12, y: c.y - r * 0.8))
+            streak.addLine(to: CGPoint(x: c.x - r * 0.12, y: c.y + r * 0.6))
+            GardenPainter.stroke(ctx, streak, sky.with(alpha: 0.75), width: max(r * 0.1, 1.2))
+            GardenPainter.stroke(ctx, p, rim.with(alpha: 0.4), width: 1.2)
         }
 
         // A coil of rope near a side edge.
@@ -313,7 +317,7 @@ enum GroundWorlds {
         }
 
         // The dock beam at the flower edge, with a rope along it.
-        let beam = pick(warm, 0x22262C, 0x5A4632)
+        let beam = pick(warm, 0x2A241E, 0x5A4632)
         ctx.setFillColor(beam.cg)
         ctx.fill(CGRect(x: plankEnd, y: 0, width: beamW, height: h))
         let line = CGMutablePath()
