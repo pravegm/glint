@@ -129,7 +129,13 @@ for s in "home;progress=mid" "levels;progress=mid" "results;results=won;level=4"
   hset 150
   to 90 xcrun simctl launch --terminate-running-process --stdout="$OUT_ABS/logs/$name.txt" --stderr="$OUT_ABS/logs/$name.txt" \
     "$UDID" "$BUNDLE" -glintDemo "screen=$s" >/dev/null || true
-  sleep 7; shot "$name"
+  sleep 10; shot "$name"
+  # R3: the first R2 UI frame was the bare launch colour (the app hadn't drawn yet). Re-shoot small frames.
+  for retry in 1 2 3; do
+    bytes=$(wc -c < "$OUT_ABS/$name.png" 2>/dev/null | tr -d ' ')
+    (( ${bytes:-0} > 150000 )) && break
+    log "WARN $name looks blank ($bytes bytes); re-shooting ($retry/3)"; sleep 5; shot "$name"
+  done
   to 30 xcrun simctl terminate "$UDID" "$BUNDLE" 2>/dev/null || true
 done
 
