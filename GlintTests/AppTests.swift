@@ -1534,9 +1534,11 @@ struct StageTests {
         var watch = StageWatch(plan: plan)
         var snap = DawnSnapshot(mode: .daily(day: 300), phase: .playing, time: 1)
         snap.glooms = [gloom(1, lit: 0.5), gloom(2, lit: 0.5), gloom(3, lit: 0), gloom(4, lit: 0, submerged: true)]
-        #expect(!watch.step(snapshot: snap, events: []))
+        let early = watch.step(snapshot: snap, events: [])
+        #expect(!early)
         snap.glooms[3].submerged = false
-        #expect(watch.step(snapshot: snap, events: []))
+        let ready = watch.step(snapshot: snap, events: [])
+        #expect(ready)
         #expect(watch.reason == "want")
     }
 
