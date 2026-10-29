@@ -1,0 +1,9 @@
+GLINT-BAL world=1 skill=0.3 winrate=0.90 flowers=4.10 three=0.45 scorched=0.56
+GLINT-BAL world=1 skill=0.6 winrate=1.00 flowers=4.97 three=0.78 scorched=0.47
+GLINT-BAL world=1 skill=0.9 winrate=1.00 flowers=5.00 three=1.00 scorched=0.16
+GLINT-BAL world=2 skill=0.3 winrate=0.69 flowers=2.27 three=0.05 scorched=1.32
+GLINT-BAL world=2 skill=0.6 winrate=1.00 flowers=4.74 three=0.68 scorched=0.69
+GLINT-BAL world=2 skill=0.9 winrate=1.00 flowers=5.00 three=0.99 scorched=0.07
+GLINT-BAL world=3 skill=0.3 winrate=0.05 flowers=0.09 three=0.00 scorched=0.68
+GLINT-BAL world=3 skill=0.6 winrate=0.90 flowers=3.06 three=0.16 scorched=0.74
+GLINT-BAL world=3 skill=0.9 winrate=1.00 flowers=4.89 three=0.86 scorched=0.13

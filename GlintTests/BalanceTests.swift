@@ -31,6 +31,8 @@ struct BalanceRun {
     var field: Double = 0
     /// R3: the stars the run earned (score-gated third star).
     var stars: Int = 0
+    /// R5: the longest stretch (s) with no gloom on the field (submerged ones count) between the first light and the end.
+    var maxEmpty: Double = 0
 }
 
 /// The parallel runs' results (one lock; written from DispatchQueue.concurrentPerform's workers).
@@ -96,6 +98,8 @@ final class GlintBalanceMemo: @unchecked Sendable {
         var scorched: Int = 0
         var fieldSum: Double = 0
         var fieldN: Int = 0
+        var empty: Double = 0
+        var maxEmpty: Double = 0
         let lo: Double = 0.25 * s.duration
         let hi: Double = 0.9 * s.duration
         while !s.isFinished && t < capSeconds {
@@ -108,6 +112,14 @@ final class GlintBalanceMemo: @unchecked Sendable {
                 }
             }
             t += frameDt
+            if s.snapshot.phase == .playing {
+                if s.snapshot.glooms.isEmpty {
+                    empty += frameDt
+                    maxEmpty = max(maxEmpty, empty)
+                } else {
+                    empty = 0
+                }
+            }
             if s.snapshot.time >= lo && s.snapshot.time <= hi {
                 fieldSum += Double(s.snapshot.glooms.count)
                 fieldN += 1
@@ -119,7 +131,7 @@ final class GlintBalanceMemo: @unchecked Sendable {
             : 0
         return BalanceRun(won: s.snapshot.phase == .won, flowers: s.snapshot.flowersLeft, score: s.snapshot.score,
                           eaten: eaten, scorched: scorched, field: fieldN > 0 ? fieldSum / Double(fieldN) : 0,
-                          stars: stars)
+                          stars: stars, maxEmpty: maxEmpty)
     }
 
     private func build() {
@@ -203,7 +215,9 @@ final class GlintBalanceMemo: @unchecked Sendable {
         var scorched: Double = 0
         var field: Double = 0
         var three: Int = 0
+        var empty: Double = 0
         for r in runs {
+            empty = max(empty, r.maxEmpty)
             field += r.field
             if r.stars == 3 { three += 1 }
             flowers += Double(r.flowers)
@@ -212,8 +226,9 @@ final class GlintBalanceMemo: @unchecked Sendable {
             scorched += Double(r.scorched)
         }
         let n: Double = Double(count)
-        return String(format: "GLINT-BAL level=%d skill=%.1f won=%d/%d flowers=%.1f score=%.0f eaten=%.1f scorched=%.1f three=%d field=%.1f",
-                      level, skill, won, runs.count, flowers / n, score / n, eaten / n, scorched / n, three, field / n)
+        return String(format: "GLINT-BAL level=%d skill=%.1f won=%d/%d flowers=%.1f score=%.0f eaten=%.1f scorched=%.1f three=%d field=%.1f empty=%.1f",
+                      level, skill, won, runs.count, flowers / n, score / n, eaten / n, scorched / n, three, field / n,
+                      empty)
     }
 
     /// R4: `GLINT-BAL world=<w> skill=<s> winrate=<x> flowers=<y> three=<z> scorched=<q>` (rates per run; scorched =
@@ -318,6 +333,19 @@ struct BalanceTests {
         let k: Double = max(n, 1)
         #expect(strong / k <= 0.5, "0.9 fizzles \(strong / k) per level")
         #expect(mid / k <= 1.5, "0.6 fizzles \(mid / k) per level")
+    }
+
+    /// R5 (founder, TestFlight build 2: "a lot of time spent doing nothing"): no level, at any skill, leaves the field
+    /// empty for more than 3 s after the first light (the mirror's worst, at skill 0.9: under 2 s).
+    @Test(arguments: Array(1...30))
+    func noDeadTime(level: Int) {
+        var worst: Double = 0
+        var k: Int = 0
+        while k < GlintBalanceMemo.skills.count {
+            for r in GlintBalanceMemo.shared.runs(level: level, skill: k) { worst = max(worst, r.maxEmpty) }
+            k += 1
+        }
+        #expect(worst <= 3.0, "level \(level): the field sat empty for \(worst) s")
     }
 
     @Test func skillKeepsFlowersInHarbour() {

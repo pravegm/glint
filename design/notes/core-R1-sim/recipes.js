@@ -38,7 +38,7 @@ const levels = fs.existsSync(JSONFILE) && !process.env.R1 ? JSON.parse(fs.readFi
 const DE = (k, d) => (process.env[k] !== undefined ? Number(process.env[k]) : d);
 function dailyRecipe(rng) {
   return { title: "Today's Dawn", dur: 90, murks: DE('DM', 60) + rng.int(0, 6), flocks: 6 + rng.int(0, 1), flockSize: 7, brutes: DE('DB', 5) + rng.int(0, 1), splitters: DE('DS', 4) + rng.int(0, 1), hoppers: DE('DH', 4) + rng.int(0, 1), fireflies: 5, speed: DE('DSP', 0.8), crowd: 5, pair: 0.35, front: 0.3,
-    clouds: 4, cloudWidth: 0.1, cloudSpeed: 0.07, cloudStrength: 1, surfaceMin: 0.15, surfaceMax: 0.6 };
+    clouds: 4, cloudWidth: 0.1, cloudSpeed: 0.07, cloudStrength: 1, surfaceMin: 0.15, surfaceMax: 0.6, opener: true };
 }
 // R3: from wave 2 (30 s) Long Night jumps to world 2–3 pressure (k + 4), then escalates.
 function endlessRecipe(n, rng) {
@@ -47,6 +47,6 @@ function endlessRecipe(n, rng) {
     brutes: n >= 2 ? 1 + Math.floor(Math.max(k - 2, 0) / 3) : 0, splitters: n >= 2 ? 1 + Math.floor(Math.max(k - 3, 0) / 3) : 0, hoppers: n >= 3 ? 1 + Math.floor(Math.max(k - 4, 0) / 3) : 0,
     fireflies: n >= 2 ? (n % 2 === 1 ? 2 : 1) : 0, speed: Math.min(DE('ES0', 0.75) + DE('ESK', 0.012) * k, 1.2), crowd: Math.min(2 + Math.floor(k / 2), 6), pair: Math.min(0.08 * k, 0.5), front: 0.3,
     clouds: n >= 2 ? (n >= 9 ? 2 : 1) : 0, cloudWidth: Math.min(0.08 + 0.005 * k, 0.14), cloudSpeed: 0.07, cloudStrength: Math.min(DE('ECS0', 0.75) + 0.02 * k, 0.95),
-    surfaceMin: 0.15, surfaceMax: n === 1 ? 0.35 : 0.6 };
+    surfaceMin: 0.15, surfaceMax: n === 1 ? 0.35 : 0.6, opener: n === 1 };
 }
 module.exports = { levels, dailyRecipe, endlessRecipe };

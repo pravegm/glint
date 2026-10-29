@@ -46,7 +46,8 @@ struct LevelRecipe: Equatable {
     var surfaceMax: Double = 0
     /// R3: the third star's score bar (`LevelSpec.starScore`).
     var starScore: Int = 0
-    /// R4: L1's opener: one murk at t = 0 already rising (start d 0.14), surfacing at 0.3 within ~1.3 s.
+    /// R4/R5: the opener: one murk at t = 0 already rising, surfacing at `LevelBook.openerSurface` ~0.75 s after the
+    /// first light (every level, Today's Dawn and Long Night's first wave).
     var opener: Bool = false
 }
 
@@ -56,8 +57,14 @@ enum LevelBook {
     static let levelsPerWorld: Int = 10
 
     /// Seconds into a level of the first spawn, and how long before sunrise the last one lands.
-    static let firstSpawn: Double = 2.5
-    static let endPad: Double = 8
+    /// R5 (founder, TestFlight build 2: "a lot of time doing nothing"): action from second 1 and spawns until 3 s
+    /// before sunrise (was 2.5 s and 8 s).
+    static let firstSpawn: Double = 0.5
+    static let endPad: Double = 3
+    /// R5: every level opens with one murk at t = 0 already rising: it surfaces at this depth ~0.75 s after the first
+    /// light (it starts `openerLead × speed` below it).
+    static let openerSurface: Double = 0.25
+    static let openerLead: Double = 0.12
     /// Clouds start this long after `start` and the last one appears this long before the end.
     static let cloudLead: Double = 6
     static let cloudTail: Double = 16
@@ -65,38 +72,38 @@ enum LevelBook {
     // swiftlint:disable line_length
     static let recipes: [LevelRecipe] = [
         // World 1: Meadow. Murks (L1 opens with a quick riser), wisps (from 3), brutes (2, then from 4), fireflies (from 4).
-        LevelRecipe(title: "First Light", duration: 60, murks: 12, flocks: 0, flockSize: 0, brutes: 0, splitters: 0, hoppers: 0, fireflies: 0, speed: 0.8, crowd: 2, pair: 0.0, front: 0.35, surfaceMin: 0.15, surfaceMax: 0.35, starScore: 0, opener: true),
-        LevelRecipe(title: "Dew", duration: 60, murks: 20, flocks: 0, flockSize: 0, brutes: 1, splitters: 0, hoppers: 0, fireflies: 0, speed: 0.8, crowd: 3, pair: 0.0, front: 0.35, surfaceMin: 0.15, surfaceMax: 0.35, starScore: 0),
-        LevelRecipe(title: "Ladder of Wisps", duration: 65, murks: 24, flocks: 3, flockSize: 5, brutes: 0, splitters: 0, hoppers: 0, fireflies: 0, speed: 0.82, crowd: 3, pair: 0.0, front: 0.35, surfaceMin: 0.15, surfaceMax: 0.35, starScore: 0),
-        LevelRecipe(title: "Fireflies", duration: 65, murks: 31, flocks: 4, flockSize: 5, brutes: 1, splitters: 0, hoppers: 0, fireflies: 3, speed: 1.53, crowd: 3, pair: 0.0, front: 0.2, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 2150),
-        LevelRecipe(title: "Big Feet", duration: 70, murks: 27, flocks: 4, flockSize: 5, brutes: 2, splitters: 0, hoppers: 0, fireflies: 3, speed: 1.577, crowd: 3, pair: 0.0, front: 0.2, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 1950),
-        LevelRecipe(title: "Clover", duration: 70, murks: 66, flocks: 8, flockSize: 6, brutes: 3, splitters: 0, hoppers: 0, fireflies: 4, speed: 1.202, crowd: 4, pair: 0.0, front: 0.25, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 5550),
-        LevelRecipe(title: "Morning Hush", duration: 75, murks: 74, flocks: 8, flockSize: 6, brutes: 3, splitters: 0, hoppers: 0, fireflies: 4, speed: 1.389, crowd: 4, pair: 0.0, front: 0.25, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 6000),
-        LevelRecipe(title: "Buttercups", duration: 75, murks: 80, flocks: 10, flockSize: 6, brutes: 4, splitters: 0, hoppers: 0, fireflies: 5, speed: 0.982, crowd: 4, pair: 0.0, front: 0.25, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 7250),
-        LevelRecipe(title: "Long Shadows", duration: 80, murks: 87, flocks: 10, flockSize: 6, brutes: 6, splitters: 0, hoppers: 0, fireflies: 5, speed: 1.03, crowd: 4, pair: 0.0, front: 0.25, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 7650),
-        LevelRecipe(title: "Meadow Sunrise", duration: 85, murks: 104, flocks: 11, flockSize: 6, brutes: 7, splitters: 0, hoppers: 0, fireflies: 6, speed: 1.296, crowd: 5, pair: 0.0, front: 0.25, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 8950),
+        LevelRecipe(title: "First Light", duration: 35, murks: 36, flocks: 0, flockSize: 0, brutes: 0, splitters: 0, hoppers: 0, fireflies: 0, speed: 0.85, crowd: 2, pair: 0.0, front: 0.35, surfaceMin: 0.15, surfaceMax: 0.35, starScore: 0, opener: true),
+        LevelRecipe(title: "Dew", duration: 38, murks: 40, flocks: 0, flockSize: 0, brutes: 1, splitters: 0, hoppers: 0, fireflies: 0, speed: 0.85, crowd: 3, pair: 0.0, front: 0.35, surfaceMin: 0.15, surfaceMax: 0.35, starScore: 0, opener: true),
+        LevelRecipe(title: "Ladder of Wisps", duration: 42, murks: 36, flocks: 3, flockSize: 5, brutes: 0, splitters: 0, hoppers: 0, fireflies: 0, speed: 0.85, crowd: 3, pair: 0.0, front: 0.35, surfaceMin: 0.15, surfaceMax: 0.35, starScore: 0, opener: true),
+        LevelRecipe(title: "Fireflies", duration: 45, murks: 40, flocks: 3, flockSize: 5, brutes: 2, splitters: 0, hoppers: 0, fireflies: 2, speed: 1.077, crowd: 3, pair: 0.0, front: 0.3, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 2400, opener: true),
+        LevelRecipe(title: "Big Feet", duration: 50, murks: 45, flocks: 4, flockSize: 6, brutes: 3, splitters: 0, hoppers: 0, fireflies: 3, speed: 1.593, crowd: 3, pair: 0.0, front: 0.3, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 3100, opener: true),
+        LevelRecipe(title: "Clover", duration: 55, murks: 52, flocks: 5, flockSize: 6, brutes: 4, splitters: 0, hoppers: 0, fireflies: 3, speed: 1.53, crowd: 4, pair: 0.0, front: 0.3, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 3950, opener: true),
+        LevelRecipe(title: "Morning Hush", duration: 58, murks: 58, flocks: 5, flockSize: 6, brutes: 4, splitters: 0, hoppers: 0, fireflies: 4, speed: 1.437, crowd: 4, pair: 0.0, front: 0.3, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 4350, opener: true),
+        LevelRecipe(title: "Buttercups", duration: 62, murks: 58, flocks: 6, flockSize: 6, brutes: 5, splitters: 0, hoppers: 0, fireflies: 4, speed: 1.468, crowd: 4, pair: 0.0, front: 0.3, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 4400, opener: true),
+        LevelRecipe(title: "Long Shadows", duration: 65, murks: 61, flocks: 6, flockSize: 6, brutes: 5, splitters: 0, hoppers: 0, fireflies: 4, speed: 1.593, crowd: 4, pair: 0.0, front: 0.3, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 4600, opener: true),
+        LevelRecipe(title: "Meadow Sunrise", duration: 70, murks: 74, flocks: 7, flockSize: 6, brutes: 6, splitters: 0, hoppers: 0, fireflies: 5, speed: 1.218, crowd: 5, pair: 0.0, front: 0.3, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 5800, opener: true),
         // World 2: Rooftops. Splitters (from 11), hoppers (from 14), full-strength cloud shadows (3 per level).
-        LevelRecipe(title: "Chimney Pots", duration: 75, murks: 53, flocks: 6, flockSize: 6, brutes: 3, splitters: 2, hoppers: 0, fireflies: 4, speed: 0.718, crowd: 4, pair: 0.2, front: 0.3, clouds: 3, cloudWidth: 0.07, cloudSpeed: 0.06, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 4150),
-        LevelRecipe(title: "Split Ends", duration: 75, murks: 53, flocks: 6, flockSize: 6, brutes: 3, splitters: 3, hoppers: 0, fireflies: 4, speed: 0.982, crowd: 4, pair: 0.2, front: 0.3, clouds: 3, cloudWidth: 0.072, cloudSpeed: 0.06, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 4850),
-        LevelRecipe(title: "Slate Grey", duration: 80, murks: 58, flocks: 6, flockSize: 6, brutes: 3, splitters: 3, hoppers: 0, fireflies: 5, speed: 0.843, crowd: 5, pair: 0.2, front: 0.3, clouds: 3, cloudWidth: 0.074, cloudSpeed: 0.06, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 5100),
-        LevelRecipe(title: "Hop Along", duration: 80, murks: 63, flocks: 6, flockSize: 6, brutes: 3, splitters: 2, hoppers: 2, fireflies: 4, speed: 0.92, crowd: 5, pair: 0.2, front: 0.3, clouds: 3, cloudWidth: 0.076, cloudSpeed: 0.06, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 5100),
-        LevelRecipe(title: "Gutters", duration: 80, murks: 66, flocks: 7, flockSize: 6, brutes: 3, splitters: 3, hoppers: 2, fireflies: 5, speed: 0.655, crowd: 5, pair: 0.25, front: 0.3, clouds: 3, cloudWidth: 0.078, cloudSpeed: 0.06, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 5850),
-        LevelRecipe(title: "Weathervane", duration: 85, murks: 65, flocks: 7, flockSize: 6, brutes: 4, splitters: 3, hoppers: 3, fireflies: 5, speed: 0.92, crowd: 5, pair: 0.25, front: 0.3, clouds: 3, cloudWidth: 0.08, cloudSpeed: 0.06, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 6000),
-        LevelRecipe(title: "Pigeon Row", duration: 85, murks: 63, flocks: 7, flockSize: 6, brutes: 4, splitters: 4, hoppers: 3, fireflies: 5, speed: 0.811, crowd: 5, pair: 0.25, front: 0.3, clouds: 3, cloudWidth: 0.082, cloudSpeed: 0.06, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 6200),
-        LevelRecipe(title: "Tin Roofs", duration: 90, murks: 67, flocks: 8, flockSize: 6, brutes: 4, splitters: 4, hoppers: 3, fireflies: 6, speed: 0.811, crowd: 5, pair: 0.3, front: 0.3, clouds: 3, cloudWidth: 0.084, cloudSpeed: 0.06, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 6550),
-        LevelRecipe(title: "Skylight", duration: 90, murks: 79, flocks: 8, flockSize: 6, brutes: 5, splitters: 4, hoppers: 4, fireflies: 6, speed: 0.748, crowd: 5, pair: 0.3, front: 0.3, clouds: 3, cloudWidth: 0.086, cloudSpeed: 0.06, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 7300),
-        LevelRecipe(title: "Rooftop Dawn", duration: 95, murks: 84, flocks: 8, flockSize: 6, brutes: 5, splitters: 5, hoppers: 4, fireflies: 6, speed: 0.795, crowd: 6, pair: 0.3, front: 0.3, clouds: 3, cloudWidth: 0.088, cloudSpeed: 0.06, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 7450),
+        LevelRecipe(title: "Chimney Pots", duration: 65, murks: 54, flocks: 6, flockSize: 6, brutes: 3, splitters: 3, hoppers: 0, fireflies: 4, speed: 0.78, crowd: 5, pair: 0.3, front: 0.3, clouds: 2, cloudWidth: 0.07, cloudSpeed: 0.06, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 4050, opener: true),
+        LevelRecipe(title: "Split Ends", duration: 65, murks: 56, flocks: 6, flockSize: 6, brutes: 3, splitters: 3, hoppers: 0, fireflies: 4, speed: 1.093, crowd: 5, pair: 0.3, front: 0.3, clouds: 2, cloudWidth: 0.072, cloudSpeed: 0.06, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 4800, opener: true),
+        LevelRecipe(title: "Slate Grey", duration: 70, murks: 58, flocks: 6, flockSize: 6, brutes: 3, splitters: 3, hoppers: 0, fireflies: 4, speed: 0.795, crowd: 5, pair: 0.3, front: 0.3, clouds: 3, cloudWidth: 0.074, cloudSpeed: 0.06, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 4750, opener: true),
+        LevelRecipe(title: "Hop Along", duration: 70, murks: 66, flocks: 6, flockSize: 6, brutes: 4, splitters: 4, hoppers: 3, fireflies: 4, speed: 0.78, crowd: 5, pair: 0.3, front: 0.3, clouds: 3, cloudWidth: 0.076, cloudSpeed: 0.06, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 5650, opener: true),
+        LevelRecipe(title: "Gutters", duration: 75, murks: 67, flocks: 7, flockSize: 6, brutes: 4, splitters: 4, hoppers: 3, fireflies: 4, speed: 0.702, crowd: 5, pair: 0.3, front: 0.3, clouds: 3, cloudWidth: 0.078, cloudSpeed: 0.06, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 5800, opener: true),
+        LevelRecipe(title: "Weathervane", duration: 75, murks: 62, flocks: 7, flockSize: 6, brutes: 4, splitters: 4, hoppers: 4, fireflies: 5, speed: 0.748, crowd: 5, pair: 0.3, front: 0.3, clouds: 3, cloudWidth: 0.08, cloudSpeed: 0.06, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 5150, opener: true),
+        LevelRecipe(title: "Pigeon Row", duration: 80, murks: 69, flocks: 7, flockSize: 6, brutes: 5, splitters: 5, hoppers: 4, fireflies: 5, speed: 0.843, crowd: 5, pair: 0.3, front: 0.3, clouds: 3, cloudWidth: 0.082, cloudSpeed: 0.06, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 5800, opener: true),
+        LevelRecipe(title: "Tin Roofs", duration: 80, murks: 71, flocks: 7, flockSize: 6, brutes: 5, splitters: 5, hoppers: 5, fireflies: 5, speed: 0.655, crowd: 5, pair: 0.3, front: 0.3, clouds: 3, cloudWidth: 0.084, cloudSpeed: 0.06, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 6150, opener: true),
+        LevelRecipe(title: "Skylight", duration: 85, murks: 73, flocks: 8, flockSize: 6, brutes: 5, splitters: 5, hoppers: 5, fireflies: 5, speed: 0.795, crowd: 5, pair: 0.3, front: 0.3, clouds: 3, cloudWidth: 0.086, cloudSpeed: 0.06, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 6700, opener: true),
+        LevelRecipe(title: "Rooftop Dawn", duration: 85, murks: 74, flocks: 8, flockSize: 6, brutes: 6, splitters: 6, hoppers: 6, fireflies: 5, speed: 0.732, crowd: 5, pair: 0.3, front: 0.3, clouds: 3, cloudWidth: 0.088, cloudSpeed: 0.06, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 7050, opener: true),
         // World 3: Harbour. Everything, more and wider clouds, fewer fireflies.
-        LevelRecipe(title: "Low Tide", duration: 85, murks: 51, flocks: 6, flockSize: 7, brutes: 2, splitters: 2, hoppers: 2, fireflies: 4, speed: 1.046, crowd: 5, pair: 0.35, front: 0.35, clouds: 4, cloudWidth: 0.09, cloudSpeed: 0.075, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 4300),
-        LevelRecipe(title: "Rope and Rigging", duration: 85, murks: 58, flocks: 6, flockSize: 7, brutes: 3, splitters: 3, hoppers: 2, fireflies: 4, speed: 1.171, crowd: 5, pair: 0.35, front: 0.35, clouds: 4, cloudWidth: 0.093, cloudSpeed: 0.075, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 5100),
-        LevelRecipe(title: "Gull Cry", duration: 90, murks: 64, flocks: 7, flockSize: 7, brutes: 3, splitters: 3, hoppers: 3, fireflies: 4, speed: 0.67, crowd: 6, pair: 0.4, front: 0.35, clouds: 5, cloudWidth: 0.096, cloudSpeed: 0.075, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 5700),
-        LevelRecipe(title: "Fog Bank", duration: 90, murks: 56, flocks: 7, flockSize: 7, brutes: 4, splitters: 4, hoppers: 3, fireflies: 4, speed: 0.857, crowd: 6, pair: 0.4, front: 0.35, clouds: 5, cloudWidth: 0.099, cloudSpeed: 0.075, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 5800),
-        LevelRecipe(title: "Lantern Row", duration: 90, murks: 69, flocks: 8, flockSize: 7, brutes: 4, splitters: 4, hoppers: 4, fireflies: 4, speed: 0.873, crowd: 6, pair: 0.4, front: 0.35, clouds: 5, cloudWidth: 0.102, cloudSpeed: 0.075, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 7350),
-        LevelRecipe(title: "Lighthouse", duration: 95, murks: 60, flocks: 8, flockSize: 7, brutes: 5, splitters: 5, hoppers: 4, fireflies: 4, speed: 1.014, crowd: 6, pair: 0.45, front: 0.35, clouds: 5, cloudWidth: 0.105, cloudSpeed: 0.075, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 6550),
-        LevelRecipe(title: "Undertow", duration: 95, murks: 67, flocks: 8, flockSize: 7, brutes: 5, splitters: 5, hoppers: 5, fireflies: 4, speed: 1.046, crowd: 6, pair: 0.45, front: 0.35, clouds: 5, cloudWidth: 0.108, cloudSpeed: 0.075, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 7300),
-        LevelRecipe(title: "Night Ferry", duration: 95, murks: 69, flocks: 9, flockSize: 7, brutes: 6, splitters: 6, hoppers: 5, fireflies: 3, speed: 0.748, crowd: 6, pair: 0.45, front: 0.35, clouds: 5, cloudWidth: 0.111, cloudSpeed: 0.075, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 8050),
-        LevelRecipe(title: "Last Watch", duration: 95, murks: 74, flocks: 9, flockSize: 7, brutes: 6, splitters: 6, hoppers: 6, fireflies: 3, speed: 0.748, crowd: 6, pair: 0.5, front: 0.35, clouds: 5, cloudWidth: 0.114, cloudSpeed: 0.075, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 8700),
-        LevelRecipe(title: "Harbour Sunrise", duration: 95, murks: 73, flocks: 10, flockSize: 7, brutes: 7, splitters: 7, hoppers: 6, fireflies: 3, speed: 0.702, crowd: 6, pair: 0.5, front: 0.35, clouds: 5, cloudWidth: 0.117, cloudSpeed: 0.075, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 9050),
+        LevelRecipe(title: "Low Tide", duration: 75, murks: 61, flocks: 7, flockSize: 7, brutes: 4, splitters: 4, hoppers: 4, fireflies: 4, speed: 1.014, crowd: 6, pair: 0.4, front: 0.35, clouds: 4, cloudWidth: 0.09, cloudSpeed: 0.075, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 6300, opener: true),
+        LevelRecipe(title: "Rope and Rigging", duration: 78, murks: 61, flocks: 7, flockSize: 7, brutes: 4, splitters: 4, hoppers: 4, fireflies: 4, speed: 1.202, crowd: 6, pair: 0.4, front: 0.35, clouds: 4, cloudWidth: 0.093, cloudSpeed: 0.075, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 5400, opener: true),
+        LevelRecipe(title: "Gull Cry", duration: 80, murks: 63, flocks: 7, flockSize: 7, brutes: 4, splitters: 4, hoppers: 4, fireflies: 4, speed: 0.873, crowd: 6, pair: 0.4, front: 0.35, clouds: 4, cloudWidth: 0.096, cloudSpeed: 0.075, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 6150, opener: true),
+        LevelRecipe(title: "Fog Bank", duration: 82, murks: 68, flocks: 8, flockSize: 7, brutes: 5, splitters: 5, hoppers: 5, fireflies: 4, speed: 0.952, crowd: 6, pair: 0.4, front: 0.35, clouds: 4, cloudWidth: 0.099, cloudSpeed: 0.075, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 6900, opener: true),
+        LevelRecipe(title: "Lantern Row", duration: 85, murks: 70, flocks: 8, flockSize: 7, brutes: 5, splitters: 5, hoppers: 5, fireflies: 4, speed: 1.093, crowd: 6, pair: 0.4, front: 0.35, clouds: 4, cloudWidth: 0.102, cloudSpeed: 0.075, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 7200, opener: true),
+        LevelRecipe(title: "Lighthouse", duration: 88, murks: 74, flocks: 8, flockSize: 7, brutes: 5, splitters: 5, hoppers: 5, fireflies: 3, speed: 0.873, crowd: 6, pair: 0.4, front: 0.35, clouds: 5, cloudWidth: 0.105, cloudSpeed: 0.075, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 6750, opener: true),
+        LevelRecipe(title: "Undertow", duration: 90, murks: 70, flocks: 9, flockSize: 7, brutes: 6, splitters: 6, hoppers: 6, fireflies: 3, speed: 0.827, crowd: 6, pair: 0.4, front: 0.35, clouds: 5, cloudWidth: 0.108, cloudSpeed: 0.075, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 7100, opener: true),
+        LevelRecipe(title: "Night Ferry", duration: 92, murks: 73, flocks: 9, flockSize: 7, brutes: 6, splitters: 6, hoppers: 6, fireflies: 3, speed: 1.03, crowd: 6, pair: 0.4, front: 0.35, clouds: 5, cloudWidth: 0.111, cloudSpeed: 0.075, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 7250, opener: true),
+        LevelRecipe(title: "Last Watch", duration: 95, murks: 72, flocks: 9, flockSize: 7, brutes: 6, splitters: 6, hoppers: 6, fireflies: 3, speed: 0.748, crowd: 6, pair: 0.4, front: 0.35, clouds: 5, cloudWidth: 0.114, cloudSpeed: 0.075, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 7050, opener: true),
+        LevelRecipe(title: "Harbour Sunrise", duration: 95, murks: 79, flocks: 10, flockSize: 7, brutes: 7, splitters: 7, hoppers: 7, fireflies: 3, speed: 0.655, crowd: 6, pair: 0.4, front: 0.35, clouds: 5, cloudWidth: 0.117, cloudSpeed: 0.075, cloudStrength: 1.0, surfaceMin: 0.15, surfaceMax: 0.6, starScore: 8750, opener: true),
     ]
     // swiftlint:enable line_length
 
@@ -179,7 +186,7 @@ enum LevelBook {
                            flockSize: 7, brutes: brutes, splitters: splitters, hoppers: hoppers, fireflies: 5,
                            speed: 0.8, crowd: 5, pair: 0.35, front: 0.3, clouds: 4, cloudWidth: 0.1,
                            cloudSpeed: 0.07, cloudStrength: 1, surfaceMin: Tuning.surfaceMin,
-                           surfaceMax: Tuning.surfaceMax)
+                           surfaceMax: Tuning.surfaceMax, opener: true)
     }
 
     /// Long Night's wave `n` (1, 2, …). R3 (REVIEW-2 #11): wave 1 (the first 30 s) is a gentle Meadow wave; from
@@ -202,7 +209,7 @@ enum LevelBook {
                            crowd: min(2 + k / 2, 6), pair: min(0.08 * Double(k), 0.5), front: 0.3, clouds: clouds,
                            cloudWidth: min(0.08 + 0.005 * Double(k), 0.14), cloudSpeed: 0.07,
                            cloudStrength: min(0.75 + 0.02 * Double(k), 0.95), surfaceMin: Tuning.surfaceMin,
-                           surfaceMax: w == 1 ? Tuning.surfaceMaxGentle : Tuning.surfaceMax)
+                           surfaceMax: w == 1 ? Tuning.surfaceMaxGentle : Tuning.surfaceMax, opener: w == 1)
     }
 
     /// Long Night's wave `n`, times relative to the wave's start (0…30 s).
@@ -223,9 +230,9 @@ enum LevelBook {
             switch k {
             case .murk: return 0.55
             case .wisp: return 0.22
-            case .brute: return 3.0
-            case .splitter: return 1.3
-            case .hopper: return 1.3
+            case .brute: return 1.2
+            case .splitter: return 1.0
+            case .hopper: return 1.0
             }
         }
     }
@@ -364,35 +371,48 @@ enum LevelBook {
             if a.key != c.key { return a.key < c.key }
             return a.order < c.order
         }
+        // R5: fronts are pairs: a group joins the one before it (never a brute, never a third), and the pair shares one
+        // slot of the load layout, so a front never leaves a hole in the timeline. (One draw per group after the first.)
+        var hosts: [[Int]] = []
+        var q2: Int = 0
+        while q2 < shadows.count {
+            var join: Bool = false
+            if q2 > 0 {
+                let roll: Double = rng.unit()
+                if let host = hosts.last {
+                    join = roll < recipe.front && !isBrute(shadows[q2].kind) && !isBrute(shadows[host[0]].kind)
+                        && host.count == 1
+                }
+            }
+            if join {
+                hosts[hosts.count - 1].append(q2)
+            } else {
+                hosts.append([q2])
+            }
+            q2 += 1
+        }
         var total: Double = 0
-        for it in shadows { total += cost(it.kind) * Double(it.count) }
+        for host in hosts {
+            for k in host { total += cost(shadows[k].kind) * Double(shadows[k].count) }
+        }
         let window: Double = max(span - endPad, 0)
         var cum: Double = 0
         var out: [SpawnGroup] = []
         out.reserveCapacity(items.count)
-        var prevX: Double = 0
-        var prevTime: Double = start
-        var prevKind: SpawnKind = .firefly
-        for it in shadows {
-            let c: Double = cost(it.kind) * Double(it.count)
+        for host in hosts {
+            var c: Double = 0
+            for k in host { c += cost(shadows[k].kind) * Double(shadows[k].count) }
             let mid: Double = (cum + c / 2) / max(total, 1e-9)
             cum += c
-            // R2: a mixed front (the draw happens for every group after the first).
-            var join: Bool = false
-            if !out.isEmpty {
-                let roll: Double = rng.unit()
-                join = roll < recipe.front && !isBrute(it.kind) && !isBrute(prevKind)
+            // R5: density 0.85 + 0.3x over the window: F(x) = 0.85x + 0.15x², inverted (flatter than R1–R4's 0.7 + 0.6x).
+            let x: Double = (-0.85 + (0.7225 + 0.6 * mid).squareRoot()) / 0.3
+            let t: Double = start + window * x
+            let scale: Double = recipe.speed * (0.95 + 0.1 * x)
+            for k in host {
+                let it: Draft = shadows[k]
+                out.append(SpawnGroup(time: t, kind: it.kind, count: it.count, u: it.u, formation: it.formation,
+                                      speedScale: scale, surface: it.surface))
             }
-            // Density 0.7 + 0.6x over the window: F(x) = 0.7x + 0.3x², inverted.
-            let x: Double = join ? prevX : (-0.7 + (0.49 + 1.2 * mid).squareRoot()) / 0.6
-            let t: Double = join ? prevTime : start + window * x
-            var scale: Double = recipe.speed * (0.95 + 0.1 * x)
-            if case .firefly = it.kind { scale = 1 }
-            out.append(SpawnGroup(time: t, kind: it.kind, count: it.count, u: it.u, formation: it.formation,
-                                  speedScale: scale, surface: it.surface))
-            prevX = x
-            prevTime = t
-            prevKind = it.kind
         }
         // R4: each firefly takes the widest unused gap between gloom groups near its slot (15–85 % of the window).
         var used: [Bool] = Array(repeating: false, count: max(out.count - 1, 0))
@@ -435,7 +455,8 @@ enum LevelBook {
         result.reserveCapacity(merged.count + 1)
         if recipe.opener {
             result.append(SpawnGroup(time: 0, kind: .gloom(.murk), count: 1, u: 0.4...0.6, formation: .cluster,
-                                     speedScale: recipe.speed, surface: 0.3...0.3, startD: 0.14))
+                                     speedScale: recipe.speed, surface: openerSurface...openerSurface,
+                                     startD: openerSurface - openerLead * recipe.speed))
         }
         for m in merged { result.append(m.0) }
         return result

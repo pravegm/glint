@@ -21,7 +21,7 @@ const T = {
   ffSpeed: 0.075, ffRadius: 0.02, ffScorch: Number(process.env.FFS || 0.6), ffDecay: 0.8, ffDart: 0.08, ffDartTime: 0.3, ffBloom: 50, ffWaveAmp: 0.06, ffWaveHz: 0.35,
   splitCount: 2, splitFling: 0.07, splitFlingSpeed: 0.30, splitFlingTime: 0.6, splitSpreadU: 0.06,
   hopRest: 0.9, hopDist: 0.14, hopTime: 0.22, hopHurry: Number(process.env.HURRY || 1.0),
-  creaseShade: Number(process.env.SHADE || 0.12), cloudEdge: 0.03, substep: 1 / 120, endlessWave: 30, endlessSun: 600, dailyDuration: 90,
+  firstSpawn: 0.5, endPad: 3, creaseShade: Number(process.env.SHADE || 0.12), cloudEdge: 0.03, substep: 1 / 120, endlessWave: 30, endlessSun: 600, dailyDuration: 90,
 };
 function smooth(t) { t = Math.min(Math.max(t, 0), 1); return t * t * (3 - 2 * t); }
 function intensityDist(dist) {
@@ -41,7 +41,7 @@ const SPEC = {
 // recipe: [title, dur, murks, flocks, flockSize, brutes, splitters, hoppers, fireflies, speed, crowd]
 const R = require('./recipes.js');
 function levelSeed(n) { return (0x474C494E54n * 1000n + BigInt(n) * 7919n); }
-const COST = { murk: 0.55, wisp: 0.22, brute: 3.0, splitter: 1.3, hopper: 1.3, firefly: 0.7 };
+const COST = { murk: 0.55, wisp: 0.22, brute: 1.2, splitter: 1.0, hopper: 1.0, firefly: 0.7 };
 const BIAS = { murk: 0, wisp: 0.1, brute: 0.3, splitter: 0.15, hopper: 0.2, firefly: 0.1 };
 function build(rec, rng, start, span, endPad) {
   const items = [];
@@ -73,16 +73,25 @@ function build(rec, rng, start, span, endPad) {
   const glItems = items.filter(it => it.kind !== 'firefly');
   for (const it of glItems) it.key = rng.unit() * (1 - BIAS[it.kind]) + BIAS[it.kind];
   glItems.sort((x, y) => x.key - y.key);
-  let total = 0; for (const it of glItems) total += COST[it.kind] * it.count;
+  // R5: fronts are pairs: a group joins the one before it (never a brute, never a third), and the pair shares one
+  // slot of the load layout, so fronts never leave holes in the timeline.
+  const hosts = [];
+  for (let i = 0; i < glItems.length; i++) {
+    const it = glItems[i];
+    let join = false;
+    if (i > 0) { const roll = rng.unit(); const h = hosts[hosts.length - 1]; join = roll < (rec.front || 0) && it.kind !== 'brute' && h.it.kind !== 'brute' && h.partners.length === 0; }
+    if (join) hosts[hosts.length - 1].partners.push(it); else hosts.push({ it, partners: [] });
+  }
+  const slot = (h) => COST[h.it.kind] * h.it.count + h.partners.reduce((a, p) => a + COST[p.kind] * p.count, 0);
+  let total = 0; for (const h of hosts) total += slot(h);
   const t1 = span - endPad; let cum = 0;
   const g = [];
-  for (const it of glItems) {
-    const c = COST[it.kind] * it.count; const mid = (cum + c / 2) / Math.max(total, 1e-9); cum += c;
-    const join = g.length > 0 ? rng.unit() < (rec.front || 0) && it.kind !== 'brute' && g[g.length - 1].kind !== 'brute' : false;
-    // density 0.6 + 0.8x: F(x) = 0.6x + 0.4x^2  ->  x = (-0.6 + sqrt(0.36 + 1.6F)) / 0.8
-    const x = join ? g[g.length - 1].x : (-0.7 + Math.sqrt(0.49 + 1.2 * mid)) / 0.6;
-    const t = join ? g[g.length - 1].time : start + t1 * x;
-    g.push({ x, time: t, kind: it.kind, count: it.count, u: it.u, form: it.form, surf: it.surf, s: S * (0.95 + 0.1 * x) });
+  for (const h of hosts) {
+    const c = slot(h); const mid = (cum + c / 2) / Math.max(total, 1e-9); cum += c;
+    // density 0.85 + 0.3x: F(x) = 0.85x + 0.15x^2, inverted
+    const x = (-0.85 + Math.sqrt(0.7225 + 0.6 * mid)) / 0.3;
+    const t = start + t1 * x;
+    for (const it of [h.it].concat(h.partners)) g.push({ x, time: t, kind: it.kind, count: it.count, u: it.u, form: it.form, surf: it.surf, s: S * (0.95 + 0.1 * x) });
   }
   // R4: each firefly takes the widest unused gap between gloom groups near its slot (15–85 % of the window).
   const used = new Array(Math.max(g.length - 1, 0)).fill(false);
@@ -103,8 +112,8 @@ function build(rec, rng, start, span, endPad) {
   }
   const out = g.concat(ffs).map((e, i) => Object.assign(e, { ord: i }));
   out.sort((a, b) => a.time - b.time || a.ord - b.ord);
-  // R4: L1's opener: one murk already near the surface at t = 0, rising at d 0.3 within ~1.3 s of the first light.
-  if (rec.opener) out.unshift({ x: 0, time: 0, kind: 'murk', count: 1, u: [0.4, 0.6], form: 'cluster', surf: [0.3, 0.3], s: S, startD: 0.14 });
+  // R5: every opener: one murk at t = 0 already rising, surfacing at d 0.25 about 0.75 s after the first light.
+  if (rec.opener) out.unshift({ x: 0, time: 0, kind: 'murk', count: 1, u: [0.4, 0.6], form: 'cluster', surf: [0.25, 0.25], s: S, startD: 0.25 - 0.12 * S });
   return out;
 }
 // R2 cloud shadows: rec.clouds of them, evenly through the level with jitter, each sliding in from an edge.
@@ -133,14 +142,14 @@ function level(n) {
   n = Math.min(Math.max(n, 1), 30);
   const rec = R.levels[n - 1];
   const rng = new RNG(levelSeed(n));
-  const groups = build(rec, rng, 2.5, rec.dur - 2.5, 8);
-  return { number: n, world: Math.floor((n - 1) / 10) + 1, title: rec.title, duration: rec.dur, groups, clouds: cloudsFor(rec, rng, 2.5, rec.dur - 2.5), starScore: rec.starScore || 0 };
+  const groups = build(rec, rng, T.firstSpawn, rec.dur - T.firstSpawn, T.endPad);
+  return { number: n, world: Math.floor((n - 1) / 10) + 1, title: rec.title, duration: rec.dur, groups, clouds: cloudsFor(rec, rng, T.firstSpawn, rec.dur - T.firstSpawn), starScore: rec.starScore || 0 };
 }
 function daily(day) {
   const rng = new RNG(dailySeed(day) ^ 0x5A5A5A5An);
   const rec = R.dailyRecipe(rng);
-  const groups = build(rec, rng, 2.5, 87.5, 8);
-  return { number: 0, world: 2, title: "Today's Dawn", duration: 90, groups, clouds: cloudsFor(rec, rng, 2.5, 87.5) };
+  const groups = build(rec, rng, T.firstSpawn, 90 - T.firstSpawn, T.endPad);
+  return { number: 0, world: 2, title: "Today's Dawn", duration: 90, groups, clouds: cloudsFor(rec, rng, T.firstSpawn, 90 - T.firstSpawn) };
 }
 function dailySeed(day) { const r = new RNG(0x474C494E54000000n ^ BigInt.asUintN(64, BigInt(day))); return r.next(); }
 
@@ -351,15 +360,16 @@ function run(spec, skill, seed, endless, cap, sessionSeed, parked) {
   const s = new Session(spec, sessionSeed === undefined ? seed : sessionSeed, endless);
   const p = new Pilot(skill, seed * 7 + 1);
   const dt = 1 / 60; let frames = 0; const maxF = (cap || 400) * 60;
-  let fieldSum = 0, fieldN = 0;
+  let fieldSum = 0, fieldN = 0, empty = 0, maxEmpty = 0;
   const lo = spec ? 0.25 * spec.duration : 60, hi = spec ? 0.9 * spec.duration : 1e9;
   while (!s.finished && frames < maxF) {
     const b = parked !== undefined ? parked : p.band_(s.snapshot(), dt);
     s.step(dt, { band: b, isShut: false });
     if (s.time >= lo && s.time <= hi) { fieldSum += s.glooms.length; fieldN++; }
+    if (s.phase === 'playing') { if (s.glooms.length === 0) { empty += dt; maxEmpty = Math.max(maxEmpty, empty); } else empty = 0; }
     frames++;
   }
-  return { won: s.phase === 'won', flowers: s.flowers.filter(x => x).length, score: s.score, eaten: s.eaten, scorched: s.scorched, delivered: s.delivered, time: s.time, chain: s.longestChain, pops: s.pops, field: fieldN ? fieldSum / fieldN : 0 };
+  return { won: s.phase === 'won', flowers: s.flowers.filter(x => x).length, score: s.score, eaten: s.eaten, scorched: s.scorched, delivered: s.delivered, time: s.time, chain: s.longestChain, pops: s.pops, field: fieldN ? fieldSum / fieldN : 0, maxEmpty };
 }
 module.exports = { run, level, daily, dailySeed, Session, Pilot, RNG, T, SPEC, cloudFactor };
 

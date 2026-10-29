@@ -17,9 +17,10 @@ function bar(list, share) {
 for (let n = 1; n <= 30; n++) {
   // R4: L1–3 the weak hand's median 5-flower score + 50 (0.3 makes 3★ ≤ 50 %); later the 0.6 bar (~60 %) capped by
   // the 0.9 bar (~90 %; Harbour ~75 %, so 0.9 makes 3★ on ≥ 70 %).
-  const a = bar(scores(n, 0.6), 0.6), b = bar(scores(n, 0.9), n > 20 ? 0.75 : 0.9);
+  const a = bar(scores(n, 0.6), 0.6), b = bar(scores(n, 0.9), n > 20 ? 0.85 : 0.9);
   const w = bar(scores(n, 0.3), 0.5);
-  const s = n <= 3 ? Math.ceil((w + 1) / 50) * 50 : Math.floor(Math.min(a, b) / 50) * 50;
+  // R4b/R5: L1–3 have no score bar (3★ = all five flowers).
+  const s = n <= 3 ? 0 : Math.floor(Math.min(a, b) / 50) * 50;
   R.levels[n - 1].starScore = Number.isFinite(s) ? s : 0;
   fs.writeFileSync(OUT, JSON.stringify(R.levels, null, 1));
   console.log(`L${n} starScore=${R.levels[n - 1].starScore} (0.6 bar ${a}, 0.9 bar ${b})`);

@@ -9,6 +9,7 @@ import Testing
 // achievements (each just below and at its threshold).
 // Round 3: submerged travel and surfacing, the ±0.065 band core, the score-gated third star, Long Night's jump.
 // Round 4: core-only firefly scorch with a dart, fireflies in the gaps, L1's quick opener, the first brute by L4.
+// Round 5: every level opens at once (first surfacing ≤ 1 s), short early levels, pair fronts.
 
 /// Shared drivers for Core tests and BalanceTests.
 enum CoreHarness {
@@ -301,7 +302,7 @@ struct CoreTests {
             let l: LevelSpec = LevelBook.level(n)
             #expect(l.number == n)
             #expect(l.world == LevelBook.world(of: n))
-            #expect(l.duration >= 45 && l.duration <= 95)
+            #expect(l.duration >= 35 && l.duration <= 95)
             #expect(!l.title.isEmpty && l.title.count <= 18)
             titles.insert(l.title)
             #expect(!l.groups.isEmpty)
@@ -323,30 +324,43 @@ struct CoreTests {
         let l: LevelSpec = LevelBook.level(1)
         #expect(l.title == "First Light")
         #expect(abs(l.duration - 60) < 1e-12)
-        // R4: 12 murks plus the opener, which starts at d 0.14 at t = 0 and surfaces at 0.3.
-        #expect(l.gloomCount == 13)
+        // R5: a short, busy first sunrise: its murks plus the opener, which starts below 0.25 at t = 0.
+        let recipe: LevelRecipe = LevelBook.recipes[0]
+        #expect(l.duration <= 50)
+        #expect(l.gloomCount == recipe.murks + 1)
+        #expect(recipe.murks >= 25)
         #expect(l.kinds == [.murk])
         #expect(l.fireflyCount == 0)
         for g in l.groups {
-            #expect(g.speedScale <= 0.85)
+            #expect(g.speedScale <= 0.9)
             #expect(g.count <= 2)
         }
         if let first = l.groups.first {
             #expect(abs(first.time) < 1e-12)
-            #expect(first.startD == 0.14)
-            #expect(first.surface == 0.3...0.3)
+            #expect(abs((first.startD ?? -1) - (LevelBook.openerSurface - LevelBook.openerLead * recipe.speed)) < 1e-12)
+            #expect(first.surface == LevelBook.openerSurface...LevelBook.openerSurface)
         }
-        // The first murk rises at d ≈ 0.3 within 1.5 s of the first light.
-        let s = DawnSession(mode: .level(1), seed: 1)
-        let events = CoreHarness.runParked(s, at: 0.05, seconds: 2)
-        var first: (Double, Double)? = nil
-        for e in events {
-            if case .surfaced(_, _, _, let d) = e.event, first == nil { first = (e.time, d) }
-        }
-        #expect(first != nil)
-        if let f = first {
-            #expect(f.0 < 1.5)
-            #expect(abs(f.1 - 0.3) < 0.01)
+    }
+
+    /// R5 (founder, TestFlight build 2): action from second 1: on every level the first gloom surfaces ≤ 1 s after the
+    /// first light, and the first five levels last 35–50 s.
+    @Test func everyLevelStartsAtOnce() {
+        var n: Int = 1
+        while n <= LevelBook.count {
+            let s = DawnSession(mode: .level(n), seed: 1)
+            let events = CoreHarness.runParked(s, at: 0.3, seconds: 1.5)
+            var first: Double = 99
+            var depth: Double = 0
+            for e in events {
+                if case .surfaced(_, _, _, let d) = e.event, first > 90 {
+                    first = e.time
+                    depth = d
+                }
+            }
+            #expect(first <= 1.0, "level \(n): first surfacing at \(first) s")
+            #expect(abs(depth - LevelBook.openerSurface) < 0.01, "level \(n)")
+            if n <= 5 { #expect(LevelBook.level(n).duration >= 35 && LevelBook.level(n).duration <= 50) }
+            n += 1
         }
     }
 

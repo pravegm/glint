@@ -1,0 +1,84 @@
+L4 speed=1.077 -> 4.00 (target 4.00)
+L5 speed=1.593 -> 4.50 (target 3.87)
+L6 speed=1.53 -> 4.17 (target 3.73)
+L7 speed=1.437 -> 4.17 (target 3.60)
+L8 speed=1.468 -> 4.00 (target 3.47)
+L9 speed=1.593 -> 3.83 (target 3.33)
+L10 speed=1.218 -> 2.83 (target 3.20)
+L11 speed=0.78 -> 4.83 (target 2.80)
+L12 speed=1.093 -> 1.83 (target 2.69)
+L13 speed=0.795 -> 1.67 (target 2.58)
+L14 speed=0.78 -> 1.83 (target 2.47)
+L15 speed=0.702 -> 3.17 (target 2.36)
+L16 speed=0.748 -> 2.67 (target 2.25)
+L17 speed=0.843 -> 3.00 (target 2.14)
+L18 speed=0.655 -> 1.50 (target 2.03)
+L19 speed=0.795 -> 0.83 (target 1.92)
+L20 speed=0.732 -> 2.00 (target 1.81)
+L21 speed=1.014 -> 3.67 (target 3.20)
+L22 speed=1.202 -> 3.33 (target 3.09)
+L23 speed=0.873 -> 2.83 (target 2.98)
+L24 speed=0.952 -> 4.17 (target 2.87)
+L25 speed=1.093 -> 2.83 (target 2.76)
+L26 speed=0.873 -> 3.00 (target 2.65)
+L27 speed=0.827 -> 3.33 (target 2.54)
+L28 speed=1.03 -> 2.00 (target 2.43)
+L29 speed=0.748 -> 1.50 (target 2.32)
+L30 speed=0.655 -> 2.67 (target 2.21)
+L4 murks 40->40 cost=0.00 tuned=7/8 4.00 e1.4 mid=8/8 5.00 e1.4 weak=- strong=- target fl 4.00
+L5 murks 46->45 cost=0.13 tuned=8/8 4.00 e2.1 mid=8/8 5.00 e2.2 weak=- strong=- target fl 3.87
+L6 murks 52->52 cost=0.02 tuned=6/8 3.75 e0.9 mid=8/8 5.00 e0.9 weak=- strong=- parked minLost=4 anyWin=true target fl 3.73
+L7 murks 56->58 cost=0.40 tuned=8/8 4.00 e2.2 mid=8/8 4.88 e2.4 weak=- strong=- target fl 3.60
+L8 murks 60->58 cost=0.16 tuned=6/8 3.63 e1.4 mid=8/8 5.00 e1.5 weak=- strong=- target fl 3.47
+L9 murks 64->61 cost=0.17 tuned=7/8 3.50 e2.0 mid=8/8 4.88 e1.9 weak=- strong=- target fl 3.33
+L10 murks 70->74 cost=0.08 tuned=6/8 3.13 e1.4 mid=8/8 5.00 e1.4 weak=- strong=- target fl 3.20
+L11 murks 56->54 cost=0.43 tuned=7/8 2.88 e0.0 mid=8/8 4.63 e0.0 weak=- strong=- parked minLost=5 anyWin=false target fl 2.80
+L12 murks 58->56 cost=0.40 tuned=5/8 2.38 e1.8 mid=8/8 4.88 e1.8 weak=- strong=- target fl 2.69
+L13 murks 60->58 cost=0.22 tuned=5/8 2.38 e1.1 mid=8/8 4.75 e1.1 weak=- strong=- target fl 2.58
+L14 murks 62->66 cost=0.64 tuned=7/8 2.38 e0.3 mid=8/8 5.00 e0.3 weak=- strong=- target fl 2.47
+L15 murks 64->67 cost=0.38 tuned=6/8 2.38 e0.3 mid=8/8 4.63 e0.3 weak=- strong=- target fl 2.36
+L16 murks 66->62 cost=0.31 tuned=5/8 2.38 e1.1 mid=8/8 4.88 e1.1 weak=- strong=- target fl 2.25
+L17 murks 68->69 cost=0.39 tuned=5/8 2.00 e0.7 mid=8/8 4.75 e0.7 weak=- strong=- target fl 2.14
+L18 murks 70->71 cost=0.78 tuned=6/8 2.25 e1.0 mid=8/8 4.25 e1.0 weak=- strong=- target fl 2.03
+L19 murks 72->73 cost=0.17 tuned=4/8 1.88 e0.9 mid=8/8 5.00 e0.9 weak=- strong=- target fl 1.92
+L20 murks 74->74 cost=0.51 tuned=5/8 1.88 e0.0 mid=8/8 4.63 e0.0 weak=- strong=- target fl 1.81
+L21 murks 60->61 cost=0.75 tuned=8/8 3.75 e2.3 mid=- weak=2/8 0.25 e2.3 strong=8/8 4.88 e2.3 parked minLost=5 anyWin=false target fl 3.20
+L22 murks 62->61 cost=0.56 tuned=8/8 3.38 e1.9 mid=- weak=0/8 0.00 e1.9 strong=8/8 4.88 e1.9 target fl 3.09
+L23 murks 64->63 cost=0.53 tuned=7/8 3.25 e1.9 mid=- weak=0/8 0.00 e1.9 strong=8/8 5.00 e1.9 target fl 2.98
+L24 murks 66->68 cost=0.24 tuned=8/8 2.88 e1.5 mid=- weak=0/8 0.00 e0.0 strong=8/8 5.00 e1.5 target fl 2.87
+L25 murks 68->70 cost=0.33 tuned=7/8 2.88 e2.0 mid=- weak=0/8 0.00 e2.0 strong=8/8 4.88 e2.0 target fl 2.76
+L26 murks 70->74 cost=1.16 tuned=8/8 3.63 e0.7 mid=- weak=0/8 0.00 e0.7 strong=8/8 5.00 e0.7 target fl 2.65
+L27 murks 72->70 cost=0.60 tuned=7/8 2.63 e1.1 mid=- weak=0/8 0.00 e1.1 strong=8/8 4.63 e1.3 target fl 2.54
+L28 murks 74->73 cost=0.55 tuned=5/8 2.25 e2.0 mid=- weak=0/8 0.00 e1.6 strong=8/8 5.00 e1.9 target fl 2.43
+L29 murks 76->72 cost=1.78 tuned=8/8 3.88 e1.1 mid=- weak=1/8 0.38 e1.1 strong=8/8 4.75 e1.1 target fl 2.32
+L30 murks 78->79 cost=0.23 tuned=6/8 2.13 e1.6 mid=- weak=1/8 0.25 e1.6 strong=8/8 4.88 e1.6 target fl 2.21
+L1 starScore=0 (0.6 bar 1213, 0.9 bar 1026)
+L2 starScore=0 (0.6 bar 1394, 0.9 bar 1334)
+L3 starScore=0 (0.6 bar 2012, 0.9 bar 1907)
+L4 starScore=2400 (0.6 bar 2414, 0.9 bar 2513)
+L5 starScore=3100 (0.6 bar 3116, 0.9 bar 3253)
+L6 starScore=3950 (0.6 bar 3974, 0.9 bar 4008)
+L7 starScore=4350 (0.6 bar 4374, 0.9 bar 4489)
+L8 starScore=4400 (0.6 bar 4468, 0.9 bar 4416)
+L9 starScore=4600 (0.6 bar 4615, 0.9 bar 4718)
+L10 starScore=5800 (0.6 bar 5907, 0.9 bar 5803)
+L11 starScore=4050 (0.6 bar 4160, 0.9 bar 4082)
+L12 starScore=4800 (0.6 bar 4804, 0.9 bar 4836)
+L13 starScore=4750 (0.6 bar 4782, 0.9 bar 4842)
+L14 starScore=5650 (0.6 bar 5695, 0.9 bar 5737)
+L15 starScore=5800 (0.6 bar 5819, 0.9 bar 6508)
+L16 starScore=5150 (0.6 bar 5334, 0.9 bar 5185)
+L17 starScore=5800 (0.6 bar 5812, 0.9 bar 6384)
+L18 starScore=6150 (0.6 bar 6174, 0.9 bar 6611)
+L19 starScore=6700 (0.6 bar 6711, 0.9 bar 6905)
+L20 starScore=7050 (0.6 bar 7099, 0.9 bar 7153)
+L21 starScore=6300 (0.6 bar 6327, 0.9 bar 6478)
+L22 starScore=5400 (0.6 bar 5441, 0.9 bar 5785)
+L23 starScore=6150 (0.6 bar 6236, 0.9 bar 6192)
+L24 starScore=6900 (0.6 bar 6938, 0.9 bar 7172)
+L25 starScore=7200 (0.6 bar Infinity, 0.9 bar 7201)
+L26 starScore=6750 (0.6 bar 6754, 0.9 bar 7333)
+L27 starScore=7100 (0.6 bar 7102, 0.9 bar 7251)
+L28 starScore=7250 (0.6 bar 7250, 0.9 bar 7443)
+L29 starScore=7050 (0.6 bar 7072, 0.9 bar 7313)
+L30 starScore=8750 (0.6 bar Infinity, 0.9 bar 8770)
