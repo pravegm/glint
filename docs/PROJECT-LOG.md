@@ -58,3 +58,8 @@
   repair…). 285 tests. iPhone SE fallback captures added to CI.
 - R5 regression caught by the Duo sim (40896758284: Duo locked onto drag; the hinge API's early nil) → fixed; Duo sim
   40911325933 **7/7 PASS** for the first time. Store pipeline trial OK (9/10, empty-garden frames → busy freezes).
+- TestFlight build 3 (R5) VALID. ASC push (40921737131, 40926210238, 40928662647): listing, categories (Arcade isn't
+  on Apple's list → Action + Casual), age rating, review details, Game Center (enabled; 10 achievements with badges,
+  3 leaderboards) attached to the draft 1.0 submission, header + search art, price, accessibility. **The featuring
+  nomination was submitted by the first push** (metadata had submit: true; I hadn't checked) — told the founder; the
+  tool now keeps nominations as drafts. Store frames: stage= moments (5/8 land; daily, Long Night, fireflies retimed).
