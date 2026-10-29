@@ -1457,3 +1457,52 @@ struct DuoHingeRegressionTests {
         #expect(c.stage == .live)
     }
 }
+
+// MARK: - R5c store stages (`stage=<name>`)
+
+struct StageTests {
+    @Test func stageParsing() {
+        for name in DemoStageName.allCases {
+            let d = DemoMode.parse("stage=\(name.rawValue);progress=mid")
+            #expect(d.stageName == name)
+            #expect(d.effectiveScreen == .play)
+        }
+        #expect(DemoMode.parse("stage=nope").stageName == nil)
+    }
+
+    @Test func scriptedPath() {
+        let path = [StageKey(t: 0, band: 0.2), StageKey(t: 4, band: 0.2), StageKey(t: 5, band: 0.6)]
+        #expect(abs(DemoStages.band(at: -1, path: path) - 0.2) < 1e-9)
+        #expect(abs(DemoStages.band(at: 2, path: path) - 0.2) < 1e-9)
+        #expect(abs(DemoStages.band(at: 4.5, path: path) - 0.4) < 1e-9)
+        #expect(abs(DemoStages.band(at: 9, path: path) - 0.6) < 1e-9)
+        #expect(DemoStages.band(at: 1, path: []) == 0)
+    }
+
+    @Test func plansAreSound() {
+        for name in DemoStageName.allCases {
+            let plan = DemoStages.plan(name, today: 300)
+            #expect(plan.freezeFrom < plan.freezeBy)
+            if let spec = plan.spec {
+                #expect(plan.freezeBy < spec.duration)          // the freeze always comes before the sunrise
+                for i in 1..<max(spec.groups.count, 1) where i < spec.groups.count {
+                    #expect(spec.groups[i - 1].time <= spec.groups[i].time)
+                }
+            }
+            #expect(plan.usesPilot || !plan.path.isEmpty)
+        }
+    }
+
+    /// Every stage reaches its freeze in a real session (the reason is printed for the store run's review).
+    @Test @MainActor func everyStageReachesItsFreeze() {
+        for name in DemoStageName.allCases {
+            let plan = DemoStages.plan(name, today: 300)
+            let result = DemoStages.simulate(plan)
+            print("GLINT-STAGE \(name.rawValue) reason=\(result.reason) t=\(result.snapshot.time) "
+                  + "glooms=\(result.snapshot.glooms.count) flowers=\(result.snapshot.flowersLeft)")
+            #expect(result.reason == "want" || result.reason == "timeout")
+            #expect(result.snapshot.phase == .playing)
+            #expect(result.snapshot.time >= plan.freezeFrom - 1e-6 || result.reason == "want")
+        }
+    }
+}

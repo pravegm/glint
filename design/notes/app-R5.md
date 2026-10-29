@@ -142,3 +142,32 @@ Nothing here has been compiled (CI is the compiler). Nothing is committed. Sourc
   - Drag upgrades to the hinge while waiting.
   - No switch after a drag.
   - The pure rules.
+
+## R5c store stages (`stage=<name>`, DEBUG)
+- **What a stage is.** `App/DemoStages.swift`: a real session built from a custom `LevelSpec` via Core's
+  `DawnSession(mode:spec:seed:)`, with no Core change.
+  - Spawns are timed to surface just before the freeze (submerged speed = speed × scale × 1.6).
+  - The band follows a scripted path (`ScriptedBandSource`, by session time). It overrides the hinge on a Duo
+    (`stageOverridesHinge`, store frames only).
+  - Long Night uses Core's own waves with the slowed pilot.
+- **How it runs.** Headless 1/120 s steps up to 0.6 s before the freeze window, then live 1/120 s steps until
+  `StageWatch` fires, or `freezeBy` as a timeout. Then it prints `GLINT-T freeze stage-<name>`, a
+  `GLINT-T band <b> angle … phase … shut 0` line, and `GLINT-T stage <name> reason=<want|timeout> …`.
+- **Stages:**
+
+  | Stage | Mode | What it waits for |
+  |---|---|---|
+  | `hero` | L3, golden dawn | a 2nd pop with its burst live |
+  | `sweep` | 6 wisps in a line | 0.12 s after the Sweep |
+  | `brute` | L6 | a surfaced brute lit ≥ 0.5 |
+  | `fireflies` | L4 | a firefly within 0.15 d of the band |
+  | `rooftops` | L14, a cloud | 0.35 s after a split |
+  | `harbour` | L27, a dense wave | 0.3 s after a flower is eaten |
+  | `longnight` | endless | 0.6 s after a wave-up (the banner) |
+  | `daily` | golden hour, date chip | a pop |
+
+- **Tests: `StageTests`.**
+  - Parsing, and the scripted path.
+  - Each plan's freeze comes before its sunrise.
+  - Each stage, run headless in a real session, reaches a freeze ("want" or "timeout") while still playing. The test
+    prints `GLINT-STAGE <name> reason=…` in the CI log so the timings can be tuned from one run.

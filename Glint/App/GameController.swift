@@ -178,6 +178,10 @@ final class GameController: ObservableObject, GardenDriver {
     private var demoTarget: Double?
     /// R5b: the last pop (session time) and when `freezeOn=` started watching.
     private var lastDemoPopTime: Double?
+    /// R5c `stage=`: the stage, its scripted band and its freeze watch.
+    private var stagePlan: DemoStagePlan?
+    private var stageSource: ScriptedBandSource?
+    private var stageWatch: StageWatch?
     private var watchStart: Double?
 
     init(store: ProgressStore, settings: SettingsStore, demo: DemoMode?) {
@@ -208,6 +212,7 @@ final class GameController: ObservableObject, GardenDriver {
     /// The light source in play right now.
     private func playSource() -> any MirrorSource {
         if let locked = lockedSource, stage == .live, session != nil { return locked }
+        if let st = stageSource { return st }
         if let p = playPilot, !(pilotIsFallback && hinge.hasHinge) { return p }
         if let f = fixedSource, !(fixedIsFallback && hinge.hasHinge) { return f }
         if hinge.hasHinge { return hinge }
@@ -221,7 +226,8 @@ final class GameController: ObservableObject, GardenDriver {
 
     /// A demo pilot / fixed band that drives the light whatever the device (t=, skill=, prompt=).
     private var firmDemoSource: Bool {
-        (playPilot != nil && !pilotIsFallback) || (fixedSource != nil && !fixedIsFallback)
+        stageSource != nil || stagePlan != nil || (playPilot != nil && !pilotIsFallback)
+            || (fixedSource != nil && !fixedIsFallback)
     }
 
     /// Drags move the light (phones, and a Duo whose hinge has never reported).
@@ -619,7 +625,9 @@ final class GameController: ObservableObject, GardenDriver {
         let rolling = demo?.seed ?? UInt64(truncatingIfNeeded: Int(Date().timeIntervalSince1970 * 1000))
         let seed = AppRules.seed(for: playMode, rolling: rolling)
         let s: DawnSession
-        if let demo, demo.spawnFirefly, let t = demo.playTo, case let .level(n) = playMode {
+        if let plan = stagePlan {
+            s = DemoStages.session(plan, seed: seed)
+        } else if let demo, demo.spawnFirefly, let t = demo.playTo, case let .level(n) = playMode {
             // R4 demo `spawn=firefly`: the level's own script plus one firefly 1 s before the freeze.
             s = DawnSession(mode: playMode, spec: DemoPresets.withFirefly(LevelBook.level(n), at: t - 1), seed: seed)
         } else {
@@ -1320,6 +1328,10 @@ final class GameController: ObservableObject, GardenDriver {
 
     private func startDemoPlay(_ demo: DemoMode, mode: PlayMode) {
         let seed = demo.seed ?? DemoMode.defaultSeed
+        if let name = demo.stageName {
+            startStage(DemoStages.plan(name, today: DailySeed.day(for: Date())), seed: seed)
+            return
+        }
         if demo.prompt == .open || demo.prompt == .drag {
             fixedSource = FixedBandSource(band: Tuning.bandMin)
             fixedIsFallback = false
@@ -1375,6 +1387,23 @@ final class GameController: ObservableObject, GardenDriver {
 
     private func demoChecks(_ snap: DawnSnapshot, events: [GameEvent], now: TimeInterval) {
         guard let demo, route == .play, !demoFrozen, let session else { return }
+        if var watch = stageWatch, let plan = stagePlan {
+            stageSource?.observe(snap)
+            let shouldFreeze = watch.step(snapshot: snap, events: events)
+            stageWatch = watch
+            if shouldFreeze || session.isFinished {
+                AppTrace.note("stage \(plan.name.rawValue) froze (\(watch.reason)) at \(AppTrace.fixed(snap.time, 2))")
+                freeze("stage-" + plan.name.rawValue)
+                #if DEBUG
+                AppTrace.demo("GLINT-T band \(AppTrace.fixed(snap.band, 3)) angle "
+                              + "\(hinge.hasHinge ? AppTrace.fixed(hinge.angle ?? -1, 1) : "-1") phase "
+                              + "\(AppRules.phaseName(snap.phase)) shut 0")
+                AppTrace.demo("GLINT-T stage \(plan.name.rawValue) reason=\(watch.reason) t=\(AppTrace.fixed(snap.time, 2)) "
+                              + "glooms=\(snap.glooms.count) pops=\(watch.pops)")
+                #endif
+            }
+            return
+        }
         if let at = freezeAt {
             if now >= at { freeze(freezeTag) }
             return
@@ -1407,6 +1436,44 @@ final class GameController: ObservableObject, GardenDriver {
         } else if let after = demo.holdAfter, snap.time >= after {
             freeze("after")
         }
+    }
+
+    /// R5c: a store stage: its session (custom spec), its source (the scripted band, or the slowed pilot for Long
+    /// Night), headless 1/120 s steps to just before its freeze window, then live 1/120 s steps until it freezes.
+    private func startStage(_ plan: DemoStagePlan, seed: UInt64) {
+        stagePlan = plan
+        stageWatch = StageWatch(plan: plan)
+        if plan.usesPilot {
+            let p = PilotSource(skill: plan.pilotSkill, seed: seed)
+            p.lag = plan.pilotLag
+            playPilot = p
+            pilotIsFallback = false
+        } else {
+            stageSource = ScriptedBandSource(path: plan.path)
+        }
+        play(plan.mode)
+        guard let session else { return }
+        let step = 1.0 / 120.0
+        let source: any MirrorSource = playSource()
+        var clock: TimeInterval = 0
+        var budget = Int((plan.freezeBy + 30) * 120)
+        let target = max(plan.freezeFrom - DemoStages.liveTail, 0)
+        var watch = StageWatch(plan: plan)
+        while (session.snapshot.phase == .waiting || session.snapshot.time < target) && !session.isFinished
+                && budget > 0 {
+            let input = source.mirror(at: clock)
+            let events = session.step(dt: step, input: input)
+            stageSource?.observe(session.snapshot)
+            playPilot?.observe(session.snapshot)
+            _ = watch.step(snapshot: session.snapshot, events: events)
+            clock += step
+            budget -= 1
+        }
+        stageWatch = watch
+        playPilot?.resetClock()
+        fixedStep = true
+        publishHUD(session.snapshot, now: CACurrentMediaTime(), force: true)
+        AppTrace.note("stage \(plan.name.rawValue) live from \(AppTrace.fixed(session.snapshot.time, 2))")
     }
 
     private func freeze(_ tag: String) {

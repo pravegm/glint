@@ -116,13 +116,17 @@ struct DemoMode: Equatable, Sendable {
     var spawnFirefly = false
     /// R5b `pilotLag=<s>` (0…2): the demo pilot reacts this much later (more glooms build up), skill unchanged.
     var pilotLag: Double?
+    /// R5c `stage=<name>` (store frames): a scripted real session frozen at its moment (App/DemoStages.swift).
+    var stageName: DemoStageName?
 
     init(raw: String) { self.raw = raw }
 
     /// The screen the app opens on.
     var effectiveScreen: Screen {
         if let screen { return screen }
-        if mode != nil || level != nil || playTo != nil || stopOn != nil || holdAfter != nil { return .play }
+        if mode != nil || level != nil || playTo != nil || stopOn != nil || holdAfter != nil || stageName != nil {
+            return .play
+        }
         return .home
     }
 
@@ -185,6 +189,7 @@ struct DemoMode: Equatable, Sendable {
             case "sound": config.sound = flag(value)
             case "prompt": config.prompt = PromptKey(rawValue: value.lowercased())
             case "duolog": config.duoLog = flag(value)
+            case "stage": config.stageName = DemoStageName(rawValue: value.lowercased())
             case "streak":
                 if let n = Int(value) { config.streakDays = min(max(n, 0), 365) }
             case "ignore": config.ignoreKind = GloomKind(rawValue: value.lowercased())
