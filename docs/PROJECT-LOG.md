@@ -48,3 +48,6 @@
   0.3 wins 100 % / 87 % / 18 %, 0.6 100 / 100 / 97 %, 0.9 100 % everywhere with ★★★ 95–98 %; fireflies scorched
   0.6 ≤ 0.7/level, 0.9 ≤ 0.05. TestFlight release-check (40871729218) green: Release archive builds, no demo strings.
 - Founder (midday): "activate TestFlight now". Waiting on the founder's bundle ID + app record + the 4 secrets.
+- Founder did the bundle ID, app record and 4 secrets (29 Oct ~13:00). **TestFlight 1.0 (2) uploaded** (run
+  40878725064; archive unsigned + ad-hoc entitlements, Game Center entitlement in the App
+  Store signature). Apple processing next.
