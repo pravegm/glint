@@ -13,8 +13,8 @@
 #
 # Lines: name|demo args|wait|caption|expect|frame|hinge   (hinge = degrees to hold the phone at, a playing angle
 #   90–130; default STORE_ANGLE, 125; the flower edge is at 135°, the hinge holds ~15–145°). The book composite's angle is NOT this one: ci/store-set.sh derives it from the band the capture shows.
-# A line with freezeOn=<tag> waits (up to max(wait, 30) s) for "GLINT-T freeze <tag>", one with t= or freezeAfter= for
-# any "GLINT-T freeze" line, then 2 s; others wait `wait` s.
+# A line with stage=<name> waits (up to max(wait, 30) s) for "GLINT-T freeze stage-<name>", one with freezeOn=<tag> for
+# "GLINT-T freeze <tag>", one with t= or freezeAfter= for any "GLINT-T freeze" line, then 2 s; others wait `wait` s.
 # Writes $OUT/store-<name>.png, $OUT/logs/store-<name>.txt and logs/store-<name>.at-capture.txt (the log at capture),
 # $OUT/duo-store-report.txt. Always exits 0 (ci/store-capture.sh retries what's missing; ci/store-set.sh judges).
 set -uo pipefail
@@ -110,6 +110,8 @@ while IFS='|' read -r -u 3 name args wait _caption _expect _frame hinge _rest; d
   lim=$(( wait > 30 ? wait : 30 ))
   if [[ "$args" =~ freezeOn=([A-Za-z]+) ]]; then
     wait_for "$applog" "GLINT-T freeze ${BASH_REMATCH[1]}( |\$)" "$lim" && sleep 2 || log "WARN $name: no 'GLINT-T freeze ${BASH_REMATCH[1]}' in ${lim} s (shooting anyway)"
+  elif [[ "$args" =~ (^|;)stage=([A-Za-z]+) ]]; then
+    wait_for "$applog" "GLINT-T freeze stage-${BASH_REMATCH[2]}( |\$)" "$lim" && sleep 2 || log "WARN $name: no 'GLINT-T freeze stage-' in ${lim} s (shooting anyway)"
   elif [[ "$args" =~ (^|;)(t|freezeAfter)= ]]; then
     wait_for "$applog" "GLINT-T freeze" "$lim" && sleep 2 || log "WARN $name: no 'GLINT-T freeze' in ${lim} s (shooting anyway)"
   else

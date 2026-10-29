@@ -151,6 +151,15 @@ check_log() {
   elif [[ "$a" == *freezeAfter=* || "$a" =~ (^|;)t= ]]; then
     grep -q "GLINT-T freeze" "$f" || problems+=("never froze (t= / freezeAfter=) before the capture")
   fi
+  # stage=<name> (design/notes/app-R5.md R5c): the freeze line must be there, and a stage that gave up (its moment never
+  # came) says reason=timeout. Checked for this frame's args and, for a book:<name> source, for any stage in its log.
+  if [[ "$a" =~ (^|;)stage=([A-Za-z]+) ]]; then
+    st="${BASH_REMATCH[2]}"
+    grep -qE "GLINT-T freeze stage-$st( |\$)" "$f" || problems+=("never froze on stage $st before the capture")
+  fi
+  if grep -qE "GLINT-T stage [A-Za-z]+ reason=timeout" "$f"; then
+    problems+=("stage timed out ($(grep -oE 'GLINT-T stage [A-Za-z]+ reason=timeout' "$f" | tail -1 | sed 's/GLINT-T //')): the moment never came; eyeball or re-run")
+  fi
   if [[ -n "$e" ]] && ! grep -qE -- "$e" "$f"; then problems+=("log has no line matching '$e'"); fi
   for r in "$@"; do
     if [[ -n "$r" ]] && ! grep -qE -- "$r" "$f"; then problems+=("log has no line matching '$r'"); fi

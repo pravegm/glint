@@ -1,27 +1,32 @@
 # App Store screenshot scenarios, iPhone Duo inner display (2853x2007, BOOK pose: the Duo simulator boots in book pose
 # and can't be turned to a laptop in CI): docs/appstore/screenshots.md §B. Captured by ci/store-capture.sh duo →
-# ci/duo-store.sh, framed by ci/store-set.sh + ci/store-frame.swift. THIS FILE IS THE SOURCE OF TRUTH for names and
-# captions (tools/appstore/build-metadata.js checks the names against docs/appstore/asc-metadata.json).
+# ci/duo-store.sh (which waits for "GLINT-T freeze stage-"), framed by ci/store-set.sh + ci/store-frame.swift. THIS FILE
+# IS THE SOURCE OF TRUTH for names and captions (tools/appstore/build-metadata.js checks the names).
 # name|demo args (-glintDemo)|wait s|caption|expect|frame|hinge
-#  - The same crowded moments as ci/store-scenarios.txt (busy / sweep / firefly / eaten freezes, skill 0.55 with
-#    pilotLag=0.3, freezeAfter inside each level's length). skill= makes the pilot drive the light on a Duo too
-#    (DemoMode.forcesPilot), so no "Close the phone to start" gate.
+#  - Every gameplay frame is a store STAGE (stage=<name>, DEBUG: Glint/App/DemoStages.swift, design/notes/app-R5.md
+#    R5c): a real session from a custom LevelSpec with spawns timed to the freeze and a scripted band, frozen at the
+#    moment the frame is about. The app prints "GLINT-T freeze stage-<name>", a final "GLINT-T band <b> …" line and
+#    "GLINT-T stage <name> reason=want|timeout". ci/store-set.sh FLAGS a frame whose log lacks the freeze line or says
+#    reason=timeout (the moment never came: eyeball it or re-run).
+#    hero = L3 at golden dawn, a 2nd pop bursting; sweep = 6 wisps in a line, 0.12 s after the Sweep; brute = L6, a
+#    surfaced brute lit; fireflies = L4, a firefly by the band; rooftops = L14 under a cloud, 0.35 s after a split;
+#    harbour = L27, a dense wave, just after a flower is eaten; longnight = endless, the wave-up banner; daily = golden
+#    hour, the date chip, a pop. Captions say only what the stage shows.
+#  - The stage's scripted band overrides the hinge on a Duo (stageOverridesHinge), so no "Close the phone" gate.
 #  - hinge: the angle ci/duo-store.sh holds the phone at (open, in the play range, at most 130°) so the inner display is
-#    up and the layout is folded. The book composite of D01 (frame 1 of EVERY set, and the header/search art hero with
-#    D02 as its fallback) is drawn at the angle that puts the band where the capture shows it (ci/store-set.sh:
-#    80 + 55 × band, 100–135), never this column.
-#  - fold=1 keeps the Duo split layout even before a hinge sample arrives. Mirror on the left, garden on the right
-#    (the default); every frame must log "GLINT-T canvas <W>x<H> fold=1".
-#  - No "|" inside a field.
-D01-hero|screen=play;level=6;skill=0.55;pilotLag=0.3;freezeOn=busy;freezeAfter=12;progress=mid;fold=1|75|Your phone is a *mirror* / Open it to catch the sun.|GLINT-T freeze busy|book|125
-D02-sweep|screen=play;level=3;skill=0.75;freezeOn=sweep;freezeAfter=6;progress=mid;fold=1|60|Sweep the light. *Pop!* / Every pop climbs a rising scale.|GLINT-T freeze sweep|flat|125
-D03-reach|screen=play;level=5;skill=0.55;pilotLag=0.3;freezeOn=busy;freezeAfter=15;progress=mid;fold=1|70|Open wider, light goes *further* / The phone's angle is the aim.|GLINT-T freeze busy|flat|125
-D04-fireflies|screen=play;level=5;skill=0.6;pilotLag=0.3;freezeOn=firefly;freezeAfter=8;hint=spareTheFireflies;progress=mid;fold=1|70|Spare the *fireflies* / They replant lost flowers.|GLINT-T freeze firefly|flat|125
-D05-brute|screen=play;level=6;skill=0.55;pilotLag=0.3;freezeOn=busy;freezeAfter=22;progress=mid;fold=1|75|Follow the *big ones* / Keep the light on a brute as it creeps.|GLINT-T freeze busy|flat|125
-D06-worlds|screen=levels;progress=mid;fold=1|8|30 *sunrises*, 3 worlds / Meadow, Rooftops and Harbour.|GLINT-T screen levels|flat|125
-D07-rooftops|screen=play;level=14;skill=0.55;pilotLag=0.3;freezeOn=busy;freezeAfter=25;progress=mid;fold=1|85|Shadows that *split* and hop / New tricks on the Rooftops.|GLINT-T freeze busy|flat|125
-D08-harbour|screen=play;level=27;skill=0.5;pilotLag=0.3;freezeOn=eaten;freezeAfter=20;progress=mid;fold=1|100|Hard by the *Harbour* / World 3 will cost you petals.|GLINT-T freeze eaten|flat|125
-D09-long-night|screen=play;mode=endless;skill=0.55;pilotLag=0.3;freezeOn=busy;freezeAfter=40;progress=mid;fold=1|100|Then the *Long Night* / Endless waves. One best score.|GLINT-T freeze busy|flat|125
-D10-todays-dawn|screen=play;mode=daily;skill=0.55;pilotLag=0.3;freezeOn=busy;freezeAfter=15;progress=mid;fold=1|70|A new *dawn* every day / Today's Dawn: one sunrise for everyone.|GLINT-T freeze busy|flat|125
+#    up and the layout folded. The book composite of D01 (frame 1 of EVERY set, and the header/search art hero, D02 the
+#    fallback) is drawn at the angle that puts the band where the capture shows it (ci/store-set.sh: 80 + 55 × the final
+#    GLINT-T band line, 100–135), never this column.
+#  - fold=1 keeps the Duo split layout; every frame must log "GLINT-T canvas <W>x<H> fold=1". No "|" inside a field.
+D01-hero|screen=play;stage=hero;progress=mid;fold=1|30|Your phone is a *mirror* / Open it to catch the sun.|GLINT-T freeze stage-hero|book|125
+D02-sweep|screen=play;stage=sweep;progress=mid;fold=1|30|Sweep the light. *Pop!* / Every pop climbs a rising scale.|GLINT-T freeze stage-sweep|flat|125
+D03-reach|screen=play;stage=hero;progress=mid;fold=1|30|Open wider, light goes *further* / The phone's angle is the aim.|GLINT-T freeze stage-hero|flat|125
+D04-fireflies|screen=play;stage=fireflies;progress=mid;fold=1|30|Spare the *fireflies* / They replant lost flowers.|GLINT-T freeze stage-fireflies|flat|125
+D05-brute|screen=play;stage=brute;progress=mid;fold=1|30|Follow the *big ones* / Keep the light on a brute as it creeps.|GLINT-T freeze stage-brute|flat|125
+D06-worlds|screen=levels;progress=mid;fold=1|30|30 *sunrises*, 3 worlds / Meadow, Rooftops and Harbour.|GLINT-T screen levels|flat|125
+D07-rooftops|screen=play;stage=rooftops;progress=mid;fold=1|30|Shadows that *split* in two / Clouds and new tricks on the Rooftops.|GLINT-T freeze stage-rooftops|flat|125
+D08-harbour|screen=play;stage=harbour;progress=mid;fold=1|30|Hard by the *Harbour* / World 3 will cost you petals.|GLINT-T freeze stage-harbour|flat|125
+D09-long-night|screen=play;stage=longnight;progress=mid;fold=1|30|Then the *Long Night* / Endless waves. One best score.|GLINT-T freeze stage-longnight|flat|125
+D10-todays-dawn|screen=play;stage=daily;progress=mid;fold=1|30|A new *dawn* every day / Today's Dawn: one sunrise for everyone.|GLINT-T freeze stage-daily|flat|125
 # Reserves (duo_filter '^R'): Swap halves (garden on the left, so store-set.sh lights the left page).
-R1-swap|screen=play;level=8;skill=0.55;pilotLag=0.3;freezeOn=busy;freezeAfter=15;progress=mid;fold=1;swap=1|70|Any way *round* / Swap the halves in Settings.|GLINT-T freeze busy|flat|125
+R1-swap|screen=play;stage=hero;progress=mid;fold=1;swap=1|30|Any way *round* / Swap the halves in Settings.|GLINT-T freeze stage-hero|flat|125
