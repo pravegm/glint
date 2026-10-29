@@ -63,3 +63,6 @@
   3 leaderboards) attached to the draft 1.0 submission, header + search art, price, accessibility. **The featuring
   nomination was submitted by the first push** (metadata had submit: true; I hadn't checked) — told the founder; the
   tool now keeps nominations as drafts. Store frames: stage= moments (5/8 land; daily, Long Night, fireflies retimed).
+- Store frames: stage= moments; demo freezes now hold the scene. Store run 40941504707: 6.9" 10/10, 6.3" 10/10,
+  Duo 10/10, header + search art OK. **Uploaded to App Store Connect** (asc 40946051208): all three sets for en-GB and
+  en-US, header and search art. Build 3 attached. Founder-only steps are in docs/SUBMISSION.md.

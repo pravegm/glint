@@ -56,7 +56,11 @@ no data collected, rated 4+.
 - **TestFlight:** build 2 (your test) and **build 3** are both VALID.
 
 ## What only you can do
-See `docs/SUBMISSION.md` for every click.
+See `docs/SUBMISSION.md` for every click. **Already in App Store Connect (pushed by Claude):** the listing
+(both English locales), keywords, categories, age rating 4+, review notes, the 6.9-inch, 6.3-inch and Duo screenshot
+sets, the header and search art, Game Center (10 achievements with badges, 3 leaderboards) and build 3. The featuring
+nomination was submitted by the tool on 29 Oct (launch date Tue 15 Dec in its text): check it under Featuring →
+Nominations.
 1. **TestFlight:** App Store Connect → TestFlight → your group → **+** → add **build 3**. To skip this next time, turn
    on the group's automatic distribution.
 2. **Website:** turn on GitHub Pages (Settings → Pages → main → /docs). Apple needs the support and privacy pages.
