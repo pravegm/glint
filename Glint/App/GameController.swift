@@ -123,6 +123,8 @@ final class GameController: ObservableObject, GardenDriver {
     private var hintShownAt: TimeInterval = 0
     /// R3 (REVIEW-2 fix 7): a raised hint waits here until its subject is on the field.
     private var pendingHint: HintID?
+    /// R4: the hint whose "shown" line has been logged this session.
+    private var hintLogged: HintID?
     private var pendingHintAt: TimeInterval = 0
     /// R3 (REVIEW-2 fix 12): the filtered hinge's jitter while it drives the light (About trace).
     private var jitter = JitterMeter()
@@ -460,6 +462,7 @@ final class GameController: ObservableObject, GardenDriver {
         hint = nil
         hintForced = false
         pendingHint = nil
+        hintLogged = nil
         startStarLine = mode.isLevel ? AppRules.starTargetLine(Self.starScore(for: mode)) : nil
         hud.update(HUDState())
         hud.setBanner(nil)
@@ -493,7 +496,14 @@ final class GameController: ObservableObject, GardenDriver {
 
     private func beginSession() {
         let rolling = demo?.seed ?? UInt64(truncatingIfNeeded: Int(Date().timeIntervalSince1970 * 1000))
-        let s = DawnSession(mode: playMode, seed: AppRules.seed(for: playMode, rolling: rolling))
+        let seed = AppRules.seed(for: playMode, rolling: rolling)
+        let s: DawnSession
+        if let demo, demo.spawnFirefly, let t = demo.playTo, case let .level(n) = playMode {
+            // R4 demo `spawn=firefly`: the level's own script plus one firefly 1 s before the freeze.
+            s = DawnSession(mode: playMode, spec: DemoPresets.withFirefly(LevelBook.level(n), at: t - 1), seed: seed)
+        } else {
+            s = DawnSession(mode: playMode, seed: seed)
+        }
         session = s
         stage = .live
         drag.layout = layout
@@ -910,7 +920,16 @@ final class GameController: ObservableObject, GardenDriver {
         if let session, case .endless = playMode { s.wave = session.wave }
         hud.update(s)
         if let h = hint, let subject = AppRules.hintSubject(h, snapshot: snap) {
-            hud.setHintTarget(layout.point(u: subject.u, d: max(subject.d, 0)))
+            // R4: the Scene's own mapping (book layouts inset the flower edge for the thumb).
+            hud.setHintTarget(GardenScene.canvasPoint(layout: layout, u: subject.u, d: max(subject.d, 0)))
+            // R4: the first frame a hint is really on screen (its subject on the field) is logged once.
+            if hintLogged != h {
+                hintLogged = h
+                AppTrace.note("hint \(h.rawValue) shown")
+                #if DEBUG
+                AppTrace.demo("GLINT-T hint \(h.rawValue) shown")
+                #endif
+            }
         } else {
             hud.setHintTarget(nil)
         }
@@ -1208,17 +1227,14 @@ final class GameController: ObservableObject, GardenDriver {
         let s = DawnSession(mode: mode, seed: AppRules.seed(for: mode, rolling: rolling))
         session = s
         stage = .live
-        // R3: a lost fixture with `ignore=<kind>` is a real game whose pilot never aims at that kind (real numbers,
-        // a known cause); without it, the light stays in the crease.
-        let pilot: PilotSource?
-        if demo.outcome == .lost && demo.ignoreKind == nil {
-            pilot = nil
-        } else {
-            let p = PilotSource(skill: demo.skill ?? (demo.outcome == .lost ? 0.85 : 1.0),
-                                seed: demo.seed ?? DemoMode.defaultSeed)
-            p.ignoring = demo.ignoreKind
-            pilot = p
+        if demo.outcome == .lost {
+            // R3b: a lost fixture is built, not played (a pilot run may win): fixed numbers and a cause.
+            showDemoLost(demo, mode: mode)
+            return
         }
+        let p = PilotSource(skill: demo.skill ?? 1.0, seed: demo.seed ?? DemoMode.defaultSeed)
+        p.ignoring = demo.ignoreKind
+        let pilot: PilotSource? = p
         let fixed = FixedBandSource(band: Tuning.bandMin, first: 0)
         let cap: Double
         switch mode {
@@ -1248,5 +1264,27 @@ final class GameController: ObservableObject, GardenDriver {
         publishHUD(s.snapshot, now: CACurrentMediaTime(), force: true)
         demoFrozen = true
         showResults()
+    }
+
+    /// `results=lost` (R3b): a deterministic lost result. `DemoPresets.lostStats(cause:)` (cause = `ignore=`, else murks)
+    /// with real-looking numbers; the tip comes from the same `TipRules` a real loss uses.
+    private func showDemoLost(_ demo: DemoMode, mode: PlayMode) {
+        let stats = DemoPresets.lostStats(cause: demo.ignoreKind ?? .murk)
+        let score = stats.score
+        store.noteStarted(mode)
+        let outcome = store.record(mode: mode, won: false, stars: 0, score: score, now: Date())
+        var result = ResultSummary(mode: mode, title: AppRules.modeTitle(mode), won: false, stars: 0, score: score,
+                                   flowersLeft: 0, pops: stats.pops, outcome: outcome)
+        result.flowers = Array(repeating: false, count: Tuning.flowerCount)
+        result.tip = mode.isLevel ? TipRules.tip(won: false, stats: stats) : nil
+        summary = result
+        demoFrozen = true
+        setFeedbackPaused(true)
+        AppTrace.note("result \(AppRules.modeName(mode)) won=0 (built)")
+        #if DEBUG
+        AppTrace.demo("GLINT-T result \(AppRules.modeName(mode)) won=0 stars=0 score=\(score) flowers=0 "
+                      + "pops=\(stats.pops) tip=\(result.tip ?? "-")")
+        #endif
+        go(.results)
     }
 }

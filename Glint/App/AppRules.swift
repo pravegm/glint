@@ -420,7 +420,29 @@ enum AppRules {
     static let hintD = 0.4
 
     static func hintCenter(layout: GardenLayout) -> CGPoint {
-        layout.point(u: 0.5, d: hintD)
+        layout.point(u: 0.5, d: overlaySpan(layout: layout).center)
+    }
+
+    /// R4 (item 9): the flowers' nearest edge to the crease, in floor d, from the Scene's own rects
+    /// (`GardenScene.hudSafeRects`), so the overlays follow wherever the Scene puts the flowers (the book-pose thumb
+    /// inset included). 1 when there are none.
+    static func flowersInnerD(layout: GardenLayout) -> Double {
+        var inner = 1.0
+        for r in GardenScene.hudSafeRects(layout: layout) {
+            let corners = [CGPoint(x: r.minX, y: r.minY), CGPoint(x: r.maxX, y: r.minY),
+                           CGPoint(x: r.minX, y: r.maxY), CGPoint(x: r.maxX, y: r.maxY)]
+            for c in corners { inner = min(inner, layout.floorPoint(at: c).d) }
+        }
+        return min(max(inner, 0.3), 1)
+    }
+
+    /// The garden strip the prompt card and hints may use along d: from 0.04 to 0.04 short of the flowers, and its
+    /// middle.
+    static func overlaySpan(layout: GardenLayout) -> (center: Double, length: CGFloat) {
+        let end = flowersInnerD(layout: layout) - 0.04
+        let start = 0.04
+        let length = CGFloat(max(end - start, 0.2)) * layout.gardenDepth
+        return ((start + end) / 2, length)
     }
 
     /// The thing a hint is about: the oldest gloom of its kind (or firefly), as a floor point; nil if gone.
@@ -474,13 +496,14 @@ enum AppRules {
     static let promptD = 0.4
 
     static func promptCenter(layout: GardenLayout) -> CGPoint {
-        layout.point(u: 0.5, d: promptD)
+        layout.point(u: 0.5, d: overlaySpan(layout: layout).center)
     }
 
     /// The largest the start prompt card may be: along d it stays inside 0.04…0.76 of the garden (the flowers sit at
     /// the far edge), along u it keeps 16 pt from each side (at most 460 pt).
     static func promptMaxSize(layout: GardenLayout) -> CGSize {
-        let alongD: CGFloat = layout.gardenDepth * 0.72
+        // R4: the strip short of the flowers (wherever the Scene puts them), not a fixed 0.72.
+        let alongD: CGFloat = overlaySpan(layout: layout).length
         let alongU: CGFloat = min(max(layout.gardenSpan - 32, 120), 460)
         let w: CGFloat = layout.foldVertical ? alongD : alongU
         let h: CGFloat = layout.foldVertical ? alongU : alongD
@@ -700,5 +723,41 @@ struct JitterMeter: Equatable {
         let sorted = samples.sorted()
         let i = min(Int((Double(sorted.count - 1) * 0.95).rounded()), sorted.count - 1)
         return sorted[i]
+    }
+}
+
+// MARK: - Round 3b (founder: Results buttons always visible, compact achievements; pure, tested)
+
+extension AppRules {
+    /// Earned achievements on the Results card: at most this many medallions, then "+n".
+    static let achievementRowMax = 4
+
+    static func achievementRow(count: Int) -> (badges: Int, more: Int) {
+        let n = max(count, 0)
+        if n <= achievementRowMax { return (n, 0) }
+        return (achievementRowMax - 1, n - (achievementRowMax - 1))
+    }
+
+    /// The Results buttons' block: the primary (64), a secondary (58) and the Levels / Home row (52), 12 pt apart,
+    /// plus the region's 10 pt padding top and bottom.
+    static func resultsButtonsHeight(compact: Bool) -> CGFloat {
+        let primary = max(GlintTheme.buttonHeight, GlintTheme.minTap)
+        return primary + 12 + 58 + 12 + 52 + 20
+    }
+
+    /// Where the Results card and its buttons go. Phones: the buttons pinned to the bottom of the safe area, the card
+    /// scrolling above them. A Duo: the card on the mirror half, the buttons on the garden half (clear of the crease).
+    /// The buttons' rect is never shorter than their block, so none can be pushed off the screen.
+    static func resultsPlacement(layout: GardenLayout, insets: EdgeInsets, isDuo: Bool,
+                                 buttonsHeight: CGFloat) -> (card: CGRect, buttons: CGRect) {
+        let regions = menuRegions(layout: layout, insets: insets, isDuo: isDuo)
+        if let secondary = regions.secondary, regions.primary.height >= buttonsHeight {
+            return (secondary, regions.primary)
+        }
+        let safe = regions.primary
+        let h = min(buttonsHeight, safe.height)
+        let buttons = CGRect(x: safe.minX, y: safe.maxY - h, width: safe.width, height: h)
+        let card = CGRect(x: safe.minX, y: safe.minY, width: safe.width, height: max(safe.height - h, 1))
+        return (card, buttons)
     }
 }

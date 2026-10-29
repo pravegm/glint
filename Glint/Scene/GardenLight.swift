@@ -9,32 +9,46 @@ struct LightPiece: Equatable {
     var f1: CGFloat
 }
 
-/// R3 (REVIEW-2 P0-3): how strong each light layer is drawn (additive peak opacity). On grass (the meadow and Long
-/// Night's moonlit meadow) the pool is gentle, so the lawn under the band stays under 1.8 × its unlit brightness (a
-/// pool of light, not a slab); tiles and planks are lighter and take the R2 strength. The cone (beam) runs from the
-/// crease shade to the band's near edge at 18 %, so it never stacks under the band.
+/// R3/R3b: how strong each light layer is drawn (peak opacity).
+/// - Tiles and planks (founder: "perfect"): the additive pool + core at R2 strength.
+/// - Grass (R3b, REVIEW-2 P0-3 retuned): the light must read unmistakably as warm sunlight without becoming a slab, so
+///   the hue does the work: a gold **wash** (alpha-blended, it replaces part of the teal with gold), a narrow soft cream
+///   **line** at the centre (additive), a little additive gold pool as the sun climbs. Brightness stays 1.35–2 × the
+///   unlit lawn and R − B rises by ≥ 40 (tested on the real textures).
+/// - Long Night: the same recipe in moonlit silver-gold, gentler.
+/// The cone (beam) runs from the crease shade into the band's near half and fades out there (no edge), 16–18 %.
 struct LightAlphas: Equatable {
     var pool: CGFloat
     var core: CGFloat
     var halo: CGFloat
     var beam: CGFloat
     var trail: CGFloat
+    /// R3b: the alpha-blended warm wash (grass only).
+    var wash: CGFloat = 0
+    /// R3b: the narrow cream line at the band's centre (grass only).
+    var line: CGFloat = 0
 
     static func of(_ style: GroundStyle, dawn: CGFloat, swell: CGFloat) -> LightAlphas {
         let sw = min(max(swell, 0), 1)
+        let dw = min(max(dawn, 0), 1)
         switch style {
         case .meadow:
-            return LightAlphas(pool: 0.09 + 0.06 * sw, core: 0.065 + 0.02 * dawn + 0.08 * sw, halo: 0.015 + 0.08 * sw,
-                               beam: 0.18, trail: 0.2)
+            return LightAlphas(pool: 0.14 * dw + 0.08 * sw, core: 0, halo: 0.015 + 0.08 * sw, beam: 0.16, trail: 0.16,
+                               wash: 0.25 + 0.08 * sw, line: 0.09 + 0.28 * dw + 0.15 * sw)
         case .moonlit:
-            // Moonlight on the darker blue lawn: gentler still.
-            return LightAlphas(pool: 0.07 + 0.05 * sw, core: 0.05 + 0.07 * sw, halo: 0.01 + 0.06 * sw,
-                               beam: 0.14, trail: 0.16)
+            return LightAlphas(pool: 0.05 * sw, core: 0, halo: 0.01 + 0.06 * sw, beam: 0.13, trail: 0.12,
+                               wash: 0.12 + 0.06 * sw, line: 0.07 + 0.12 * sw)
         case .rooftops, .harbour:
-            return LightAlphas(pool: 0.34 + 0.12 * sw, core: 0.24 + 0.04 * dawn + 0.2 * sw, halo: 0.1 + 0.18 * sw,
+            return LightAlphas(pool: 0.34 + 0.12 * sw, core: 0.24 + 0.04 * dw + 0.2 * sw, halo: 0.1 + 0.18 * sw,
                                beam: 0.18, trail: 0.3)
         }
     }
+
+    /// R3b: the grass recipe's colours (the tests model them too).
+    static let meadowWash = GardenInk(hex: 0xD88A2A)
+    static let meadowLine = GardenInk(hex: 0xFFF4D6)
+    static let moonWash = GardenInk(hex: 0xE8D08A)
+    static let moonLine = GardenInk(hex: 0xF4F0E2)
 }
 
 /// R2: how much of the mirror's light reaches each `u` (REVIEW-1 P0-2/P0-3): the band fades over the outer 6 % of the
@@ -107,14 +121,16 @@ final class GardenLightLayer {
     private var flats: [SKSpriteNode] = []
     private var ramps: [SKSpriteNode] = []
 
-    init(_ profile: GardenArt.LightProfile, color: UIColor, capacity: Int = 15) {
+    /// `blend`: `.add` for light; R3b: `.alpha` for the grass's warm wash (a piece's flat + ramp pair then stacks as
+    /// 1 − (1 − a)(1 − b) ≈ a + b at these low opacities).
+    init(_ profile: GardenArt.LightProfile, color: UIColor, capacity: Int = 15, blend: SKBlendMode = .add) {
         let ft = GardenArt.light(profile, ramp: false)
         let rt = GardenArt.light(profile, ramp: true)
         for _ in 0..<max(capacity, 1) {
             let f = SKSpriteNode(texture: ft)
             let r = SKSpriteNode(texture: rt)
             for s in [f, r] {
-                s.blendMode = .add
+                s.blendMode = blend
                 s.colorBlendFactor = 1
                 s.color = color
                 s.isHidden = true

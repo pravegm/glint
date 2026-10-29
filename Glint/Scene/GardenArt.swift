@@ -135,6 +135,14 @@ enum GardenMath {
     /// R2: glooms are drawn 15 % bigger on phones (the 0.58 garden split) so their faces read on the small screen.
     static func gloomArtScale(layout: GardenLayout) -> CGFloat { layout.gardenFraction > 0.54 ? 1.15 : 1 }
 
+    /// R4 (REVIEW-3 P1-9): thumb room. Held like a book, the right thumb rests over the garden's outer edge, so the flower
+    /// row (and the d = 1 line where glooms eat) sits this far in from it. Book layouts (fold vertical) only.
+    static let thumbInset: CGFloat = 60
+    static func flowerInset(layout: GardenLayout) -> CGFloat {
+        guard layout.foldVertical else { return 0 }
+        return min(thumbInset, max(layout.gardenDepth, 0) * 0.2)
+    }
+
     static func clamp(_ v: CGFloat, _ lo: CGFloat, _ hi: CGFloat) -> CGFloat { min(max(v, lo), hi) }
     static func clamp(_ v: Double, _ lo: Double, _ hi: Double) -> Double { min(max(v, lo), hi) }
 
@@ -663,8 +671,22 @@ enum GardenArt {
         case core
         /// A wide faint glow (±1).
         case halo
-        /// The beam from the crease (x 0) to the band (x 1): faint, brightening towards the band.
+        /// The beam from the crease (x 0) to the band (x 1): faint, brightening towards the band. R3b: it fades out
+        /// over its last 25 % (inside the band), so it never ends in a line.
         case beam
+        /// R3b: a narrow soft line at the band's centre (the grass's cream core).
+        case line
+    }
+
+    /// R3b: the line's value at floor distance `x`: a soft bell within ±(core + 0.015).
+    static func lineValue(distance x: Double) -> CGFloat {
+        let v = 1 - GardenMath.smooth(0, CGFloat(GardenMath.bandCore + 0.015), CGFloat(abs(x)))
+        return pow(v, 1.5)
+    }
+
+    /// R3b: the beam's value along its length (0 at the crease end … 1 at the band end).
+    static func beamValue(_ f: CGFloat) -> CGFloat {
+        (0.35 + 0.65 * pow(f, 1.5)) * (1 - GardenMath.smooth(0.75, 1, f))
     }
 
     /// R3: the pool and core run across ±(edge + feather): Core's profile, softened so it has no hard edge anywhere.
@@ -689,7 +711,9 @@ enum GardenArt {
             let x = f * 2 - 1
             return exp(-3.2 * x * x) * (1 - x * x)
         case .beam:
-            return 0.35 + 0.65 * pow(f, 1.5)
+            return beamValue(f)
+        case .line:
+            return lineValue(distance: Double(f * 2 - 1) * lightHalfWidth)
         }
     }
 
@@ -749,37 +773,44 @@ enum GardenArt {
 
     // MARK: The lawn (canonical: x = d from the crease, y = u)
 
-    static func groundKey(depth: CGFloat, span: CGFloat, warm: Bool, style: GroundStyle = .meadow) -> String {
+    static func groundKey(depth: CGFloat, span: CGFloat, warm: Bool, style: GroundStyle = .meadow,
+                          inset: CGFloat = 0) -> String {
         let w = Int((max(depth, 8) / 4).rounded() * 4)
         let h = Int((max(span, 8) / 4).rounded() * 4)
-        return "ground-\(style.rawValue)-\(w)x\(h)-\(warm ? 1 : 0)"
+        let i = Int(max(inset, 0).rounded())
+        return "ground-\(style.rawValue)-\(w)x\(h)-i\(i)-\(warm ? 1 : 0)"
     }
 
     /// The whole ground for a garden of `depth` × `span` points in `style` (cached per style and size, built on first
-    /// use, never per frame). `warm`: the sunrise palette.
-    static func ground(depth: CGFloat, span: CGFloat, warm: Bool, style: GroundStyle = .meadow) -> SKTexture {
+    /// use, never per frame). `warm`: the sunrise palette. R4: `inset` is the thumb strip beyond the flower row at the far
+    /// end (book layouts): the play area (crease → flowers) is `depth − inset` and the ground carries on under the thumb.
+    static func ground(depth: CGFloat, span: CGFloat, warm: Bool, style: GroundStyle = .meadow,
+                       inset: CGFloat = 0) -> SKTexture {
         let w = (max(depth, 8) / 4).rounded() * 4
         let h = (max(span, 8) / 4).rounded() * 4
         let scale: CGFloat = min(1.5, 1800 / max(w, h))
-        let key = groundKey(depth: depth, span: span, warm: warm, style: style)
+        let ins = min(max(inset, 0), w * 0.5)
+        let key = groundKey(depth: depth, span: span, warm: warm, style: style, inset: inset)
         return make(key, size: CGSize(width: w, height: h), scale: scale) { ctx, s in
             switch style {
             case .meadow:
-                drawGround(ctx, s, warm ? GroundPalette.dawn : GroundPalette.night)
+                drawGround(ctx, s, warm ? GroundPalette.dawn : GroundPalette.night, inset: ins)
             case .moonlit:
-                drawGround(ctx, s, warm ? GroundPalette.moonSilver : GroundPalette.moon)
+                drawGround(ctx, s, warm ? GroundPalette.moonSilver : GroundPalette.moon, inset: ins)
             case .rooftops:
-                GroundWorlds.drawRooftops(ctx, s, warm: warm)
+                GroundWorlds.drawRooftops(ctx, s, warm: warm, inset: ins)
             case .harbour:
-                GroundWorlds.drawHarbour(ctx, s, warm: warm)
+                GroundWorlds.drawHarbour(ctx, s, warm: warm, inset: ins)
             }
         }
     }
 
     /// Paints the lawn. Both palettes use the same seed, so the night and dawn lawns line up exactly and crossfade.
-    static func drawGround(_ ctx: CGContext, _ s: CGSize, _ p: GroundPalette) {
+    /// `inset`: the strip beyond the play depth (the flower bed carries on under the thumb).
+    static func drawGround(_ ctx: CGContext, _ s: CGSize, _ p: GroundPalette, inset: CGFloat = 0) {
         let w = s.width
         let h = s.height
+        let pw = max(w - inset, 1)
         let area = w * h
         // Base: dark at the crease (shadows live there), lighter towards the flowers.
         GardenPainter.linear(ctx, [p.crease, p.low, p.mid, p.edge], [0, 0.17, 0.62, 1],
@@ -871,9 +902,10 @@ enum GardenArt {
         }
         GardenPainter.fill(ctx, stains, p.ink.with(alpha: 0.45))
 
-        // The flower bed along the flower edge: soil, pebbles, overhanging grass.
-        let fr = GardenMath.flowerRadius(depth: w, span: h, count: GardenMath.flowerCount)
-        let bedX = max(w - fr * 2.7, w * 0.78)
+        // The flower bed along the flower edge: soil, pebbles, overhanging grass (R4: placed by the play depth `pw`; in
+        // book layouts the bed carries on under the thumb to the garden's outer edge).
+        let fr = GardenMath.flowerRadius(depth: pw, span: h, count: GardenMath.flowerCount)
+        let bedX = max(pw - fr * 2.7, pw * 0.78)
         let bed = CGMutablePath()
         bed.move(to: CGPoint(x: w + 2, y: -2))
         bed.addLine(to: CGPoint(x: bedX, y: -2))

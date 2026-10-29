@@ -110,6 +110,29 @@ struct SceneTests {
         return out
     }
 
+    /// The mean colour (0…1) of each pixel column over the middle 60 % of its rows.
+    static func columnRGB(_ img: CGImage) -> [(r: Double, g: Double, b: Double)]? {
+        guard let px = pixels(img) else { return nil }
+        var out: [(r: Double, g: Double, b: Double)] = []
+        for x in 0..<px.w {
+            var r = 0.0
+            var g = 0.0
+            var b = 0.0
+            var n = 0.0
+            var y = px.h / 5
+            while y < px.h * 4 / 5 {
+                let i = (y * px.w + x) * 4
+                r += Double(px.data[i]) / 255
+                g += Double(px.data[i + 1]) / 255
+                b += Double(px.data[i + 2]) / 255
+                n += 1
+                y += 2
+            }
+            out.append(n > 0 ? (r: r / n, g: g / n, b: b / n) : (r: 0, g: 0, b: 0))
+        }
+        return out
+    }
+
     /// The share of pixels that read as blue (B above both R and G by > 25 of 255).
     static func blueShare(_ img: CGImage) -> Double? {
         guard let px = pixels(img) else { return nil }
@@ -132,8 +155,12 @@ struct SceneTests {
     @Test func gardenFrameMatchesTheLayoutInAllFourLayouts() {
         for layout in SceneTests.layouts {
             let f = GardenFrame(layout: layout)
+            // R4: book layouts keep the d = 1 line `flowerInset` short of the garden's outer edge.
+            let k = Double(f.depth / layout.gardenDepth)
+            #expect(abs(f.inset - GardenMath.flowerInset(layout: layout)) < 0.001)
+            #expect(abs(f.depth + f.inset - layout.gardenDepth) < 0.001)
             for (u, d) in SceneTests.samples {
-                let want = layout.scenePoint(layout.point(u: u, d: d))
+                let want = layout.scenePoint(layout.point(u: u, d: d * k))
                 let lx = CGFloat(d) * f.depth
                 let ly = CGFloat(u) * f.span * f.uFlip
                 let got = CGPoint(x: f.origin.x + lx * cos(f.dAngle) - ly * sin(f.dAngle),
@@ -152,8 +179,9 @@ struct SceneTests {
     @Test func gardenNodeConvertsFloorPointsInEveryLayout() {
         for layout in SceneTests.layouts {
             let scene = GardenScene(layout: layout)
+            let k = Double(scene.gardenFrame.depth / layout.gardenDepth)
             for (u, d) in SceneTests.samples {
-                let want = layout.scenePoint(layout.point(u: u, d: d))
+                let want = layout.scenePoint(layout.point(u: u, d: d * k))
                 let local = scene.gardenFrame.local(u: u, d: d)
                 let got = scene.gardenNode.convert(local, to: scene)
                 #expect(SceneTests.near(got, want, 0.05))
@@ -167,9 +195,11 @@ struct SceneTests {
             let scene = GardenScene(layout: layout)
             for (u, d) in SceneTests.samples {
                 let p = scene.swiftUIPoint(fromScene: scene.scenePoint(u: u, d: d))
-                let back = layout.floorPoint(at: p)
+                let back = scene.gardenFrame.floor(at: p)
                 #expect(abs(back.u - u) < 0.0001)
                 #expect(abs(back.d - d) < 0.0001)
+                let c = GardenScene.canvasPoint(layout: layout, u: u, d: d)
+                #expect(SceneTests.near(c, p, 0.01))
             }
         }
         let phone = GardenScene(layout: SceneTests.layouts[0])
@@ -182,13 +212,34 @@ struct SceneTests {
             let rects = GardenScene.flowerRects(layout: layout)
             #expect(rects.count == 5)
             let garden = layout.gardenRect.insetBy(dx: -0.5, dy: -0.5)
+            let frame = GardenFrame(layout: layout)
             for (i, r) in rects.enumerated() {
                 #expect(garden.contains(r))
-                let f = layout.floorPoint(at: CGPoint(x: r.midX, y: r.midY))
+                let f = frame.floor(at: CGPoint(x: r.midX, y: r.midY))
                 #expect(abs(f.u - (Double(i) + 0.5) / 5) < 0.0001)
                 #expect(f.d > 0.85 && f.d < 1)
                 if i > 0 { #expect(!r.intersects(rects[i - 1].insetBy(dx: 2, dy: 2))) }
             }
+        }
+    }
+
+    /// R4 (REVIEW-3 P1-9): held like a book, the right thumb rests over the garden's outer edge, so in book layouts the
+    /// flower row keeps ≥ 60 pt clear of it (on the Duo's 951 × 669 and the test sizes); laptop and phone layouts don't
+    /// change. `hudSafeRects` reports the moved rects.
+    @Test func bookLayoutsLeaveThumbRoomOutsideTheFlowers() {
+        let duoBook = [GardenLayout(size: CGSize(width: 951, height: 669), foldVertical: true, gardenAfter: true),
+                       GardenLayout(size: CGSize(width: 951, height: 669), foldVertical: true, gardenAfter: false)]
+        for layout in duoBook + [SceneTests.layouts[2], SceneTests.layouts[3]] {
+            let g = layout.gardenRect
+            let rects = GardenScene.hudSafeRects(layout: layout)
+            #expect(rects.count == 5)
+            for r in rects {
+                let gap = layout.gardenAfter ? g.maxX - r.maxX : r.minX - g.minX
+                #expect(gap >= 60 - 0.01, "flower only \(gap) pt from the outer edge")
+            }
+        }
+        for layout in [SceneTests.layouts[0], SceneTests.layouts[1]] {
+            #expect(GardenMath.flowerInset(layout: layout) < 0.001)
         }
     }
 
@@ -327,6 +378,43 @@ struct SceneTests {
         #expect(!scene.gloomSubmerged(id: 2))
     }
 
+    /// R4 (for the App): `sunRect` is where the menus' sun is really drawn, and the frame thickness is the mirror's.
+    @Test func sunRectAndFrameThicknessMatchTheMirror() {
+        for layout in SceneTests.layouts {
+            let scene = GardenScene(layout: layout)
+            scene.attract = true
+            var s = DawnSnapshot(mode: .endless, phase: .playing)
+            s.band = 0.4
+            scene.render(s, events: [], dt: SceneTests.step)
+            let rect = GardenScene.sunRect(layout: layout)
+            #expect(rect.contains(scene.swiftUIPoint(fromScene: scene.sunPoint)))
+            #expect(layout.mirrorRect.insetBy(dx: -40, dy: -40).contains(rect))
+            let t = GardenScene.mirrorFrameThickness(layout: layout)
+            #expect(t >= 9 && t <= 22)
+        }
+    }
+
+    /// R4 (REVIEW-3 P1-7): a submerged gloom by the crease is never drawn over the crease line or the mirror's frame.
+    @Test func submergedGloomsStayOffTheMirrorFrame() {
+        for layout in SceneTests.layouts {
+            let scene = GardenScene(layout: layout)
+            var s = SceneTests.playing()
+            var g = SceneTests.gloom(1, .brute, u: 0.5, d: -0.04)
+            g.submerged = true
+            g.surfaceD = 0.4
+            s.glooms = [g]
+            scene.render(s, events: [], dt: SceneTests.step)
+            guard let p = scene.gloomPoint(id: 1), let r = scene.gloomRadius(id: 1) else {
+                Issue.record("submerged gloom not drawn")
+                continue
+            }
+            let d = scene.gardenFrame.floor(at: scene.swiftUIPoint(fromScene: p)).d
+            // Its art (≈ 1.25 r above its centre) stays below the crease line.
+            #expect(CGFloat(d) * scene.gardenFrame.depth >= r * 1.25)
+            #expect(scene.gardenFrame.gardenRect.contains(p))
+        }
+    }
+
     /// R3 (REVIEW-2 P0-2): the light does nothing in the crease shade, so only 15 % of it shows there, cool.
     @Test func lightInTheShadeIsDrawnFaint() {
         let scene = GardenScene(layout: SceneTests.layouts[0])
@@ -340,49 +428,73 @@ struct SceneTests {
         #expect(scene.shadeLightAlpha < 0.003)
     }
 
-    /// R3 (REVIEW-2 P0-3): the grass under the band stays under 1.8 × its unlit brightness (a pool, not a slab).
-    /// Samples the real lawn texture and adds the layers the scene draws, at their real strengths and profiles.
-    @Test func grassUnderTheBandIsAPoolNotASlab() {
+    /// R3b (founder after R3 frames): on grass the light must read unmistakably as warm sunlight without becoming a
+    /// slab: the lawn under the band is 1.35–2 × as bright as unlit, and clearly warmer (R − B up by ≥ 40 of 255 at
+    /// night; ≥ 20 at dawn on the golden lawn; Long Night's silver-gold ≥ 10). Samples the real lawn textures and
+    /// applies the scene's layers (night veil, gold wash, additive pool/core/line/halo) at their real profiles,
+    /// strengths and colours. Long Night's silvered lawn layer is skipped: it never shows above 30 % there.
+    @Test func grassUnderTheBandReadsAsWarmSunlight() {
         let layout = SceneTests.layouts[0]
         let depth = layout.gardenDepth
         let span = layout.gardenSpan
-        for style in [GroundStyle.meadow, GroundStyle.moonlit] {
-            for warm in [false, true] {
-                let tex = GardenArt.ground(depth: depth, span: span, warm: warm, style: style)
-                guard let lum = SceneTests.columnLuma(tex.cgImage()) else {
-                    Issue.record("could not read the lawn texture")
-                    continue
+        let cases: [(GroundStyle, Bool, Double)] = [(.meadow, false, 40), (.meadow, true, 20), (.moonlit, false, 10)]
+        for (style, warm, minWarmer) in cases {
+            let tex = GardenArt.ground(depth: depth, span: span, warm: warm, style: style)
+            guard let cols = SceneTests.columnRGB(tex.cgImage()) else {
+                Issue.record("could not read the lawn texture")
+                continue
+            }
+            let moon = style == .moonlit
+            let la = LightAlphas.of(style, dawn: warm ? 1 : 0, swell: 0)
+            let washC = moon ? LightAlphas.moonWash : LightAlphas.meadowWash
+            let lineC = moon ? LightAlphas.moonLine : LightAlphas.meadowLine
+            let poolC = moon ? GardenInk(hex: 0xF2DDA0) : GardenInk(hex: 0xFFC24A)
+            let coreC = moon ? GardenInk(hex: 0xF6F2E6) : GardenInk(hex: 0xFFF4D6)
+            let haloC = moon ? GardenInk(hex: 0xC8D4FF) : GardenInk(hex: 0xFFB04A)
+            let veilC = GardenPalette.night
+            let band = 0.5
+            // The scene's night veil sits over the lawn (under the light) while the band is out.
+            let veil = 0.4 * (1 - 0.55) * (1 - 0.8 * (warm ? 1.0 : 0.0))
+            var unlitL = 0.0
+            var litL = 0.0
+            var unlitRB = 0.0
+            var litRB = 0.0
+            var n = 0.0
+            for (i, raw) in cols.enumerated() {
+                let d = (Double(i) + 0.5) / Double(cols.count)
+                let x = d - band
+                guard abs(x) <= GardenMath.bandEdge else { continue }
+                let pv = Double(GardenArt.poolValue(distance: x))
+                let lv = Double(GardenArt.lineValue(distance: x))
+                let hx = min(abs(x) / 0.2, 1)
+                let hv = exp(-3.2 * hx * hx) * (1 - hx * hx)
+                let aw = Double(la.wash) * pv
+                func channel(_ b: Double, _ v: Double, _ w: Double, _ p: Double, _ c: Double, _ l: Double,
+                             _ h: Double) -> (Double, Double) {
+                    let base = b * (1 - veil) + v * veil
+                    let washed = base * (1 - aw) + w * aw
+                    let add = Double(la.pool) * pv * p + Double(la.core) * pv * pv * c + Double(la.line) * lv * l
+                        + Double(la.halo) * hv * h
+                    return (base, min(washed + add, 1))
                 }
-                let la = LightAlphas.of(style, dawn: warm ? 1 : 0, swell: 0)
-                let pool = SceneTests.luma(GardenInk(hex: 0xFFC24A))
-                let core = SceneTests.luma(GardenInk(hex: 0xFFF4D6))
-                let halo = SceneTests.luma(GardenInk(hex: 0xFFB04A))
-                let band = 0.5
-                // The scene's night veil sits over the lawn (under the light) while the band is out.
-                let veil = 0.4 * (1 - 0.55) * (1 - 0.8 * (warm ? 1.0 : 0.0))
-                let veilLuma = SceneTests.luma(GardenPalette.night)
-                var unlit = 0.0
-                var lit = 0.0
-                var n = 0.0
-                for (i, raw) in lum.enumerated() {
-                    let d = (Double(i) + 0.5) / Double(lum.count)
-                    let x = d - band
-                    guard abs(x) <= GardenMath.bandEdge else { continue }
-                    let base = raw * (1 - veil) + veilLuma * veil
-                    let pv = Double(GardenArt.poolValue(distance: x))
-                    let hx = min(abs(x) / 0.2, 1)
-                    let hv = exp(-3.2 * hx * hx) * (1 - hx * hx)
-                    let add = Double(la.pool) * pv * pool + Double(la.core) * pv * pv * core + Double(la.halo) * hv * halo
-                    unlit += base
-                    lit += min(base + add, 1)
-                    n += 1
-                }
-                #expect(n > 0)
-                if n > 0 && unlit > 0 {
-                    let ratio = lit / unlit
-                    #expect(ratio < 1.8, "style \(style.rawValue) warm \(warm): \(ratio)")
-                    #expect(ratio > 1.15, "the light must still show: \(ratio)")
-                }
+                let r = channel(raw.r, Double(veilC.r), Double(washC.r), Double(poolC.r), Double(coreC.r),
+                                Double(lineC.r), Double(haloC.r))
+                let g = channel(raw.g, Double(veilC.g), Double(washC.g), Double(poolC.g), Double(coreC.g),
+                                Double(lineC.g), Double(haloC.g))
+                let b = channel(raw.b, Double(veilC.b), Double(washC.b), Double(poolC.b), Double(coreC.b),
+                                Double(lineC.b), Double(haloC.b))
+                unlitL += 0.299 * r.0 + 0.587 * g.0 + 0.114 * b.0
+                litL += 0.299 * r.1 + 0.587 * g.1 + 0.114 * b.1
+                unlitRB += r.0 - b.0
+                litRB += r.1 - b.1
+                n += 1
+            }
+            #expect(n > 0)
+            if n > 0 && unlitL > 0 {
+                let ratio = litL / unlitL
+                let warmer = (litRB - unlitRB) / n * 255
+                #expect(ratio >= 1.35 && ratio <= 2.0, "style \(style.rawValue) warm \(warm): ratio \(ratio)")
+                #expect(warmer >= minWarmer, "style \(style.rawValue) warm \(warm): R−B up \(warmer)")
             }
         }
     }
@@ -413,7 +525,8 @@ struct SceneTests {
         let rp = phone.gloomRadius(id: 1) ?? 0
         let rd = duo.gloomRadius(id: 1) ?? 0
         #expect(abs(rp - 0.045 * SceneTests.layouts[0].gardenDepth * 1.15) < 0.01)
-        #expect(abs(rd - 0.045 * SceneTests.layouts[2].gardenDepth) < 0.01)
+        // (R4: a book layout's play depth is the garden's depth less the thumb inset.)
+        #expect(abs(rd - 0.045 * duo.gardenFrame.depth) < 0.01)
         // The band is further out: they look towards the flowers (+d); then back towards the crease.
         let f = phone.gardenFrame
         if let l = phone.gloomLook(id: 1) { #expect(l.dx * f.dUnit.dx + l.dy * f.dUnit.dy > 0.9) }
@@ -502,9 +615,13 @@ struct SceneTests {
         let puddles = GardenMath.puddles(depth: layout.gardenDepth, span: layout.gardenSpan)
         #expect(!puddles.isEmpty)
         #expect(scene.glintSpots.count == GardenScene.glintCount)
+        // R4: the glints sit on the wet streaks (snapped to the plank seams), where the texture draws them.
+        let wets = GardenScene.wetSpots(depth: layout.gardenDepth, fullDepth: layout.gardenDepth,
+                                        span: layout.gardenSpan)
+        #expect(wets.count == puddles.count)
         for g in scene.glintSpots {
             var near = false
-            for p in puddles {
+            for p in wets {
                 let dx = (g.d - p.d) * Double(layout.gardenDepth)
                 let dy = (g.u - p.u) * Double(layout.gardenSpan)
                 if (dx * dx + dy * dy).squareRoot() <= Double(p.r) + 0.5 { near = true }
@@ -849,7 +966,7 @@ struct SceneTests {
                 Issue.record("gloom 1 lost on re-layout")
             }
             let local = scene.gardenFrame.local(u: 0.9, d: 0.1)
-            let want = layout.scenePoint(layout.point(u: 0.9, d: 0.1))
+            let want = layout.scenePoint(GardenScene.canvasPoint(layout: layout, u: 0.9, d: 0.1))
             #expect(SceneTests.near(scene.gardenNode.convert(local, to: scene), want, 0.05))
         }
     }
@@ -883,7 +1000,7 @@ struct SceneTests {
         for _ in 0..<10 { scene.render(s, events: [], dt: SceneTests.step) }
         #expect(scene.drawnNodeCount <= 300)
         // R2: the light layers keep 150 pooled piece sprites (hidden unless a cloud shade cuts the band); R3 adds the
-        // fireflies' trail dots and more ripple rings.
-        #expect(scene.nodeCount <= 700)
+        // fireflies' trail dots and more ripple rings; R3b the grass's wash and line layers (60 pooled sprites).
+        #expect(scene.nodeCount <= 780)
     }
 }

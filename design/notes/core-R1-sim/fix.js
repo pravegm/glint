@@ -29,7 +29,7 @@ function cost(n, t) {
   if (t.winMax !== undefined && a.won > t.winMax) c += 1.5 * (a.won - t.winMax);
   const out = { a };
   if (t.mid) { const m = stats(n, t.mid.skill); out.m = m; if (m.won < t.mid.winMin) c += 3; if (m.fl < t.mid.flMin) c += t.mid.flMin - m.fl; }
-  if (t.weak) { const w = stats(n, t.weak.skill); out.w = w; if (w.won > t.weak.winMax) c += 2 * (w.won - t.weak.winMax); }
+  if (t.weak) { const w = stats(n, t.weak.skill); out.w = w; c += 2 * Math.abs(w.won - t.weak.win); }
   if (t.strong) { const s = stats(n, t.strong.skill); out.s = s; if (s.won < t.strong.winMin) c += 5; if (s.fl < t.strong.flMin) c += 2 * (t.strong.flMin - s.fl); }
   if (t.parked) {
     const p = parkedWorst(n); out.p = p;
@@ -38,11 +38,11 @@ function cost(n, t) {
   return { c, out };
 }
 const only = process.env.LEVELS ? process.env.LEVELS.split(',').map(Number) : null;
-for (let n = 6; n <= 30; n++) {
+for (let n = 4; n <= 30; n++) {
   if (only && !only.includes(n)) continue;
   const t = target(n); const rec = R.levels[n - 1]; const m0 = rec.murks;
   let best = null;
-  for (let d = -3; d <= 3; d++) {
+  for (let d = -4; d <= 4; d++) {
     rec.murks = m0 + d;
     const r = cost(n, t);
     if (!best || r.c < best.c) best = { c: r.c, d, out: r.out };

@@ -42,6 +42,12 @@ enum AchievementNames {
     static func title(_ id: String) -> String {
         Achievements.find(BadgeBook.key(of: id))?.title ?? id
     }
+
+    /// The earned description (Core's `Achievements.earnedBlurbs`), else the pre-earned one.
+    static func earnedLine(_ id: String) -> String {
+        let key = BadgeBook.key(of: id)
+        return Achievements.earnedBlurbs[key] ?? Achievements.find(key)?.blurb ?? ""
+    }
 }
 
 /// One badge (square). `earned` false draws it dimmed (an in-app list may use it).

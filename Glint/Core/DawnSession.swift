@@ -90,6 +90,8 @@ struct PendingSpawn: Equatable {
     var seq: Int
     /// R3: where a gloom surfaces (0 = it doesn't travel submerged).
     var surfaceD: Double = 0
+    /// R4: where it starts (nil = at −radius).
+    var startD: Double? = nil
 }
 
 /// A live gloom (the session's working copy; `state` is what the snapshot shows).
@@ -138,6 +140,9 @@ struct DawnFirefly {
     var age: Double
     var speed: Double
     var phase: Double
+    /// R4: seconds into its dart (−1 = not darting), and whether light touched it last sub-step.
+    var dart: Double = -1
+    var wasLit: Bool = false
 
     var state: FireflyState {
         let s: Double = min(max(scorchTime / Tuning.fireflyScorchLimit, 0), 1)
@@ -312,7 +317,7 @@ final class DawnSession {
                 }
                 u = min(max(u, Tuning.spawnUMin), Tuning.spawnUMax)
                 queue.append(PendingSpawn(time: t, kind: g.kind, u: u, speedScale: g.speedScale, phase: phase,
-                                          seq: seqCounter, surfaceD: sd))
+                                          seq: seqCounter, surfaceD: sd, startD: g.startD))
                 seqCounter += 1
                 i += 1
             }
@@ -457,7 +462,7 @@ final class DawnSession {
             case .firefly:
                 spawnFirefly(e, events: &events)
             case .gloom(let kind):
-                spawnGloom(kind, u: e.u, d: nil, speedScale: e.speedScale, flung: false, surfaceD: e.surfaceD,
+                spawnGloom(kind, u: e.u, d: e.startD, speedScale: e.speedScale, flung: false, surfaceD: e.surfaceD,
                            events: &events)
             }
         }
@@ -591,15 +596,30 @@ final class DawnSession {
         while r < fcount {
             var f: DawnFirefly = fireflies[r]
             r += 1
-            var lit: Double = lightOn ? Tuning.intensity(d: f.d, radius: Tuning.fireflyRadius, band: b) : 0
-            if clouded && lit > 0 { lit *= Tuning.cloudFactor(u: f.u, shades: shades) }
+            let exposed: Bool = lightOn && !Tuning.isShaded(d: f.d)
+            let cf: Double = exposed && clouded ? Tuning.cloudFactor(u: f.u, shades: shades) : 1
+            let gap: Double = max(abs(f.d - b) - Tuning.litPadFraction * Tuning.fireflyRadius, 0)
+            let lit: Double = exposed ? Tuning.intensity(distance: gap) * cf : 0
+            // R4: only the full core scorches.
+            let core: Double = exposed && gap <= Tuning.bandCoreHalfWidth ? cf : 0
             f.lit = lit
-            if lit > 0 {
-                f.scorchTime += lit * h
+            if core > 0 {
+                f.scorchTime += core * h
             } else {
                 f.scorchTime = max(0, f.scorchTime - Tuning.fireflyScorchDecay * h)
             }
-            f.d += f.speed * h
+            // R4: the first touch of light makes it dart outward.
+            if lit > 0 && !f.wasLit && f.dart < 0 { f.dart = 0 }
+            f.wasLit = lit > 0
+            var advance: Double = f.speed * h
+            if f.dart >= 0 {
+                let t0: Double = f.dart
+                let t1: Double = min(f.dart + h, Tuning.fireflyDartTime)
+                advance += Tuning.fireflyDart * (Tuning.smoothstep(t1 / Tuning.fireflyDartTime)
+                                              - Tuning.smoothstep(t0 / Tuning.fireflyDartTime))
+                f.dart = t1 >= Tuning.fireflyDartTime ? -1 : t1
+            }
+            f.d += advance
             f.age += h
             let drift: Double = Tuning.fireflyWaveAmplitude
                 * sin(2 * Double.pi * (f.age * Tuning.fireflyWaveFrequency + f.phase))

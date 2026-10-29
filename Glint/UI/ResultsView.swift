@@ -13,21 +13,31 @@ struct ResultsView: View {
     @State private var shownStars = 0
     @State private var shownScore = 0
     @State private var showRest = false
+    @State private var showsAchievements = false
 
     var body: some View {
         let c = canvas.compact
+        // R3b: the buttons get their own rect (always fully on screen); the card scrolls in the rest.
+        let place = AppRules.resultsPlacement(layout: canvas.layout, insets: canvas.insets, isDuo: canvas.isDuo,
+                                              buttonsHeight: AppRules.resultsButtonsHeight(compact: c))
         ZStack {
             LinearGradient(colors: [GlintTheme.night.opacity(0.72), GlintTheme.indigo.opacity(0.5),
                                     GlintTheme.night.opacity(0.8)], startPoint: .top, endPoint: .bottom)
                 .ignoresSafeArea()
-            SplitMenu(canvas: canvas, maxWidth: 480) {
+            SplitRegion(rect: place.card, scrolls: true, maxWidth: 480) {
                 card(compact: c)
-            } bottom: {
+            }
+            SplitRegion(rect: place.buttons, scrolls: false, maxWidth: 480) {
                 buttons(compact: c)
+                    .frame(maxWidth: 480)
             }
         }
         .frame(width: canvas.size.width, height: canvas.size.height)
         .onAppear { animateIn() }
+        .sheet(isPresented: $showsAchievements) {
+            AchievementSheet(ids: summary.newAchievements) { showsAchievements = false }
+                .presentationDetents([.medium])
+        }
     }
 
     private var isLevel: Bool { summary.mode.isLevel }
@@ -134,20 +144,10 @@ struct ResultsView: View {
                     .background(Capsule().fill(GlintTheme.goldFace))
                     .transition(.scale.combined(with: .opacity))
                 }
-                ForEach(0..<summary.newAchievements.count, id: \.self) { i in
-                    HStack(spacing: 8) {
-                        AchievementBadge(key: BadgeBook.key(of: summary.newAchievements[i]), side: 30)
-                            .frame(width: 30, height: 30)
-                            .clipShape(Circle())
-                        Text(AchievementNames.title(summary.newAchievements[i]))
-                    }
-                    .font(GlintType.body(compact))
-                    .foregroundStyle(GlintTheme.cream)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Capsule().fill(GlintTheme.cardDeep.opacity(0.95)))
-                    .overlay(Capsule().strokeBorder(GlintTheme.brassLight.opacity(0.6), lineWidth: 1))
-                    .transition(.scale.combined(with: .opacity))
+                if !summary.newAchievements.isEmpty {
+                    // R3b: one compact row of badge medallions (at most 4, then "+n"); tap for their names.
+                    AchievementRow(ids: summary.newAchievements, compact: compact) { showsAchievements = true }
+                        .transition(.scale.combined(with: .opacity))
                 }
             }
         }
@@ -297,5 +297,79 @@ struct ResultGardenArt: View {
                 .strokeBorder(GlintTheme.brassFace, lineWidth: 3))
         }
         .accessibilityHidden(true)
+    }
+}
+
+/// Earned achievements as one row of small medallions (at most `AppRules.achievementRowMax`, then "+n").
+struct AchievementRow: View {
+    let ids: [String]
+    let compact: Bool
+    let onTap: () -> Void
+
+    var body: some View {
+        let shown = AppRules.achievementRow(count: ids.count)
+        Button(action: onTap) {
+            HStack(spacing: 8) {
+                ForEach(0..<shown.badges, id: \.self) { i in
+                    AchievementBadge(key: BadgeBook.key(of: ids[i]), side: compact ? 36 : 42)
+                        .frame(width: compact ? 36 : 42, height: compact ? 36 : 42)
+                        .clipShape(Circle())
+                        .overlay(Circle().strokeBorder(GlintTheme.brassLight.opacity(0.7), lineWidth: 1))
+                }
+                if shown.more > 0 {
+                    Text("+\(shown.more)")
+                        .font(GlintType.headline(compact))
+                        .foregroundStyle(GlintTheme.goldLight)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(GlintTheme.haze)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Capsule().fill(GlintTheme.cardDeep.opacity(0.95)))
+            .frame(minHeight: 44)
+        }
+        .buttonStyle(PressScaleStyle())
+        .accessibilityLabel("\(ids.count) achievements earned. Show them")
+    }
+}
+
+/// The names of the achievements this run earned.
+struct AchievementSheet: View {
+    let ids: [String]
+    let onClose: () -> Void
+
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [GlintTheme.indigo, GlintTheme.night], startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea()
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Achievements")
+                        .font(GlintType.title(true))
+                        .foregroundStyle(GlintTheme.cream)
+                    ForEach(0..<ids.count, id: \.self) { i in
+                        HStack(spacing: 14) {
+                            AchievementBadge(key: BadgeBook.key(of: ids[i]), side: 52)
+                                .frame(width: 52, height: 52)
+                                .clipShape(Circle())
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(AchievementNames.title(ids[i]))
+                                    .font(GlintType.headline(true))
+                                    .foregroundStyle(GlintTheme.cream)
+                                Text(AchievementNames.earnedLine(ids[i]))
+                                    .font(GlintType.caption(true))
+                                    .foregroundStyle(GlintTheme.haze)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                    }
+                    Button("Done", action: onClose)
+                        .buttonStyle(GlintButtonStyle(kind: .secondary, height: 52, compact: true))
+                }
+                .padding(22)
+            }
+        }
     }
 }

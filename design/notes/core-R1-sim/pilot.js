@@ -7,7 +7,7 @@ module.exports = function (T, SPEC, RNG, cloudFactor) {
       const w = 1 - s;
       this.reaction = 0.35 - 0.27 * s; this.cap = 0.9 + 0.7 * s;
       this.aimNoise = 0.005 + E('NOISE', 0.08) * w; this.slip = E('SLIP', 0.4) * w;
-      this.hesitate = 0.5 * w; this.switchMargin = 0.8 - 0.5 * s; this.ffMargin = 0.097 + 0.035 * s;
+      this.hesitate = 0.5 * w; this.switchMargin = 0.8 - 0.5 * s; this.ffMargin = E('FFM0', 0.17) + E('FFM1', -0.04) * s;
       // R2 human hinge: jitter, lag, overshoot, all scaled by (1 - skill)
       this.jitterAmp = E('JIT', 0.05) * w; this.hingeLag = E('LAG0', 0.1) + E('LAG1', 0.25) * w; this.overshootChance = E('OVER', 0.6) * w;
       this.band = T.bandMin; this.hand = T.bandMin; this.goal = 0.2; this.target = -1; this.decideIn = 0; this.freeze = 0; this.err = 0; this.errIn = 0;
@@ -68,7 +68,7 @@ module.exports = function (T, SPEC, RNG, cloudFactor) {
         else if (tg.kind === 'hopper') aim = tg.tension < 0.02 ? tg.d + 0.06 : tg.d + 0.02 + 0.03 * s;
         else aim = tg.d + this.speedOf(tg) * (this.reaction + 0.05) * s;
         aim = Math.max(aim, T.creaseShade + 0.05);
-        careless = tg.d > 0.6;
+        careless = tg.d > E('CARE', 0.85);
       }
       aim += this.err + this.over;
       if (!careless && snap.ffs.length > 0) {

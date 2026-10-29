@@ -18,7 +18,7 @@ class RNG {
 const T = {
   bandMin: -0.2, core: Number(process.env.CORE || 0.065), edge: Number(process.env.EDGE || 0.10), submergedSpeed: 1.6, flowerCount: 5, chainWindow: 1.6, sweepWindow: 0.35, maxMult: 4,
   chainStep: 0.25, sweepMin: 3, sweepPer: 30, flowerBonus: 40, pad: 0.4, burn: 1.0,
-  ffSpeed: 0.075, ffRadius: 0.02, ffScorch: 0.35, ffDecay: 0.6, ffBloom: 50, ffWaveAmp: 0.06, ffWaveHz: 0.35,
+  ffSpeed: 0.075, ffRadius: 0.02, ffScorch: Number(process.env.FFS || 0.6), ffDecay: 0.8, ffDart: 0.08, ffDartTime: 0.3, ffBloom: 50, ffWaveAmp: 0.06, ffWaveHz: 0.35,
   splitCount: 2, splitFling: 0.07, splitFlingSpeed: 0.30, splitFlingTime: 0.6, splitSpreadU: 0.06,
   hopRest: 0.9, hopDist: 0.14, hopTime: 0.22, hopHurry: Number(process.env.HURRY || 1.0),
   creaseShade: Number(process.env.SHADE || 0.12), cloudEdge: 0.03, substep: 1 / 120, endlessWave: 30, endlessSun: 600, dailyDuration: 90,
@@ -68,20 +68,44 @@ function build(rec, rng, start, span, endPad) {
       const c = rng.range(smin + 0.05, Math.max(hi - 0.05, smin + 0.05)); it.surf = [c - 0.05, c + 0.05];
     } else { const v = rng.range(smin, hi); it.surf = [v, v]; }
   }
-  for (const it of items) it.key = rng.unit() * (1 - BIAS[it.kind]) + BIAS[it.kind];
-  items.sort((x, y) => x.key - y.key);
-  let total = 0; for (const it of items) total += COST[it.kind] * it.count;
+  // R4: fireflies don't join the load layout; they fly in the gaps between gloom groups (below).
+  const ffItems = items.filter(it => it.kind === 'firefly');
+  const glItems = items.filter(it => it.kind !== 'firefly');
+  for (const it of glItems) it.key = rng.unit() * (1 - BIAS[it.kind]) + BIAS[it.kind];
+  glItems.sort((x, y) => x.key - y.key);
+  let total = 0; for (const it of glItems) total += COST[it.kind] * it.count;
   const t1 = span - endPad; let cum = 0;
   const g = [];
-  for (const it of items) {
+  for (const it of glItems) {
     const c = COST[it.kind] * it.count; const mid = (cum + c / 2) / Math.max(total, 1e-9); cum += c;
     const join = g.length > 0 ? rng.unit() < (rec.front || 0) && it.kind !== 'brute' && g[g.length - 1].kind !== 'brute' : false;
     // density 0.6 + 0.8x: F(x) = 0.6x + 0.4x^2  ->  x = (-0.6 + sqrt(0.36 + 1.6F)) / 0.8
     const x = join ? g[g.length - 1].x : (-0.7 + Math.sqrt(0.49 + 1.2 * mid)) / 0.6;
     const t = join ? g[g.length - 1].time : start + t1 * x;
-    g.push({ x, time: t, kind: it.kind, count: it.count, u: it.u, form: it.form, surf: it.surf, s: it.kind === 'firefly' ? 1 : S * (0.95 + 0.1 * x) });
+    g.push({ x, time: t, kind: it.kind, count: it.count, u: it.u, form: it.form, surf: it.surf, s: S * (0.95 + 0.1 * x) });
   }
-  return g;
+  // R4: each firefly takes the widest unused gap between gloom groups near its slot (15–85 % of the window).
+  const used = new Array(Math.max(g.length - 1, 0)).fill(false);
+  const ffs = [];
+  for (let i = 0; i < ffItems.length; i++) {
+    const want = start + t1 * (0.15 + 0.7 * (i + 0.5) / ffItems.length);
+    let bestJ = -1, bestScore = -1e9;
+    for (let j = 0; j + 1 < g.length; j++) {
+      if (used[j]) continue;
+      const gap = g[j + 1].time - g[j].time; const mid = (g[j].time + g[j + 1].time) / 2;
+      const score = gap - 0.1 * Math.abs(mid - want);
+      if (score > bestScore) { bestScore = score; bestJ = j; }
+    }
+    let t = want;
+    if (bestJ >= 0) { used[bestJ] = true; t = (g[bestJ].time + g[bestJ + 1].time) / 2; }
+    const it = ffItems[i];
+    ffs.push({ x: 0, time: t, kind: 'firefly', count: 1, u: it.u, form: it.form, surf: [0, 0], s: 1 });
+  }
+  const out = g.concat(ffs).map((e, i) => Object.assign(e, { ord: i }));
+  out.sort((a, b) => a.time - b.time || a.ord - b.ord);
+  // R4: L1's opener: one murk already near the surface at t = 0, rising at d 0.3 within ~1.3 s of the first light.
+  if (rec.opener) out.unshift({ x: 0, time: 0, kind: 'murk', count: 1, u: [0.4, 0.6], form: 'cluster', surf: [0.3, 0.3], s: S, startD: 0.14 });
+  return out;
 }
 // R2 cloud shadows: rec.clouds of them, evenly through the level with jitter, each sliding in from an edge.
 function cloudsFor(rec, rng, start, span) {
@@ -147,7 +171,7 @@ class Session {
         const phase = this.rng.unit();
         const sf = gr.surf || [0, 0];
         const sd = gr.kind === 'firefly' ? 0 : sf[0] + (sf[1] - sf[0]) * this.rng.unit();
-        this.queue.push({ seq: this.seq++, t, kind: gr.kind, u: Math.min(Math.max(u, 0.03), 0.97), s: gr.s, phase, sd });
+        this.queue.push({ seq: this.seq++, t, kind: gr.kind, u: Math.min(Math.max(u, 0.03), 0.97), s: gr.s, phase, sd, startD: gr.startD === undefined ? null : gr.startD });
       }
     }
     const rest = this.queue.slice(this.qi); rest.sort((a, b) => a.t - b.t || a.seq - b.seq); this.queue = rest; this.qi = 0;
@@ -185,8 +209,8 @@ class Session {
     while (this.qi < this.queue.length && this.queue[this.qi].t <= now) {
       const e = this.queue[this.qi++];
       if (e.kind === 'firefly') {
-        this.ffs.push({ id: this.nextId++, u: e.u, baseU: e.u, d: -T.ffRadius, scorch: 0, lit: 0, age: 0, speed: T.ffSpeed * e.s, phase: e.phase });
-      } else this.spawn(e.kind, e.u, null, e.s, false, e.sd, ev);
+        this.ffs.push({ id: this.nextId++, u: e.u, baseU: e.u, d: -T.ffRadius, scorch: 0, lit: 0, age: 0, speed: T.ffSpeed * e.s, phase: e.phase, dart: -1, wasLit: false });
+      } else this.spawn(e.kind, e.u, e.startD, e.s, false, e.sd, ev);
     }
     while (this.ci < this.cloudQ.length && this.cloudQ[this.ci].time <= now) {
       const c = this.cloudQ[this.ci++];
@@ -246,10 +270,17 @@ class Session {
     for (let r = 0; r < this.ffs.length; r++) {
       const f = this.ffs[r];
       const dist = Math.max(0, Math.abs(f.d - b) - T.pad * T.ffRadius);
-      const lit = on && f.d >= T.creaseShade ? intensityDist(dist) * (this.shades.length ? cloudFactor(f.u, this.shades) : 1) : 0;
+      const cf = on && f.d >= T.creaseShade && this.shades.length ? cloudFactor(f.u, this.shades) : 1;
+      const lit = on && f.d >= T.creaseShade ? intensityDist(dist) * cf : 0;
+      const core = on && f.d >= T.creaseShade && dist <= T.core ? cf : 0;
       f.lit = lit;
-      if (lit > 0) f.scorch += lit * h; else f.scorch = Math.max(0, f.scorch - T.ffDecay * h);
-      f.d += f.speed * h; f.age += h;
+      if (core > 0) f.scorch += core * h; else f.scorch = Math.max(0, f.scorch - T.ffDecay * h);
+      // R4: the first touch of light makes it dart outward (+0.08 over 0.3 s); lingering still scorches.
+      if (lit > 0 && !f.wasLit && f.dart < 0) { f.dart = 0; f.dartDir = process.env.DARTAWAY ? (f.d >= b ? 1 : -1) : 1; }
+      f.wasLit = lit > 0;
+      let dd = f.speed * h;
+      if (f.dart >= 0) { const t0 = f.dart, t1 = Math.min(f.dart + h, T.ffDartTime); dd += f.dartDir * T.ffDart * (smooth(t1 / T.ffDartTime) - smooth(t0 / T.ffDartTime)); f.dart = t1 >= T.ffDartTime ? -1 : t1; }
+      f.d += dd; f.age += h;
       f.u = Math.min(Math.max(f.baseU + T.ffWaveAmp * Math.sin(2 * Math.PI * (f.age * T.ffWaveHz + f.phase)), 0.03), 0.97);
       if (f.scorch >= T.ffScorch) { this.scorched++; ev.push(['scorched']); this.breakChain(ev); continue; }
       if (f.d >= 1) { this.deliver(f, ev); continue; }

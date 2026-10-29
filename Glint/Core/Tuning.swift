@@ -78,9 +78,15 @@ enum Tuning {
     /// Floor radius (for the light pad and the art).
     static let fireflyRadius: Double = 0.02
     /// Seconds of cumulative light that fizzle a firefly.
-    static let fireflyScorchLimit: Double = 0.35
-    /// Unlit, the scorch drains at this many seconds per second.
-    static let fireflyScorchDecay: Double = 0.6
+    /// R4 (ROUND-4 Core 2): only the band's full core scorches (|d − band| within the core, padded), 0.6 s of it in
+    /// all (was 0.35 s of any light).
+    static let fireflyScorchLimit: Double = 0.6
+    /// Out of the core, the scorch drains at this many seconds per second (R4: 0.8, was 0.6).
+    static let fireflyScorchDecay: Double = 0.8
+    /// R4: when light first touches a firefly it darts outward (towards the flowers) this far over this long, so a
+    /// sweep past one is safe and lingering isn't.
+    static let fireflyDart: Double = 0.08
+    static let fireflyDartTime: Double = 0.3
     /// Points when a firefly arrives and no flower is missing.
     static let fireflyBloomPoints: Int = 50
     /// The wavy drift in `u`: amplitude and frequency (Hz).

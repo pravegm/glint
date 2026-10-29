@@ -83,3 +83,33 @@ from disk after the overnight restart. I coded against these:
 ## Not done / open
 - The "Can't read the hinge" mid-level fallback (R1 review P0-6) is still open.
 - Grip pulse, the moon/sun art, grass light and rail are the Scene's; submerged travel and L1's first murk are Core's.
+
+## R3b (founder, after CI 40859397563)
+- **Results buttons always on screen.** `AppRules.resultsPlacement` gives the buttons their own rect, never shorter
+  than their block (`resultsButtonsHeight`):
+  - on phones, pinned to the bottom of the safe area, with the card scrolling above it;
+  - on a Duo, the garden half.
+  Test `resultsButtonsAlwaysOnScreen`: 402×874, 951×669 book and 669×951 laptop, both garden sides, compact or not.
+- **Achievements** show as one row of small medallions: up to 4, or 3 plus "+n" when there are more
+  (`AppRules.achievementRow`). Tapping the row opens `AchievementSheet` with their titles and earned lines.
+- **`results=lost` is built, not played.**
+  - `DemoPresets.lostStats(cause:)` gives 41 popped, 1,120 points and five flowers eaten (four by the cause), with
+    cause = `ignore=` or murks.
+  - The tip comes from `TipRules`, the same as a real loss, so scenarios 13 and 22 always lose and always show the
+    brute / hopper tip.
+- **Level map.** Where the path drops a row (at a row's end), it now swings out sideways past the medallion, so it
+  never crosses its name or target line (`LevelPath(bulge:)`; test).
+
+## R4 (ROUND-4 "App" 8–9)
+- **Fail path in CI.** The built lost fixtures print `GLINT-T result level-13 won=0 …` / `level-18 won=0`, and
+  `ci/scenarios.txt` now expects exactly those.
+- **Frame 19 shows a real firefly.**
+  - The new demo key `spawn=firefly` (with `t=`, on a level) plays the level's own `LevelSpec` plus one scripted
+    firefly at t − 1 s (`DemoPresets.withFirefly`, via Core's existing `DawnSession(mode:spec:seed:)`; no Core hook
+    needed).
+  - A hint logs `GLINT-T hint <id> shown` the first frame it is really on screen (its subject on the field). That is
+    frame 19's expect.
+- **Book-pose flower inset.** The prompt card and hint plates no longer assume flowers at d ≈ 0.9. They size and
+  centre themselves on the strip from d = 0.04 to 0.04 short of the flowers' nearest edge, read from
+  `GardenScene.hudSafeRects` (`AppRules.flowersInnerD`, `overlaySpan`), so they follow Scene's 60 pt thumb inset
+  whatever it does. The score and pause plates are on the mirror half, so they are unaffected. Tested.

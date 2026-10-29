@@ -37,3 +37,10 @@
 - R3 (design/ROUND-3.md): submerged travel to authored surfacing depths, parked-pilot balance test, world-1 stakes,
   ★3 score target, band core ±0.065, light pool on grass, warm grounds (no blue), icon redrawn as a brass hand mirror
   catching the sun, ASC tool "all" vs "allStars" fix.
+- R3 green (CI 40859397563, 236 tests). Parked band loses L6/L11/L21 at every depth on CI. Curve (CI, 6 seeds): 0.3
+  loses flowers from L6, wins ~1/6 in Harbour; 0.6 wins all but L29–30 (5/6); 0.9 wins all.
+- Duo R3 (40864118921): 6/7 PASS; PAUSE-SHUT ran on a level 8 already LOST (holding still now loses — anti-camping
+  works). Script reordered (pause right after the mid band). Duo Home frame now draws (6 MB).
+- Panel R3 (design/REVIEW-3.md): 7/5/5/6, "not yet": fail path unproven, L1–5 no stakes, cliff at L21, fireflies
+  unspareable, a few look-alikes, book-pose thumb room. → design/ROUND-4.md. R3b (results overflow, built lost
+  fixtures, map path, grass light) done, uncommitted until R4 lands.

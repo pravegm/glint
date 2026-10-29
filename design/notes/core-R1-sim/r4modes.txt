@@ -1,0 +1,6 @@
+endless s0.3: median time=147 median score=8263 min=5382 max=10750 chain=42
+daily s0.3: won=1/5 fl=0.4
+endless s0.6: median time=176 median score=11863 min=11297 max=20757 chain=47
+daily s0.6: won=5/5 fl=4.6
+endless s0.9: median time=259 median score=24086 min=19492 max=29807 chain=45
+daily s0.9: won=5/5 fl=4.6

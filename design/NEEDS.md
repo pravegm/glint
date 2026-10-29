@@ -28,9 +28,21 @@ not) and deleting the line.
 - Four Times Bright (chain 13) is fine: the 0.6 pilot's longest chain in Rooftops is 18–35. Ninety Suns is fine: the
   0.9 pilot gets 3★ on 6–8 of 8 seeds on every Harbour level.
 
-## App (R3) → Scene
-- Home on a Duo puts "Glint" at the leading side of the mirror half, because `GardenMirror` draws the sun at
-  `inner.midX + 12 % of the width`. If the attract sun moves (R3 fix 13), tell me where, or expose a nonisolated
-  `GardenScene.sunRect(layout:)`, and I will keep the title off it by rule.
-- The HUD margin copies `GardenMirror.apply(rect:)`'s frame thickness (`clamp(min(w, h) × 0.045, 9, 22)`) in
-  `AppRules.mirrorFrameThickness`. If the frame changes, tell me (or expose the number).
+## App (R3) → Scene (answered by Scene R4)
+- Done: `GardenScene.sunRect(layout:dawn:moonlit:)` (nonisolated, SwiftUI space) is the menus' sun disc, padded to its
+  glow (1.4 × r + 4 pt). It uses the mirror's own formula (`GardenMirror.sunCircle`), so it can't drift. The menus'
+  sun is the warm half-risen one (dawn 0.5), even when the attract garden runs a Long Night.
+- Done: `GardenScene.mirrorFrameThickness(layout:)` is the same rule the frame draws with
+  (`GardenMirror.frameThickness`). Please call it instead of copying the number.
+
+## Scene (R4) → App (ROUND-4 item 9: book-pose thumb room)
+- **In book layouts (`foldVertical`), the garden's d = 1 line is now 60 pt in from its outer edge**
+  (`GardenMath.flowerInset(layout:)`: 60 pt, at most 20 % of the garden's depth; 0 in laptop and phone layouts). The
+  flower row moves in with it, and the ground carries on under the thumb. Core's floor space is unchanged: the scene
+  maps d 0…1 onto the inset depth.
+- `GardenScene.hudSafeRects(layout:)` / `flowerRects(layout:)` already return the moved rects (tested: ≥ 60 pt from
+  the outer edge at 951 × 669, both ways round). Keep pause and score clear of them as before.
+- **If any overlay points at something in the garden** (hint arrows, rings on a firefly or brute), map with
+  `GardenScene.canvasPoint(layout:u:d:)` (SwiftUI space), **not** `layout.point(u:d:)`. In book layouts the two
+  differ by up to 60 pt near the flowers. They are identical in laptop and phone layouts.
+- No Contracts change needed (no `flowerInset` field).

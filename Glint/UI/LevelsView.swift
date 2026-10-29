@@ -140,7 +140,7 @@ struct LevelMap: View {
             let points = LevelMapGeometry.points(count: levels.count, in: geo.size)
             let node = LevelMapGeometry.nodeSize(count: levels.count, in: geo.size)
             ZStack {
-                LevelPath(points: points)
+                LevelPath(points: points, bulge: node * 1.25)
                     .stroke(GlintTheme.goldLight.opacity(0.45),
                             style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round, dash: [1, 12]))
                 ForEach(0..<min(levels.count, points.count), id: \.self) { i in
@@ -165,8 +165,11 @@ struct LevelMap: View {
     }
 }
 
+/// The dotted path between medallions. R3b: where it drops from one row to the next (a row's end), it swings out
+/// sideways (`bulge` beyond the node, towards the nearer edge) so it never runs through that medallion's labels.
 struct LevelPath: Shape {
     let points: [CGPoint]
+    var bulge: CGFloat = 0
 
     func path(in rect: CGRect) -> Path {
         var p = Path()
@@ -176,6 +179,13 @@ struct LevelPath: Shape {
         for i in 1..<points.count {
             let a = points[i - 1]
             let b = points[i]
+            if abs(a.x - b.x) < 1 && bulge > 0 {
+                let side: CGFloat = a.x >= rect.midX ? 1 : -1
+                let c1 = CGPoint(x: a.x + side * bulge, y: a.y)
+                let c2 = CGPoint(x: b.x + side * bulge, y: b.y)
+                p.addCurve(to: b, control1: c1, control2: c2)
+                continue
+            }
             let mid = CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
             p.addQuadCurve(to: mid, control: CGPoint(x: a.x, y: mid.y))
             p.addQuadCurve(to: b, control: CGPoint(x: b.x, y: mid.y))

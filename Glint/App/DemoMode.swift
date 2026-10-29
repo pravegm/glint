@@ -104,6 +104,9 @@ struct DemoMode: Equatable, Sendable {
     var streakDays: Int?
     /// R3 `ignore=<kind>`: the pilot never aims at that gloom kind (lost-result fixtures whose cause is known).
     var ignoreKind: GloomKind?
+    /// R4 `spawn=firefly`: with `t=` on a level, one extra firefly is scripted 1 s before t (frame 19: a real
+    /// firefly on screen with its hint).
+    var spawnFirefly = false
 
     init(raw: String) { self.raw = raw }
 
@@ -176,6 +179,7 @@ struct DemoMode: Equatable, Sendable {
             case "streak":
                 if let n = Int(value) { config.streakDays = min(max(n, 0), 365) }
             case "ignore": config.ignoreKind = GloomKind(rawValue: value.lowercased())
+            case "spawn": config.spawnFirefly = value.lowercased() == "firefly"
             default: break
             }
         }
@@ -207,7 +211,32 @@ enum DemoPresets {
     /// done: every level won, mostly ★★★.
     static let doneTwoStarLevels: Set<Int> = [7, 18, 26, 29]
 
+    /// `results=lost` (R3b): a lost session's stats with a known cause: 41 popped, 1,120 points, five flowers eaten (four
+    /// by `cause`, one by another kind). Pure; tested (the tip matches the cause).
+    static func lostStats(cause: GloomKind) -> DawnStats {
+        var s = DawnStats()
+        s.emerged = 58
+        s.pops = 41
+        s.score = 1_120
+        s.longestChain = 6
+        s.flowersEaten = 5
+        let other: GloomKind = cause == .murk ? .wisp : .murk
+        s.flowersEatenBy = [cause: 4, other: 1]
+        if cause == .brute { s.brutesPopped = 1 }
+        return s
+    }
+
     /// `streak=<n>`: Today's Dawn finished on the last n days (today included), today's best 2,140.
+    /// `spawn=firefly` (R4): `spec` with one firefly scripted at `time` (in the middle of the garden), groups kept sorted.
+    /// Pure; tested.
+    static func withFirefly(_ spec: LevelSpec, at time: Double) -> LevelSpec {
+        var out = spec
+        out.groups.append(SpawnGroup(time: max(time, 0), kind: .firefly, count: 1, u: 0.4...0.6, formation: .cluster,
+                                     speedScale: 1))
+        out.groups.sort { $0.time < $1.time }
+        return out
+    }
+
     static func applyStreak(_ days: Int?, to data: inout ProgressData, now: Date) {
         guard let days, days > 0 else { return }
         let today = DailySeed.day(for: now)

@@ -18,6 +18,18 @@ enum GroundWorlds {
         return (r, x)
     }
 
+    /// R4: the boardwalk's plank width for a texture `w` wide.
+    static func plankWidth(fullWidth w: CGFloat) -> CGFloat { GardenMath.clamp(w * 0.065, 22, 38) }
+
+    /// R4: where a puddle's wet streaks lie (texture points): snapped to the nearest plank seam. The scene puts the
+    /// band's glints there too.
+    static func wetCenter(_ pd: (u: Double, d: Double, r: CGFloat), playW: CGFloat, fullW: CGFloat,
+                          h: CGFloat) -> CGPoint {
+        let p = plankWidth(fullWidth: fullW)
+        let x = CGFloat(pd.d) * playW
+        return CGPoint(x: (x / p).rounded() * p, y: CGFloat(pd.u) * h)
+    }
+
     static func laneY(_ i: Int, _ h: CGFloat) -> CGFloat {
         (CGFloat(i) + 0.5) / CGFloat(GardenMath.flowerCount) * h
     }
@@ -49,12 +61,14 @@ enum GroundWorlds {
 
     // MARK: Rooftops
 
-    static func drawRooftops(_ ctx: CGContext, _ s: CGSize, warm: Bool) {
+    /// `inset`: R4's thumb strip beyond the flower row (the ledge carries on under it).
+    static func drawRooftops(_ ctx: CGContext, _ s: CGSize, warm: Bool, inset: CGFloat = 0) {
         let w = s.width
         let h = s.height
+        let pw = max(w - inset, 1)
         var rng = GardenRNG(seed: 0x5C0F_7EE5)
-        let fg = flowerGeometry(w, h)
-        let ledgeX = max(fg.x - fg.r * 1.45, w * 0.72)
+        let fg = flowerGeometry(pw, h)
+        let ledgeX = max(fg.x - fg.r * 1.45, pw * 0.72)
         let gutterW = max(8, fg.r * 0.36)
         let tilesEnd = ledgeX - gutterW
 
@@ -143,15 +157,19 @@ enum GroundWorlds {
                 GardenPainter.stroke(ctx, lines, brick.darker(0.35).with(alpha: 0.6), width: 0.8)
             }
             GardenPainter.stroke(ctx, bp, brick.darker(0.5), width: 1.6)
-            for side in [CGFloat(-1), CGFloat(1)] {
-                let pc = CGPoint(x: c.x + side * cw * 0.22, y: c.y)
-                let pr = chh * 0.3
-                GardenPainter.fill(ctx, GardenPainter.circle(pc, pr), pot)
-                GardenPainter.stroke(ctx, GardenPainter.circle(pc, pr), pot.darker(0.45), width: 1.4)
-                GardenPainter.fill(ctx, GardenPainter.circle(pc, pr * 0.55), GardenInk(hex: 0x0A0608))
-                GardenPainter.fill(ctx, GardenPainter.circle(CGPoint(x: pc.x - pr * 0.4, y: pc.y + pr * 0.4), pr * 0.2),
-                                   pot.lighter(0.35).with(alpha: 0.7))
+            // R4 (REVIEW-3 P1): one rectangular flue with a cap and slats: never two dark circles (they read as eyes).
+            let flue = CGRect(x: c.x - cw * 0.3, y: c.y - chh * 0.28, width: cw * 0.6, height: chh * 0.56)
+            let cap = flue.insetBy(dx: -cw * 0.06, dy: -chh * 0.07)
+            GardenPainter.fill(ctx, GardenPainter.roundRect(cap, 2), pot.lighter(0.15))
+            GardenPainter.stroke(ctx, GardenPainter.roundRect(cap, 2), pot.darker(0.45), width: 1.2)
+            GardenPainter.fill(ctx, GardenPainter.roundRect(flue, 1.5), pot.darker(0.25))
+            let slats = CGMutablePath()
+            for k in 1...3 {
+                let sy = flue.minY + flue.height * CGFloat(k) / 4
+                slats.move(to: CGPoint(x: flue.minX + 2, y: sy))
+                slats.addLine(to: CGPoint(x: flue.maxX - 2, y: sy))
             }
+            GardenPainter.stroke(ctx, slats, pot.lighter(0.3).with(alpha: 0.85), width: 1.4)
         }
 
         // The gutter: a metal half-pipe with brackets.
@@ -214,11 +232,13 @@ enum GroundWorlds {
 
     // MARK: Harbour
 
-    static func drawHarbour(_ ctx: CGContext, _ s: CGSize, warm: Bool) {
+    /// `inset`: R4's thumb strip beyond the flower row (the boardwalk carries on under it to the dock beam).
+    static func drawHarbour(_ ctx: CGContext, _ s: CGSize, warm: Bool, inset: CGFloat = 0) {
         let w = s.width
         let h = s.height
+        let playW = max(w - inset, 1)
         var rng = GardenRNG(seed: 0x4A2B_0A2D)
-        let fg = flowerGeometry(w, h)
+        let fg = flowerGeometry(playW, h)
         let beamW = max(10, fg.r * 0.34)
         let plankEnd = w - beamW
 
@@ -227,7 +247,7 @@ enum GroundWorlds {
         ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
 
         // Planks run along u; their joints are staggered. R3: warm weathered greys and browns at night too (no blue).
-        let pw = GardenMath.clamp(w * 0.065, 22, 38)
+        let pw = plankWidth(fullWidth: w)
         let colours: [GardenInk] = warm
             ? [GardenInk(hex: 0x9A8268), GardenInk(hex: 0xA88E72), GardenInk(hex: 0x8A735C), GardenInk(hex: 0xB49C7E)]
             : [GardenInk(hex: 0x46403A), GardenInk(hex: 0x504840), GardenInk(hex: 0x3E3832), GardenInk(hex: 0x58504A)]
@@ -271,33 +291,38 @@ enum GroundWorlds {
                                  radius: rng.range(12, 40))
         }
 
-        // R3 (REVIEW-2 P1-9): puddles are smooth wet sheens along the planks (stadium shapes, warm grey with a bright
-        // streak), never blob-shaped and never blue, so they can't be mistaken for glooms. The band glints on them.
+        // R4 (REVIEW-3 P1): wet patches are long thin streaks lying in the plank seams (water gathers there), a few
+        // broken lines of warm-grey sheen with bright highlights: flat, irregular, never a capsule or a blob, so nothing
+        // on the boardwalk looks like a gloom. The band glints on them.
         let water = pick(warm, 0x2E2A26, 0x6E6256)
-        let rim = pick(warm, 0x8A8276, 0xE8DCC8)
         let sky = pick(warm, 0xB8AE9E, 0xFFF4DC)
-        for pd in GardenMath.puddles(depth: w, span: h) {
-            let c = CGPoint(x: CGFloat(pd.d) * w, y: CGFloat(pd.u) * h)
+        for (pi, pd) in GardenMath.puddles(depth: playW, span: h).enumerated() {
+            let c = wetCenter(pd, playW: playW, fullW: w, h: h)
             let r = pd.r
-            let sheen = CGRect(x: c.x - r * 0.42, y: c.y - r * 1.25, width: r * 0.84, height: r * 2.5)
-            let p = GardenPainter.roundRect(sheen, r * 0.42)
-            GardenPainter.fill(ctx, p, water.with(alpha: 0.7))
-            GardenPainter.clipped(ctx, p) {
-                GardenPainter.linear(ctx, [sky.with(alpha: 0), sky.with(alpha: 0.5), sky.with(alpha: 0)], [0, 0.5, 1],
-                                     from: CGPoint(x: sheen.minX, y: c.y), to: CGPoint(x: sheen.maxX, y: c.y))
+            let seamX = c.x
+            var srng = GardenRNG(seed: 0x57EA_0000 &+ UInt64(pi))
+            let count = 3 + Int(srng.unit() * 2)
+            for k in 0..<count {
+                let x = seamX + CGFloat(k - count / 2) * 2.2 + srng.range(-0.6, 0.6)
+                let len = r * srng.range(1.2, 2.6)
+                let y0 = c.y - len / 2 + srng.range(-0.4, 0.4) * r
+                let wet = CGMutablePath()
+                wet.move(to: CGPoint(x: x, y: y0))
+                wet.addLine(to: CGPoint(x: x + srng.range(-1, 1), y: y0 + len))
+                GardenPainter.stroke(ctx, wet, water.with(alpha: 0.8), width: srng.range(2.2, 3.6))
+                let hi = CGMutablePath()
+                let hy = y0 + len * srng.range(0.15, 0.4)
+                hi.move(to: CGPoint(x: x - 0.4, y: hy))
+                hi.addLine(to: CGPoint(x: x - 0.4, y: hy + len * srng.range(0.2, 0.45)))
+                GardenPainter.stroke(ctx, hi, sky.with(alpha: 0.7), width: 1)
             }
-            let streak = CGMutablePath()
-            streak.move(to: CGPoint(x: c.x - r * 0.12, y: c.y - r * 0.8))
-            streak.addLine(to: CGPoint(x: c.x - r * 0.12, y: c.y + r * 0.6))
-            GardenPainter.stroke(ctx, streak, sky.with(alpha: 0.75), width: max(r * 0.1, 1.2))
-            GardenPainter.stroke(ctx, p, rim.with(alpha: 0.4), width: 1.2)
         }
 
         // A coil of rope near a side edge.
         let rope = pick(warm, 0x6A604E, 0xC8A878)
         let ropeDark = pick(warm, 0x3A3428, 0x7A6040)
         if h > 260 {
-            let cc = CGPoint(x: w * 0.46, y: h * 0.06)
+            let cc = CGPoint(x: playW * 0.46, y: h * 0.06)
             let rr = min(w, h) * 0.045
             let coil = CGMutablePath()
             let turns: CGFloat = 3

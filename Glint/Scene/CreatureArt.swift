@@ -99,7 +99,51 @@ enum CreatureArt {
         for k in GloomKind.allCases {
             for l in GloomLayer.allCases { _ = gloom(k, l) }
         }
-        _ = pool
+        _ = soilLip
+    }
+
+    /// R4 (REVIEW-3 P1-7): the lip of soil a submerged gloom's eyes peek over: a low mound, lit along its top, darker
+    /// below, feathered at the sides, with a few crumbs. Greys (tint it with the ground's soil colour). 120 × 48 pt;
+    /// the lip's top runs at y = `soilLipTop`.
+    static let soilLipSize = CGSize(width: 120, height: 48)
+    static let soilLipTop: CGFloat = 34
+
+    static var soilLip: SKTexture {
+        GardenArt.make("soil-lip", size: soilLipSize, scale: 2) { ctx, s in
+            let top = soilLipTop
+            let mound = CGMutablePath()
+            mound.move(to: CGPoint(x: 0, y: 4))
+            mound.addCurve(to: CGPoint(x: s.width / 2, y: top), control1: CGPoint(x: s.width * 0.16, y: top - 2),
+                           control2: CGPoint(x: s.width * 0.3, y: top))
+            mound.addCurve(to: CGPoint(x: s.width, y: 4), control1: CGPoint(x: s.width * 0.7, y: top),
+                           control2: CGPoint(x: s.width * 0.84, y: top - 2))
+            mound.addLine(to: CGPoint(x: s.width, y: 0))
+            mound.addLine(to: CGPoint(x: 0, y: 0))
+            mound.closeSubpath()
+            GardenPainter.clipped(ctx, mound) {
+                GardenPainter.linear(ctx, [GardenInk(0.42, 0.42, 0.42, 0.0), GardenInk(0.5, 0.5, 0.5, 0.95),
+                                           GardenInk(0.85, 0.85, 0.85, 1)], [0, 0.45, 1],
+                                     from: CGPoint(x: 0, y: 0), to: CGPoint(x: 0, y: top))
+            }
+            let rim = CGMutablePath()
+            rim.move(to: CGPoint(x: s.width * 0.12, y: top - 6))
+            rim.addCurve(to: CGPoint(x: s.width * 0.88, y: top - 6), control1: CGPoint(x: s.width * 0.32, y: top + 1),
+                         control2: CGPoint(x: s.width * 0.68, y: top + 1))
+            GardenPainter.stroke(ctx, rim, GardenInk(1, 1, 1, 0.55), width: 1.6)
+            var rng = GardenRNG(seed: 0x5011)
+            let crumbs = CGMutablePath()
+            for _ in 0..<9 {
+                let c = CGPoint(x: rng.range(s.width * 0.12, s.width * 0.88), y: rng.range(top - 10, top + 4))
+                let r = rng.range(1.2, 2.6)
+                crumbs.addEllipse(in: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
+            }
+            GardenPainter.fill(ctx, crumbs, GardenInk(0.62, 0.62, 0.62, 0.95))
+            // Feather the sides.
+            ctx.setBlendMode(.destinationIn)
+            GardenPainter.linear(ctx, [GardenInk(1, 1, 1, 0), GardenInk.white, GardenInk.white, GardenInk(1, 1, 1, 0)],
+                                 [0, 0.18, 0.82, 1], from: CGPoint(x: 0, y: 0), to: CGPoint(x: s.width, y: 0))
+            ctx.setBlendMode(.normal)
+        }
     }
 
     /// R2: the dark seam a submerged gloom sits in: ink below a gently wavy surface with a cool rim of light, soft at

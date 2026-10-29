@@ -26,7 +26,15 @@ struct GardenFrame {
     let dAngle: CGFloat
     /// +1 or −1: the canonical y axis's sign so it runs along +u.
     let uFlip: CGFloat
+    /// The play depth (points from the crease to d = 1). R4: in book layouts d = 1 sits `inset` in from the garden's
+    /// outer edge (the right thumb rests there), so this is `layout.gardenDepth − inset`.
     let depth: CGFloat
+    /// R4: the strip beyond d = 1 (points; 0 outside book layouts).
+    let inset: CGFloat
+    /// The whole garden's depth (the ground is drawn over all of it).
+    let fullDepth: CGFloat
+    /// d scale onto the layout's own d (play depth / full depth).
+    let dScale: Double
     let span: CGFloat
     /// Unit vectors in the scene: towards the flowers (+d), and along +u.
     let dUnit: CGVector
@@ -50,7 +58,12 @@ struct GardenFrame {
         origin = o
         dAngle = a
         uFlip = dot >= 0 ? 1 : -1
-        depth = layout.gardenDepth
+        let full = max(layout.gardenDepth, 1)
+        let ins = GardenMath.flowerInset(layout: layout)
+        fullDepth = full
+        inset = ins
+        depth = max(full - ins, 1)
+        dScale = Double(max(full - ins, 1) / full)
         span = layout.gardenSpan
         dUnit = dScene
         uUnit = uScene
@@ -59,8 +72,17 @@ struct GardenFrame {
         mirrorRect = GardenFrame.sceneRect(layout.mirrorRect, height: h)
     }
 
-    /// A floor point in scene coordinates.
-    func scene(u: Double, d: Double) -> CGPoint { layout.scenePoint(layout.point(u: u, d: d)) }
+    /// A floor point in scene coordinates (R4: d = 1 is the inset flower line in book layouts).
+    func scene(u: Double, d: Double) -> CGPoint { layout.scenePoint(layout.point(u: u, d: d * dScale)) }
+
+    /// A floor point in SwiftUI space (y down): what the App's overlays must use to point at things in the garden.
+    func canvas(u: Double, d: Double) -> CGPoint { layout.point(u: u, d: d * dScale) }
+
+    /// The inverse of `canvas(u:d:)` (SwiftUI space).
+    func floor(at p: CGPoint) -> (u: Double, d: Double) {
+        let f = layout.floorPoint(at: p)
+        return (u: f.u, d: dScale > 0 ? f.d / dScale : f.d)
+    }
 
     /// A floor point in the canonical garden's coordinates.
     func local(u: Double, d: Double) -> CGPoint { CGPoint(x: CGFloat(d) * depth, y: CGFloat(u) * span) }
@@ -128,6 +150,9 @@ final class GardenScene: SKScene {
     private let lightTrail: GardenLightLayer
     private let lightPool: GardenLightLayer
     private let lightCore: GardenLightLayer
+    /// R3b: the grass's gold wash (alpha-blended) and soft cream centre line.
+    private let lightWash: GardenLightLayer
+    private let lightLine: GardenLightLayer
     private var lightPieces: [LightPiece] = []
     /// R2: the crease shade (light does nothing for d < `Tuning.creaseShade`) and its cool rim.
     private let shadeStrip = SKSpriteNode()
@@ -239,7 +264,7 @@ final class GardenScene: SKScene {
     var mirrorShadeClouds: Int { mirror.shadeCloudCount }
     var lightSpriteCount: Int {
         lightHalo.visibleCount + lightBeam.visibleCount + lightTrail.visibleCount + lightPool.visibleCount
-            + lightCore.visibleCount
+            + lightCore.visibleCount + lightWash.visibleCount + lightLine.visibleCount
     }
     /// R2: where the crease shade's cool rim is drawn (scene points, its middle).
     var shadeRimCenter: CGPoint { garden.convert(shadeRim.position, to: self) }
@@ -279,20 +304,42 @@ final class GardenScene: SKScene {
     nonisolated static func hudSafeRects(layout: GardenLayout) -> [CGRect] { flowerRects(layout: layout) }
 
     /// The flowers as drawn (petals and leaves), in SwiftUI space (y down), for `layout`. The App keeps its HUD clear of
-    /// them. Lane i sits at u = (i + 0.5) / count, just inside the flower edge.
+    /// them. Lane i sits at u = (i + 0.5) / count, just inside the flower edge. R4: in book layouts the flower edge is
+    /// `GardenMath.flowerInset` (60 pt) in from the garden's outer edge (thumb room).
     nonisolated static func flowerRects(layout: GardenLayout, count: Int = GardenMath.flowerCount) -> [CGRect] {
         let n = max(count, 0)
         guard n > 0 else { return [] }
-        let depth = layout.gardenDepth
-        let span = layout.gardenSpan
-        let r = GardenMath.flowerRadius(depth: depth, span: span, count: n) * 1.3
-        let d = GardenMath.flowerD(depth: depth, span: span, count: n)
+        let f = GardenFrame(layout: layout)
+        let r = GardenMath.flowerRadius(depth: f.depth, span: f.span, count: n) * 1.3
+        let d = GardenMath.flowerD(depth: f.depth, span: f.span, count: n)
         var out: [CGRect] = []
         for i in 0..<n {
-            let p = layout.point(u: (Double(i) + 0.5) / Double(n), d: d)
+            let p = f.canvas(u: (Double(i) + 0.5) / Double(n), d: d)
             out.append(CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r))
         }
         return out
+    }
+
+    /// R4 (for the App): the mirror's sun disc in SwiftUI space, padded to its bright glow (1.4 × the radius; the
+    /// reflection may shift it ± 4 pt with the band). Behind the menus it is the warm half-risen sun (`dawn` 0.5).
+    nonisolated static func sunRect(layout: GardenLayout, dawn: CGFloat = 0.5, moonlit: Bool = false) -> CGRect {
+        let f = GardenFrame(layout: layout)
+        let glass = GardenMirror.glass(for: f.mirrorRect)
+        let disc = GardenMirror.sunCircle(glass: glass, dawn: dawn, moonlit: moonlit, moonDepth: 0)
+        let r = disc.radius * 1.4 + 4
+        let c = CGPoint(x: disc.center.x, y: layout.size.height - disc.center.y)
+        return CGRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r)
+    }
+
+    /// R4 (for the App): the mirror's brass frame thickness (its HUD margin), the same rule the mirror draws with.
+    nonisolated static func mirrorFrameThickness(layout: GardenLayout) -> CGFloat {
+        GardenMirror.frameThickness(for: GardenFrame(layout: layout).mirrorRect)
+    }
+
+    /// R4: a floor point (u, d) on the canvas in SwiftUI space, as the scene draws it (book layouts inset d = 1). The
+    /// App points hints and arrows at garden things with this, not `layout.point(u:d:)`.
+    nonisolated static func canvasPoint(layout: GardenLayout, u: Double, d: Double) -> CGPoint {
+        GardenFrame(layout: layout).canvas(u: u, d: d)
     }
 
     /// A floor point in scene coordinates.
@@ -316,6 +363,8 @@ final class GardenScene: SKScene {
         lightTrail = GardenLightLayer(.pool, color: GardenInk(hex: 0xFFB24A).ui)
         lightPool = GardenLightLayer(.pool, color: GardenInk(hex: 0xFFC24A).ui)
         lightCore = GardenLightLayer(.core, color: GardenInk(hex: 0xFFF4D6).ui)
+        lightWash = GardenLightLayer(.pool, color: LightAlphas.meadowWash.ui, blend: .alpha)
+        lightLine = GardenLightLayer(.line, color: LightAlphas.meadowLine.ui)
         super.init(size: layout.size)
         setUp()
     }
@@ -358,7 +407,10 @@ final class GardenScene: SKScene {
         lightTrail.root.zPosition = 5
         lightPool.root.zPosition = 5.5
         lightCore.root.zPosition = 6
-        let lightRoots: [SKNode] = [lightBeam.root, lightHalo.root, lightTrail.root, lightPool.root, lightCore.root]
+        lightWash.root.zPosition = 3.8
+        lightLine.root.zPosition = 6.2
+        let lightRoots: [SKNode] = [lightWash.root, lightBeam.root, lightHalo.root, lightTrail.root, lightPool.root,
+                                    lightCore.root, lightLine.root]
         for n in lightRoots { garden.addChild(n) }
         for _ in 0..<3 {
             let t = SKSpriteNode(texture: GardenArt.shadeTint)
@@ -526,9 +578,10 @@ final class GardenScene: SKScene {
         let span = max(f.span, 1)
 
         applyGround()
+        // R4: the ground and the veil cover the whole garden, thumb strip included.
         for n in [groundNight, groundDawn, nightVeil] {
             n.position = .zero
-            n.size = CGSize(width: depth, height: span)
+            n.size = CGSize(width: max(f.fullDepth, depth), height: span)
         }
         creaseInk.position = CGPoint(x: 0, y: span / 2)
         creaseInk.size = CGSize(width: depth * 0.14, height: span)
@@ -573,17 +626,35 @@ final class GardenScene: SKScene {
 
     static let glintCount = 22
 
+    /// R4: the harbour's wet streaks in floor (u, d) with their size (points), exactly where the boardwalk texture draws
+    /// them (snapped to a plank seam).
+    nonisolated static func wetSpots(depth: CGFloat, fullDepth: CGFloat, span: CGFloat)
+        -> [(u: Double, d: Double, r: CGFloat)] {
+        let texW = (max(fullDepth, 8) / 4).rounded() * 4
+        let texH = (max(span, 8) / 4).rounded() * 4
+        let playW = texW * depth / max(fullDepth, 1)
+        var out: [(u: Double, d: Double, r: CGFloat)] = []
+        for pd in GardenMath.puddles(depth: playW, span: texH) {
+            let c = GroundWorlds.wetCenter(pd, playW: playW, fullW: texW, h: texH)
+            out.append((u: Double(c.y / texH), d: Double(c.x / playW), r: pd.r))
+        }
+        return out
+    }
+
     /// R2b: the ground for the current style and size (cached per style and size; a few recent ones are kept for
     /// rotating and for going back to a world), and the glint spots that go with it.
     private func applyGround() {
         let f = gardenFrame
         let depth = max(f.depth, 1)
+        let full = max(f.fullDepth, 1)
+        let ins = f.inset
         let span = max(f.span, 1)
         let style = groundStyle
-        groundNight.texture = GardenArt.ground(depth: depth, span: span, warm: false, style: style)
-        groundDawn.texture = GardenArt.ground(depth: depth, span: span, warm: true, style: style)
-        let keys = [GardenArt.groundKey(depth: depth, span: span, warm: false, style: style),
-                    GardenArt.groundKey(depth: depth, span: span, warm: true, style: style)]
+        // R4: the ground covers the whole garden; its play area ends `inset` short of the outer edge (book layouts).
+        groundNight.texture = GardenArt.ground(depth: full, span: span, warm: false, style: style, inset: ins)
+        groundDawn.texture = GardenArt.ground(depth: full, span: span, warm: true, style: style, inset: ins)
+        let keys = [GardenArt.groundKey(depth: full, span: span, warm: false, style: style, inset: ins),
+                    GardenArt.groundKey(depth: full, span: span, warm: true, style: style, inset: ins)]
         groundKeys.removeAll { keys.contains($0) }
         groundKeys.append(contentsOf: keys)
         if groundKeys.count > 8 { groundKeys.removeFirst(groundKeys.count - 8) }
@@ -593,15 +664,14 @@ final class GardenScene: SKScene {
         var dr = GardenRNG(seed: 0xDE_77)
         dewSpots.removeAll(keepingCapacity: true)
         if style == .harbour {
-            let puddles = GardenMath.puddles(depth: depth, span: span)
+            // R4: on the wet streaks in the plank seams (`GroundWorlds.wetCenter`, the texture's own placement).
+            let wets = GardenScene.wetSpots(depth: depth, fullDepth: full, span: span)
             for i in 0..<GardenScene.glintCount {
-                guard !puddles.isEmpty else { break }
-                let pd = puddles[i % puddles.count]
-                // Inside the puddle's sheen (0.42 r across d, 1.25 r along u).
-                let ox = dr.range(-0.3, 0.3) * pd.r
-                let oy = dr.range(-0.9, 0.9) * pd.r
-                dewSpots.append(DewSpot(u: pd.u + Double(oy / span), d: pd.d + Double(ox / depth),
-                                        phase: dr.range(0, 6.28), size: dr.range(12, 22)))
+                guard !wets.isEmpty else { break }
+                let c = wets[i % wets.count]
+                let oy = dr.range(-0.9, 0.9) * c.r
+                dewSpots.append(DewSpot(u: c.u + Double(oy / span), d: c.d, phase: dr.range(0, 6.28),
+                                        size: dr.range(12, 20)))
             }
         } else {
             for _ in 0..<GardenScene.glintCount {
@@ -622,6 +692,8 @@ final class GardenScene: SKScene {
 
     /// R2b: the light's colours: warm sunlight, or Long Night's silver-gold moonlight (still warm enough to read).
     private func applyLightPalette() {
+        lightWash.setColor((groundStyle.isMoonlit ? LightAlphas.moonWash : LightAlphas.meadowWash).ui)
+        lightLine.setColor((groundStyle.isMoonlit ? LightAlphas.moonLine : LightAlphas.meadowLine).ui)
         if groundStyle.isMoonlit {
             lightPool.setColor(GardenInk(hex: 0xF2DDA0).ui)
             lightCore.setColor(GardenInk(hex: 0xF6F2E6).ui)
@@ -699,6 +771,11 @@ final class GardenScene: SKScene {
 
     /// R2: the phone grip's lane: 30 pt in from the u = 1 edge.
     private var gripU: Double { Double(1 - 30 / max(gardenFrame.span, 60)) }
+
+    /// R4: the least d a submerged gloom is drawn at (points `radius` art): its top stays below the crease line.
+    nonisolated static func submergedMinD(radius r: CGFloat, depth: CGFloat) -> Double {
+        Double((r * 1.25 + 6) / max(depth, 1))
+    }
 
     /// R3: the ground's dust (a gloom surfacing) and the faint ring that follows a submerged gloom, per ground.
     private var soilDust: GardenInk {
@@ -1027,21 +1104,32 @@ final class GardenScene: SKScene {
                 glooms[g.id] = node
             }
             node.seenFrame = frameIndex
-            let p = f.scene(u: g.u, d: g.d)
             let r = max(CGFloat(g.radius) * f.depth * gloomScale, 4)
+            // R4 (REVIEW-3 P1): a submerged gloom is never drawn over the crease line or the mirror's frame: it is held
+            // just inside the garden until Core's d passes that line, fading in as it arrives.
+            let clampD = GardenScene.submergedMinD(radius: r, depth: f.depth)
+            let drawD = g.submerged ? max(g.d, clampD) : g.d
+            let p = f.scene(u: g.u, d: drawD)
             // Further along d draws in front.
-            node.root.zPosition = CGFloat(GardenMath.clamp(g.d, -0.5, 1.5)) * 2
+            node.root.zPosition = CGFloat(GardenMath.clamp(drawD, -0.5, 1.5)) * 2
             // R2: the eyes track the band (towards the light, or the crease while it's hidden there).
             let towardBand = s.band >= g.d
             let look = towardBand ? f.dUnit : CGVector(dx: -f.dUnit.dx, dy: -f.dUnit.dy)
+            node.setSoil(soilDust)
             node.update(g, at: p, radius: r, dir: look, dt: dt, time: animTime, motion: motion)
-            // R3: travelling under the ground: a soft ripple follows it so the player can read where it'll come up.
-            if g.submerged && dt > 0 {
+            if g.submerged && node.death == .none {
+                node.root.alpha = GardenMath.smooth(CGFloat(clampD) - 0.1, CGFloat(clampD), CGFloat(g.d))
+            } else if node.death == .none && node.root.alpha < 1 {
+                node.root.alpha = 1
+            }
+            // R3/R4: travelling under the ground: a soil ripple follows it so the player can read where it'll come up.
+            if g.submerged && dt > 0 && g.d >= clampD - 0.02 {
                 node.rippleClock += dt * 3.2 * max(fx.density, 0.5)
                 if node.rippleClock >= 1 {
                     node.rippleClock -= 1
-                    fx.rings.spawn(at: node.surfacePoint, fromRadius: r * 0.5, toRadius: r * 1.7, life: 0.6,
-                                   color: soilGlow.ui, alpha: 0.32, squash: 0.42)
+                    fx.rings.spawn(at: node.surfacePoint, fromRadius: r * 0.6, toRadius: r * 1.9, life: 0.7,
+                                   color: soilGlow.ui, alpha: 0.28, squash: 0.32)
+                    fx.trailMote(at: node.surfacePoint, size: r * 0.9, color: soilDust, inky: true)
                 }
             }
             if g.lit > 0.02 && dt > 0 {
@@ -1227,10 +1315,13 @@ final class GardenScene: SKScene {
             let poolW = CGFloat(GardenArt.lightHalfWidth) * depth * 2
             lightPool.draw(x: x, width: poolW, anchorX: 0.5, span: span, pieces: lightPieces, alpha: la.pool * shimmer)
             lightCore.draw(x: x, width: poolW, anchorX: 0.5, span: span, pieces: lightPieces, alpha: la.core * shimmer)
+            // R3b: on grass, a gold wash (the hue does the work) and a soft cream line at the centre.
+            lightWash.draw(x: x, width: poolW, anchorX: 0.5, span: span, pieces: lightPieces, alpha: la.wash)
+            lightLine.draw(x: x, width: poolW, anchorX: 0.5, span: span, pieces: lightPieces, alpha: la.line * shimmer)
             lightHalo.draw(x: x, width: depth * 0.4 * (1 + 0.15 * bandSwell), anchorX: 0.5, span: span,
                            pieces: lightPieces, alpha: la.halo)
-            // R3: the 18 % cone runs from the shade's edge to the band's near edge (never stacked under the band).
-            let coneEnd = (band - CGFloat(GardenMath.bandEdge)) * depth
+            // R3/R3b: the cone runs from the shade's edge into the band's near half and fades out there (no line).
+            let coneEnd = (band - CGFloat(GardenMath.bandEdge) * 0.3) * depth
             lightBeam.draw(x: shadeX, width: max(coneEnd - shadeX, 0), anchorX: 0, span: span, pieces: lightPieces,
                            alpha: la.beam + 0.08 * bandSwell)
             let lag = abs(band - trailBand)
@@ -1242,6 +1333,8 @@ final class GardenScene: SKScene {
             lightHalo.hide()
             lightBeam.hide()
             lightTrail.hide()
+            lightWash.hide()
+            lightLine.hide()
         }
 
         // R2: cloud shades: a cool tint over the light's path where the light is cut.

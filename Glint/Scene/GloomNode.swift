@@ -50,6 +50,15 @@ final class GloomNode {
     var isSubmerged: Bool { sink > 0.5 }
     var isPoppingUp: Bool { popLeft > 0 }
 
+    private var soilTint = GardenInk(hex: 0x8A7A5A)
+
+    /// R4: the ground's soil colour (the lip it peeks over).
+    func setSoil(_ c: GardenInk) {
+        guard c != soilTint else { return }
+        soilTint = c
+        pool.color = c.ui
+    }
+
     /// R3: it rises out of the ground (`.surfaced`): a springy pop up.
     func popUp() {
         popLeft = GloomNode.popTime
@@ -112,10 +121,12 @@ final class GloomNode {
         brow.zPosition = 0.25
         root.addChild(puppet)
         for n in [body, lit, mouth, eyes, pupils, squeeze, brow] { puppet.addChild(n) }
-        pool.texture = GardenArt.shadow
+        // R4: the soil lip its eyes peek over (in front of the puppet), tinted with the ground's soil.
+        pool.texture = CreatureArt.soilLip
         pool.colorBlendFactor = 1
-        pool.color = GardenInk(hex: 0x06040A).ui
-        pool.zPosition = -0.05
+        pool.color = soilTint.ui
+        pool.anchorPoint = CGPoint(x: 0.5, y: CreatureArt.soilLipTop / CreatureArt.soilLipSize.height)
+        pool.zPosition = 0.5
         pool.isHidden = true
         root.addChild(pool)
         configure(kind: .murk, id: -1)
@@ -257,19 +268,28 @@ final class GloomNode {
         puppet.yScale = s * sy
         let crouch: CGFloat = kind == .hopper ? 0.1 * tension : 0
         puppet.position = CGPoint(x: 0, y: (lift - crouch - 0.12 * sink) * r)
-        body.alpha = 1 - 0.8 * sink
+        // R4 (REVIEW-3 P1-7): underground it is dim and desaturated (no rim, no gloss, no light), its eyes at 50 %
+        // peeking over a lip of soil; never a box.
+        body.alpha = 1 - 0.78 * sink
+        body.colorBlendFactor = 0.8 * sink
+        body.color = GardenInk(hex: 0x3A3842).ui
         mouth.alpha = 1 - sink
         brow.alpha = 1 - sink
-        // The ground's soft mound over it: a feathered dark ellipse (never a box).
+        let eyeAlpha: CGFloat = 1 - 0.5 * sink
+        eyes.alpha = eyeAlpha
+        pupils.alpha = eyeAlpha
+        squeeze.alpha = eyeAlpha
+        let eyeLine = puppet.position.y + look.eyeY * s * sy
         if sink > 0.01 {
             pool.isHidden = false
-            pool.size = CGSize(width: s * 2.8, height: s * 1.25)
-            pool.position = CGPoint(x: 0, y: -0.1 * s)
-            pool.alpha = 0.45 * sink
+            let lw = s * 2.7
+            pool.size = CGSize(width: lw, height: lw * CreatureArt.soilLipSize.height / CreatureArt.soilLipSize.width)
+            pool.position = CGPoint(x: 0, y: eyeLine)
+            pool.alpha = sink
         } else {
             pool.isHidden = true
         }
-        surfacePoint = CGPoint(x: p.x, y: p.y - 0.15 * s)
+        surfacePoint = CGPoint(x: p.x, y: p.y + (sink > 0.5 ? eyeLine : -0.15 * s))
         puppet.zRotation = sin(time * 1.7 + phase * 1.3) * 0.06 * motion
 
         // A sizzling shiver while lit.
@@ -282,8 +302,8 @@ final class GloomNode {
         root.position = CGPoint(x: p.x + jx, y: p.y + jy)
         drawnPoint = CGPoint(x: p.x, y: p.y + lift * r)
 
-        // The lit rim: gold, hotter (whiter) as it nears popping.
-        lit.alpha = shownLit
+        // The lit rim: gold, hotter (whiter) as it nears popping (R4: never while underground).
+        lit.alpha = shownLit * (1 - sink)
         if shownLit > 0.01 {
             lit.color = GardenPalette.gold.mixed(GardenInk.white, (1 - hpFrac) * 0.65).ui
         }

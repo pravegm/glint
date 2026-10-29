@@ -274,14 +274,49 @@ final class GardenMirror {
         tintKey = -1
     }
 
+    // MARK: Geometry the App can share (pure; scene points in, scene points out)
+
+    /// The brass frame's thickness for a mirror rect (the App's HUD margin uses it).
+    nonisolated static func frameThickness(for rect: CGRect) -> CGFloat {
+        GardenMath.clamp(min(rect.width, rect.height) * 0.045, 9, 22)
+    }
+
+    /// The glass inside the frame.
+    nonisolated static func glass(for rect: CGRect) -> CGRect {
+        let inset = frameThickness(for: rect) * 0.82
+        return rect.insetBy(dx: min(inset, rect.width / 3), dy: min(inset, rect.height / 3))
+    }
+
+    /// The horizon silhouettes' height on a glass (the tiles must cover its width with 4 tiles of 512 × 160).
+    nonisolated static func hillsHeight(glass inner: CGRect) -> CGFloat {
+        let aspect: CGFloat = 512.0 / 160.0
+        var hh = min(inner.height * 0.27, inner.width * 0.34)
+        let needed = inner.width + 28
+        if hh * aspect * 3 < needed { hh = needed / 3 / aspect }
+        return hh
+    }
+
+    /// The sun's (or Long Night's moon's) disc on a glass: centre and radius, scene points.
+    nonisolated static func sunCircle(glass inner: CGRect, dawn: CGFloat, moonlit: Bool,
+                                      moonDepth: CGFloat) -> (center: CGPoint, radius: CGFloat) {
+        let d = moonlit ? 0 : GardenMath.clamp(dawn, 0, 1)
+        let base = max(min(inner.width, inner.height) * 0.1, 10)
+        let horizon = inner.minY + hillsHeight(glass: inner) * 0.5
+        let top = inner.maxY - inner.height * 0.2
+        let climb: CGFloat = moonlit ? 0.5 + 0.35 * GardenMath.clamp(moonDepth, 0, 1) : pow(d, 0.85)
+        let r = moonlit ? base * 1.3 : base * (1.15 - 0.2 * d)
+        let sx: CGFloat = moonlit ? -0.14 : 0.12
+        let c = CGPoint(x: inner.midX + inner.width * sx, y: horizon - r * 0.35 + climb * max(top - horizon, 0))
+        return (c, r)
+    }
+
     /// Places the mirror in `rect` (scene points); `towardCrease`: the unit vector from the mirror to the garden.
     func apply(rect: CGRect, towardCrease: CGVector) {
         outer = rect
         toward = towardCrease
-        let t = GardenMath.clamp(min(rect.width, rect.height) * 0.045, 9, 22)
+        let t = GardenMirror.frameThickness(for: rect)
         frameThickness = t
-        let inset = t * 0.82
-        inner = rect.insetBy(dx: min(inset, rect.width / 3), dy: min(inset, rect.height / 3))
+        inner = GardenMirror.glass(for: rect)
         let margin: CGFloat = 14
         let skySize = CGSize(width: inner.width + margin * 2, height: inner.height + margin * 2)
         let mid = CGPoint(x: inner.midX, y: inner.midY)
@@ -412,14 +447,12 @@ final class GardenMirror {
         let shiftK = (GardenMath.clamp(band, -0.2, 1) - 0.4) * 7
         content.position = CGPoint(x: toward.dx * shiftK, y: toward.dy * shiftK)
 
-        // The sun: half-hidden on the horizon at 0, high and bright at 1.
+        // The sun: half-hidden on the horizon at 0, high and bright at 1 (R2b: the moon rides high and big, climbing as
+        // the night deepens). One formula, shared with `sunCircle` (the App keeps its title off it).
         let horizon = inner.minY + hillsHeight * 0.5
-        let top = inner.maxY - inner.height * 0.2
-        // R2b: the moon rides high and big, climbing as the night deepens.
-        let climb: CGFloat = moonlit ? 0.5 + 0.35 * GardenMath.clamp(moonDepth, 0, 1) : pow(d, 0.85)
-        let r = moonlit ? sunRadius * 1.3 : sunRadius * (1.15 - 0.2 * d)
-        let sx: CGFloat = moonlit ? -0.14 : 0.12
-        sunPoint = CGPoint(x: inner.midX + inner.width * sx, y: horizon - r * 0.35 + climb * max(top - horizon, 0))
+        let disc = GardenMirror.sunCircle(glass: inner, dawn: d, moonlit: moonlit, moonDepth: moonDepth)
+        let r = disc.radius
+        sunPoint = disc.center
         sun.position = sunPoint
         sun.size = CGSize(width: r * 2, height: r * 2)
         sun.colorBlendFactor = 0.55 * (1 - d)

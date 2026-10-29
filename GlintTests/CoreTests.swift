@@ -8,6 +8,7 @@ import Testing
 // Round 2: the crease shade, cloud shadows, the 135° edge, DawnStats by kind and by shade, the human-hinge pilot,
 // achievements (each just below and at its threshold).
 // Round 3: submerged travel and surfacing, the ±0.065 band core, the score-gated third star, Long Night's jump.
+// Round 4: core-only firefly scorch with a dart, fireflies in the gaps, L1's quick opener, the first brute by L4.
 
 /// Shared drivers for Core tests and BalanceTests.
 enum CoreHarness {
@@ -322,12 +323,30 @@ struct CoreTests {
         let l: LevelSpec = LevelBook.level(1)
         #expect(l.title == "First Light")
         #expect(abs(l.duration - 60) < 1e-12)
-        #expect(l.gloomCount == 12)
+        // R4: 12 murks plus the opener, which starts at d 0.14 at t = 0 and surfaces at 0.3.
+        #expect(l.gloomCount == 13)
         #expect(l.kinds == [.murk])
         #expect(l.fireflyCount == 0)
         for g in l.groups {
             #expect(g.speedScale <= 0.85)
-            #expect(g.count == 1)
+            #expect(g.count <= 2)
+        }
+        if let first = l.groups.first {
+            #expect(abs(first.time) < 1e-12)
+            #expect(first.startD == 0.14)
+            #expect(first.surface == 0.3...0.3)
+        }
+        // The first murk rises at d ≈ 0.3 within 1.5 s of the first light.
+        let s = DawnSession(mode: .level(1), seed: 1)
+        let events = CoreHarness.runParked(s, at: 0.05, seconds: 2)
+        var first: (Double, Double)? = nil
+        for e in events {
+            if case .surfaced(_, _, _, let d) = e.event, first == nil { first = (e.time, d) }
+        }
+        #expect(first != nil)
+        if let f = first {
+            #expect(f.0 < 1.5)
+            #expect(abs(f.1 - 0.3) < 0.01)
         }
     }
 
@@ -354,7 +373,8 @@ struct CoreTests {
         #expect(first(.hopper) == 14)
         #expect(firstFirefly() == 4)
         #expect(!LevelBook.level(3).kinds.contains(.brute))
-        #expect(!LevelBook.level(4).kinds.contains(.brute))
+        // R4: a first brute by L4 (after Dew's teaching brute).
+        #expect(LevelBook.level(4).kinds.contains(.brute))
         #expect(LevelBook.level(5).kinds.contains(.brute))
         // Harbour has everything and fewer fireflies than Rooftops.
         let w3: [GloomKind] = LevelBook.level(25).kinds
@@ -1134,7 +1154,8 @@ struct CoreTests {
         while n <= LevelBook.count {
             let l: LevelSpec = LevelBook.level(n)
             let top: Double = n <= 3 ? Tuning.surfaceMaxGentle : Tuning.surfaceMax
-            #expect(l.starScore > 0)
+            // R4b: L1–3 give the third star for all five flowers alone (starScore 0); score bars from L4.
+            if n <= 3 { #expect(l.starScore == 0) } else { #expect(l.starScore > 0) }
             for g in l.groups {
                 switch g.kind {
                 case .firefly:
@@ -1192,6 +1213,74 @@ struct CoreTests {
         }
         #expect(abs(p.position - 0.46) < 0.05)
         #expect(abs(PilotBrain.reachD(shot.glooms[0]) - 0.45) < 1e-12)
+    }
+
+    // MARK: R4: spareable fireflies
+
+    @Test func onlyTheCoreScorchesAFirefly() {
+        // The band rides just behind a firefly: it is in the soft edge (lit) but never in the core.
+        let s = DawnSession(spec: CoreHarness.spec([CoreHarness.group(.firefly, at: 0.5)]))
+        var litFrames: Int = 0
+        var maxScorch: Double = 0
+        let events = CoreHarness.run(s, seconds: 10) { (t: Double, session: DawnSession) -> Double in
+            if t < 0.05 { return 0 }
+            guard let f = session.snapshot.fireflies.first else { return -0.2 }
+            if f.lit > 0 { litFrames += 1 }
+            maxScorch = max(maxScorch, f.scorch)
+            return f.d > 0.2 ? f.d - 0.085 : -0.2
+        }
+        #expect(litFrames > 100)
+        #expect(maxScorch < 1e-9)
+        #expect(CoreHarness.count(events, CoreHarness.isScorched) == 0)
+        #expect(abs(Tuning.fireflyScorchLimit - 0.6) < 1e-12)
+        #expect(abs(Tuning.fireflyScorchDecay - 0.8) < 1e-12)
+    }
+
+    @Test func aFireflyDartsWhenTheLightTouchesIt() {
+        // Light touches it at d ≈ 0.3 (the band jumps to 0.09 behind it and stays): it darts 0.08 out on top of its
+        // drift, so in 0.35 s it travels ≈ 0.08 + 0.075 × 0.35 instead of ≈ 0.026.
+        let s = DawnSession(spec: CoreHarness.spec([CoreHarness.group(.firefly, at: 0.5)]))
+        var parked: Double? = nil
+        var d0: Double? = nil
+        var t0: Double = 0
+        var moved: Double = 0
+        _ = CoreHarness.run(s, seconds: 8) { (t: Double, session: DawnSession) -> Double in
+            if t < 0.05 { return 0 }
+            guard let f = session.snapshot.fireflies.first else { return parked ?? -0.2 }
+            if parked == nil && f.d >= 0.3 { parked = f.d - 0.09 }
+            if parked != nil && d0 == nil && f.lit > 0 {
+                d0 = f.d
+                t0 = t
+            }
+            if let start = d0, t - t0 <= 0.35 + 1e-9 { moved = f.d - start }
+            return parked ?? -0.2
+        }
+        #expect(d0 != nil)
+        #expect(moved > 0.095)
+    }
+
+    @Test func firefliesFlyInTheGaps() {
+        var n: Int = 4
+        var between: Int = 0
+        var total: Int = 0
+        while n <= LevelBook.count {
+            let l: LevelSpec = LevelBook.level(n)
+            var gloomTimes: [Double] = []
+            for g in l.groups {
+                if case .gloom = g.kind { gloomTimes.append(g.time) }
+            }
+            for g in l.groups {
+                if case .firefly = g.kind {
+                    total += 1
+                    var clash: Bool = false
+                    for t in gloomTimes where abs(t - g.time) < 1e-6 { clash = true }
+                    if !clash { between += 1 }
+                }
+            }
+            n += 1
+        }
+        #expect(total > 50)
+        #expect(between == total)
     }
 
     // MARK: R2: the human-hinge pilot

@@ -1040,3 +1040,97 @@ struct R3Tests {
         #expect(gloom.r < 120 && gloom.b > gloom.g)
     }
 }
+
+// MARK: - Round 3b (founder: Results buttons always visible; deterministic lost fixtures; path around labels)
+
+struct R3bTests {
+    @Test func achievementsFitOneRow() {
+        let none = AppRules.achievementRow(count: 0)
+        #expect(none.badges == 0 && none.more == 0)
+        let three = AppRules.achievementRow(count: 3)
+        #expect(three.badges == 3 && three.more == 0)
+        let four = AppRules.achievementRow(count: 4)
+        #expect(four.badges == 4 && four.more == 0)
+        let five = AppRules.achievementRow(count: 5)
+        #expect(five.badges == 3 && five.more == 2)
+        let ten = AppRules.achievementRow(count: 10)
+        #expect(ten.badges + 1 <= AppRules.achievementRowMax)
+        #expect(ten.badges + ten.more == 10)
+    }
+
+    @Test func resultsButtonsAlwaysOnScreen() {
+        let cases: [(CGSize, Bool, Bool, EdgeInsets)] = [
+            (CGSize(width: 402, height: 874), false, false, EdgeInsets(top: 59, leading: 0, bottom: 34, trailing: 0)),
+            (CGSize(width: 951, height: 669), true, true, EdgeInsets(top: 24, leading: 0, bottom: 20, trailing: 0)),
+            (CGSize(width: 669, height: 951), true, false, EdgeInsets(top: 24, leading: 0, bottom: 20, trailing: 0)),
+        ]
+        for (size, duo, vertical, insets) in cases {
+            for after in [true, false] {
+                let layout = GardenLayout(size: size, foldVertical: vertical, gardenAfter: after,
+                                          gardenFraction: duo ? 0.5 : 0.58)
+                for compact in [true, false] {
+                    let need = AppRules.resultsButtonsHeight(compact: compact)
+                    let place = AppRules.resultsPlacement(layout: layout, insets: insets, isDuo: duo, buttonsHeight: need)
+                    // The whole button block fits its rect, inside the safe area.
+                    #expect(place.buttons.height >= need)
+                    #expect(place.buttons.minY >= insets.top - 0.5)
+                    #expect(place.buttons.maxY <= size.height - insets.bottom + 0.5)
+                    #expect(place.buttons.width >= 300)
+                    // The card never sits under the buttons.
+                    #expect(!place.card.intersects(place.buttons.insetBy(dx: 1, dy: 1)))
+                    if duo {
+                        #expect(!place.buttons.intersects(AppRules.creaseBand(layout: layout)))
+                    }
+                }
+            }
+        }
+    }
+
+    @Test func lostFixturesHaveTheirCause() {
+        let brutes = DemoPresets.lostStats(cause: .brute)
+        #expect(brutes.worstKind == .brute)
+        #expect(TipRules.tip(won: false, stats: brutes) == TipRules.brute)
+        #expect(brutes.pops == 41 && brutes.score == 1_120)
+        let hoppers = DemoPresets.lostStats(cause: .hopper)
+        #expect(TipRules.tip(won: false, stats: hoppers) == TipRules.hopper)
+        let murks = DemoPresets.lostStats(cause: .murk)
+        #expect(TipRules.tip(won: false, stats: murks) == TipRules.murk)
+    }
+
+    @Test @MainActor func pathSwingsAroundRowEnds() {
+        let path = LevelPath(points: [CGPoint(x: 300, y: 50), CGPoint(x: 300, y: 180)], bulge: 70)
+            .path(in: CGRect(x: 0, y: 0, width: 360, height: 300))
+        #expect(path.boundingRect.maxX > 300 + 70 * 0.6)
+        let left = LevelPath(points: [CGPoint(x: 60, y: 50), CGPoint(x: 60, y: 180)], bulge: 70)
+            .path(in: CGRect(x: 0, y: 0, width: 360, height: 300))
+        #expect(left.boundingRect.minX < 60 - 70 * 0.6)
+    }
+}
+
+// MARK: - Round 4 (design/ROUND-4.md "App" 8–9)
+
+struct R4Tests {
+    @Test func spawnFireflyFixture() {
+        let d = DemoMode.parse("screen=play;level=4;t=12;hint=spareTheFireflies;spawn=firefly")
+        #expect(d.spawnFirefly)
+        #expect(!DemoMode.parse("spawn=wisp").spawnFirefly)
+        let base = LevelBook.level(4)
+        let spec = DemoPresets.withFirefly(base, at: 11)
+        #expect(spec.groups.count == base.groups.count + 1)
+        #expect(spec.groups.contains { $0.kind == .firefly && abs($0.time - 11) < 1e-9 && $0.count == 1 })
+        for i in 1..<spec.groups.count { #expect(spec.groups[i - 1].time <= spec.groups[i].time) }
+    }
+
+    @Test func overlaysFollowTheSceneFlowers() {
+        for item in r2Layouts() {
+            let layout = item.layout
+            let inner = AppRules.flowersInnerD(layout: layout)
+            #expect(inner > 0.5 && inner <= 1)
+            let span = AppRules.overlaySpan(layout: layout)
+            #expect(span.center > 0.2 && span.center < inner)
+            // The prompt's whole extent along d ends short of the nearest flower edge.
+            let far = span.center + Double(span.length / layout.gardenDepth) / 2
+            #expect(far < inner)
+        }
+    }
+}

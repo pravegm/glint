@@ -9,7 +9,7 @@ const SEEDS = Number(process.env.SEEDS || 6);
 const OUT = path.join(__dirname, 'levels.json');
 const only = process.env.LEVELS ? process.env.LEVELS.split(',').map(Number) : null;
 function fl(n, skill) { let f = 0; for (let i = 0; i < SEEDS; i++) f += S.run(S.level(n), skill, 1 + i * 7919).flowers; return f / SEEDS; }
-for (let n = 6; n <= 30; n++) {
+for (let n = 4; n <= 30; n++) {
   if (only && !only.includes(n)) continue;
   const t = target(n); const rec = R.levels[n - 1];
   let lo = 0.6, hi = 1.6;

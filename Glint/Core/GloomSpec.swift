@@ -56,6 +56,8 @@ struct SpawnGroup: Equatable {
     /// R3: where its members surface (each draws a depth in the range; equal bounds = all at one depth, in a line).
     /// 0…0 = never submerged (they can be lit as soon as they leave the crease shade).
     var surface: ClosedRange<Double> = 0...0
+    /// R4: where its members start (nil = just inside the crease, d = −radius). L1's opener starts at 0.14.
+    var startD: Double? = nil
 }
 
 /// R2: one cloud shadow. It appears at `time` just off one edge (`fromLeft`: off u = 0, moving right) and slides

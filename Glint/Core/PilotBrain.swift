@@ -31,7 +31,8 @@ struct PilotBrain {
     let hesitation: Double
     /// How much more urgent (seconds of slack) another gloom must be before it abandons a lit target.
     let switchMargin: Double
-    /// How far (d) it keeps the band centre from a firefly.
+    /// How far (d) it keeps the band centre from a firefly (R4: 0.17 − 0.04 × skill; an unsure hand gives them more
+    /// room, which is how it learns to skip them).
     let fireflyMargin: Double
     /// R2 human hinge: the jitter's half-range (d), the hinge lag (s) and the overshoot chance per big move.
     let jitterAmplitude: Double
@@ -43,7 +44,7 @@ struct PilotBrain {
     /// It never aims closer to the crease than this (light does nothing in the shade).
     static let minAim: Double = Tuning.creaseShade + 0.05
     /// Past this d a target matters more than a firefly.
-    static let carelessD: Double = 0.6
+    static let carelessD: Double = 0.85
     /// The hand closes the gap to its goal at gap / this per second (then capped).
     static let gainDistance: Double = 0.06
     /// Below this cloud factor a gloom counts as shaded (less urgent).
@@ -80,7 +81,7 @@ struct PilotBrain {
         self.slip = 0.4 * w
         self.hesitation = 0.5 * w
         self.switchMargin = 0.8 - 0.5 * s
-        self.fireflyMargin = 0.097 + 0.035 * s
+        self.fireflyMargin = 0.17 - 0.04 * s
         self.jitterAmplitude = 0.05 * w
         self.hingeLag = 0.1 + 0.25 * w
         self.overshootChance = 0.6 * w

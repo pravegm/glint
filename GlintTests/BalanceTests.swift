@@ -178,6 +178,18 @@ final class GlintBalanceMemo: @unchecked Sendable {
             }
             level += 1
         }
+        // R4 (ROUND-4 Core 4): one summary line per world and skill.
+        var w: Int = 1
+        while w <= LevelBook.worldCount {
+            var k: Int = 0
+            while k < GlintBalanceMemo.skills.count {
+                var runs: [BalanceRun] = []
+                for n in LevelBook.levels(inWorld: w) { runs.append(contentsOf: out[n]?[k] ?? []) }
+                lines.append(GlintBalanceMemo.worldLine(world: w, skill: GlintBalanceMemo.skills[k], runs: runs))
+                k += 1
+            }
+            w += 1
+        }
         lines.append("GLINT-BAL ==== end ====")
         FileHandle.standardOutput.write(Data((lines.joined(separator: "\n") + "\n").utf8))
     }
@@ -202,6 +214,24 @@ final class GlintBalanceMemo: @unchecked Sendable {
         let n: Double = Double(count)
         return String(format: "GLINT-BAL level=%d skill=%.1f won=%d/%d flowers=%.1f score=%.0f eaten=%.1f scorched=%.1f three=%d field=%.1f",
                       level, skill, won, runs.count, flowers / n, score / n, eaten / n, scorched / n, three, field / n)
+    }
+
+    /// R4: `GLINT-BAL world=<w> skill=<s> winrate=<x> flowers=<y> three=<z> scorched=<q>` (rates per run; scorched =
+    /// fireflies fizzled per level).
+    static func worldLine(world: Int, skill: Double, runs: [BalanceRun]) -> String {
+        let n: Double = Double(max(runs.count, 1))
+        var won: Double = 0
+        var flowers: Double = 0
+        var three: Double = 0
+        var scorched: Double = 0
+        for r in runs {
+            if r.won { won += 1 }
+            flowers += Double(r.flowers)
+            if r.stars == 3 { three += 1 }
+            scorched += Double(r.scorched)
+        }
+        return String(format: "GLINT-BAL world=%d skill=%.1f winrate=%.2f flowers=%.2f three=%.2f scorched=%.2f",
+                      world, skill, won / n, flowers / n, three / n, scorched / n)
     }
 }
 
@@ -270,6 +300,24 @@ struct BalanceTests {
         let line: String = GlintBalanceMemo.line(level: level, skill: 0.9, runs: runs)
         let won: Int = runs.filter { (r: BalanceRun) -> Bool in r.won }.count
         #expect(won >= 1, "\(line)")
+    }
+
+    /// R4 (ROUND-4 Core 2): fireflies are spareable: the 0.9 hand fizzles ≤ 0.5 a level, the 0.6 hand ≤ 1.5 (the
+    /// mirror: ≤ 0.1 and ≤ 0.7).
+    @Test func firefliesAreSpareable() {
+        var strong: Double = 0
+        var mid: Double = 0
+        var n: Double = 0
+        for level in 1...LevelBook.count {
+            for r in GlintBalanceMemo.shared.runs(level: level, skill: 2) {
+                strong += Double(r.scorched)
+                n += 1
+            }
+            for r in GlintBalanceMemo.shared.runs(level: level, skill: 1) { mid += Double(r.scorched) }
+        }
+        let k: Double = max(n, 1)
+        #expect(strong / k <= 0.5, "0.9 fizzles \(strong / k) per level")
+        #expect(mid / k <= 1.5, "0.6 fizzles \(mid / k) per level")
     }
 
     @Test func skillKeepsFlowersInHarbour() {
