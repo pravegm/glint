@@ -44,3 +44,7 @@
 - Panel R3 (design/REVIEW-3.md): 7/5/5/6, "not yet": fail path unproven, L1–5 no stakes, cliff at L21, fireflies
   unspareable, a few look-alikes, book-pose thumb room. → design/ROUND-4.md. R3b (results overflow, built lost
   fixtures, map path, grass light) done, uncommitted until R4 lands.
+- R4 green (CI 40868010079): 249 tests, every frame + expect (lost fixtures really lose, won=0). Per-world (CI):
+  0.3 wins 100 % / 87 % / 18 %, 0.6 100 / 100 / 97 %, 0.9 100 % everywhere with ★★★ 95–98 %; fireflies scorched
+  0.6 ≤ 0.7/level, 0.9 ≤ 0.05. TestFlight release-check (40871729218) green: Release archive builds, no demo strings.
+- Founder (midday): "activate TestFlight now". Waiting on the founder's bundle ID + app record + the 4 secrets.
