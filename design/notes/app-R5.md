@@ -171,3 +171,27 @@ Nothing here has been compiled (CI is the compiler). Nothing is committed. Sourc
   - Each plan's freeze comes before its sunrise.
   - Each stage, run headless in a real session, reaches a freeze ("want" or "timeout") while still playing. The test
     prints `GLINT-STAGE <name> reason=…` in the CI log so the timings can be tuned from one run.
+
+## R5d stage retime (CI 40923297015: daily, longnight, fireflies froze on empty fields)
+- **New wants.** `busy(surfaced:lit:)`: N glooms out of the ground, M of them lit > 0.1 (frozen before they pop).
+  `fireflyWith(glooms:)`: a firefly within 0.15 d of the band plus N surfaced glooms.
+- **`daily`.** Golden hour (spec duration 7), six murks surfacing at d 0.36–0.48 plus two wisps; the band arrives
+  from 0.2 to 0.46 over 4.3–4.7 s. Wants `busy(4, 2)` from 4.6 s.
+- **`fireflies`.** The band waits at 0.74, beyond the fireflies, so they rise towards it and never cross the core
+  (the old path scorched them on the way). Five murks are out by about 5.5 s at d 0.28–0.38, below the light until
+  about 9 s. Wants `fireflyWith(3)` from 6.5 s (a firefly is in reach at about 8.2 s).
+- **`longnight`.** Core drops `spec` for `.endless`, so no custom script is possible without a Core change; it plays
+  Core's moonlit waves. Wave 1 is a sparse opener (that is why the 30 s frame was empty), so:
+  - the pilot (skill 0.9) plays through dense wave 2 until 56 s;
+  - the band rests at 0.08 (crease shade) so the field fills;
+  - from 60.1 s (wave 3's banner, which plays live) an `aim` path key moves it onto the crowd at ≤ 1.5 d/s, once
+    ≥ 4 are out (`DemoStages.aimCrowd`).
+  - Wants `busy(4, 2)` from 60.15 s, by 64.5 s.
+- **Source.** `ScriptedBandSource` now wraps the optional pilot (`pilotUntil`) and is the one stage source in the
+  app and in `simulate` (`DemoStages.source`), with `resetClock()` after the headless run.
+- **Tests.** `everyStageReachesItsFreeze` asserts `reason == "want"` for all eight, glooms ≥ 3 (sweep ≥ 2), and for
+  daily/longnight ≥ 4 surfaced with ≥ 2 lit. For fireflies it asserts a firefly near the band and ≥ 3 surfaced, and
+  for Long Night t ≥ 60. `GLINT-STAGE` now prints surfaced, lit and fireflies. New: `busyWantsAFullLitField`,
+  `aimKeyFollowsTheCrowd`.
+- **Caveat.** The app's Long Night seed is the demo's rolling seed, not the test's 7, so its waves differ. The
+  crowd-gated aim is what makes the app's frame land anyway.

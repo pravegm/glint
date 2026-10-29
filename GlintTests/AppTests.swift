@@ -1498,11 +1498,63 @@ struct StageTests {
         for name in DemoStageName.allCases {
             let plan = DemoStages.plan(name, today: 300)
             let result = DemoStages.simulate(plan)
+            let out = result.snapshot.glooms.filter { !$0.submerged }
+            let lit = out.filter { $0.lit > 0.1 }.count
             print("GLINT-STAGE \(name.rawValue) reason=\(result.reason) t=\(result.snapshot.time) "
-                  + "glooms=\(result.snapshot.glooms.count) flowers=\(result.snapshot.flowersLeft)")
-            #expect(result.reason == "want" || result.reason == "timeout")
+                  + "glooms=\(result.snapshot.glooms.count) surfaced=\(out.count) lit=\(lit) "
+                  + "fireflies=\(result.snapshot.fireflies.count) flowers=\(result.snapshot.flowersLeft)")
+            // R5d: every stage lands on its moment (never a timeout) with a field worth a screenshot.
+            #expect(result.reason == "want", "\(name.rawValue): \(result.reason)")
             #expect(result.snapshot.phase == .playing)
-            #expect(result.snapshot.time >= plan.freezeFrom - 1e-6 || result.reason == "want")
+            #expect(result.snapshot.time >= plan.freezeFrom - 1e-6)
+            #expect(result.snapshot.glooms.count >= (name == .sweep ? 2 : 3), "\(name.rawValue) glooms")
+            switch name {
+            case .daily, .longnight:
+                #expect(out.count >= 4, "\(name.rawValue) surfaced")
+                #expect(lit >= 2, "\(name.rawValue) lit")
+            case .fireflies:
+                #expect(DemoBusy.fireflyNearBand(result.snapshot))
+                #expect(out.count >= 3)
+            default:
+                break
+            }
+            if name == .longnight { #expect(result.snapshot.time >= 60, "after wave 3's banner") }
         }
+    }
+
+    /// R5d: `busy` wants N glooms out of the ground (submerged ones don't count) and M of them lit.
+    @Test func busyWantsAFullLitField() {
+        func gloom(_ id: Int, lit: Double, submerged: Bool = false) -> GloomState {
+            GloomState(id: id, kind: .murk, u: 0.5, d: 0.4, radius: 0.05, hp: 1, maxHP: 1, lit: lit,
+                       submerged: submerged)
+        }
+        var plan = DemoStages.plan(.daily, today: 300)
+        plan.freezeFrom = 0
+        plan.freezeBy = 100
+        var watch = StageWatch(plan: plan)
+        var snap = DawnSnapshot(mode: .daily(day: 300), phase: .playing, time: 1)
+        snap.glooms = [gloom(1, lit: 0.5), gloom(2, lit: 0.5), gloom(3, lit: 0), gloom(4, lit: 0, submerged: true)]
+        #expect(!watch.step(snapshot: snap, events: []))
+        snap.glooms[3].submerged = false
+        #expect(watch.step(snapshot: snap, events: []))
+        #expect(watch.reason == "want")
+    }
+
+    /// R5d: an `aim` key moves the band onto the crowd (≤ 1.5 d/s), and only once `aimCrowd` are out.
+    @Test @MainActor func aimKeyFollowsTheCrowd() {
+        let path = [StageKey(t: 0, band: 0.08), StageKey(t: 1, band: DemoStages.aim)]
+        #expect(abs(DemoStages.band(at: 0.5, path: path) - 0.08) < 1e-9)
+        #expect(DemoStages.band(at: 1.2, path: path) == DemoStages.aim)
+        let source = ScriptedBandSource(path: path)
+        var snap = DawnSnapshot(mode: .level(1), phase: .playing, time: 2)
+        snap.glooms = (1...3).map { GloomState(id: $0, kind: .murk, u: 0.5, d: 0.5, radius: 0.05, hp: 1, maxHP: 1) }
+        source.observe(snap)
+        var band = 0.0
+        for i in 0..<60 { band = source.mirror(at: Double(i) / 120).band }
+        #expect(abs(band - 0.08) < 1e-6)                           // three out: it waits in the shade
+        snap.glooms.append(GloomState(id: 4, kind: .murk, u: 0.5, d: 0.5, radius: 0.05, hp: 1, maxHP: 1))
+        source.observe(snap)
+        for i in 60..<240 { band = source.mirror(at: Double(i) / 120).band }
+        #expect(abs(band - 0.5) < 0.02)
     }
 }

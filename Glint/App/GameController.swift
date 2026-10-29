@@ -1443,14 +1443,8 @@ final class GameController: ObservableObject, GardenDriver {
     private func startStage(_ plan: DemoStagePlan, seed: UInt64) {
         stagePlan = plan
         stageWatch = StageWatch(plan: plan)
-        if plan.usesPilot {
-            let p = PilotSource(skill: plan.pilotSkill, seed: seed)
-            p.lag = plan.pilotLag
-            playPilot = p
-            pilotIsFallback = false
-        } else {
-            stageSource = ScriptedBandSource(path: plan.path)
-        }
+        // R5d: one source for every stage (Long Night's pilot plays inside it until the path takes over).
+        stageSource = DemoStages.source(plan, seed: seed)
         play(plan.mode)
         guard let session else { return }
         let step = 1.0 / 120.0
@@ -1464,13 +1458,12 @@ final class GameController: ObservableObject, GardenDriver {
             let input = source.mirror(at: clock)
             let events = session.step(dt: step, input: input)
             stageSource?.observe(session.snapshot)
-            playPilot?.observe(session.snapshot)
             _ = watch.step(snapshot: session.snapshot, events: events)
             clock += step
             budget -= 1
         }
         stageWatch = watch
-        playPilot?.resetClock()
+        stageSource?.resetClock()
         fixedStep = true
         publishHUD(session.snapshot, now: CACurrentMediaTime(), force: true)
         AppTrace.note("stage \(plan.name.rawValue) live from \(AppTrace.fixed(session.snapshot.time, 2))")
