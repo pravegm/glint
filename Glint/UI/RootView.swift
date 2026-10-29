@@ -103,7 +103,8 @@ struct RootView: View {
         if let scene = controller.scene {
             // R5 (QA P2-5): 120 fps only for the level itself; 30 behind the menus; stopped under the cover view
             // (the 4 Hz ticker and the hinge samples still run the close-first gate there).
-            SpriteView(scene: scene, isPaused: cover && !controller.forcedCover,
+            // R5d: a demo freeze holds it too (the bursts and labels drawn at the freeze stay for the capture).
+            SpriteView(scene: scene, isPaused: (cover && !controller.forcedCover) || (controller.sceneHeld && controller.route == .play),
                        preferredFramesPerSecond: controller.route.showsSession ? 120 : 30)
                 .frame(width: size.width, height: size.height)
                 .allowsHitTesting(controller.route == .play)

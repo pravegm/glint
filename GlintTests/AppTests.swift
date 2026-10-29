@@ -1513,13 +1513,35 @@ struct StageTests {
                 #expect(out.count >= 4, "\(name.rawValue) surfaced")
                 #expect(lit >= 2, "\(name.rawValue) lit")
             case .fireflies:
+                // Founder (run 40933534304): 2–3 fireflies, one just past the band (safe), 2 glooms lit nearby.
                 #expect(DemoBusy.fireflyNearBand(result.snapshot))
                 #expect(out.count >= 3)
+                #expect(lit >= 2, "fireflies lit")
+                #expect(result.snapshot.fireflies.count >= 2)
+                let band = result.snapshot.band
+                #expect(result.snapshot.fireflies.contains { $0.d > band && $0.d - band <= DemoBusy.fireflyReach })
+            case .sweep:
+                // Founder (run 40933534304): fresh bursts + "Sweep!" (a sweep in the last 0.1 s), ≥ 3 still lit.
+                #expect(lit >= 3, "sweep lit")
+                let since = result.watch.lastSweep.map { result.snapshot.time - $0 }
+                #expect(since.map { $0 <= 0.1 } == true, "sweep \(String(describing: since))")
+                #expect(result.watch.pops >= 3)
             default:
                 break
             }
             if name == .longnight { #expect(result.snapshot.time >= 60, "after wave 3's banner") }
         }
+    }
+
+    /// R5d: a demo freeze holds the garden's view (FX stay as drawn) unless the light is pinned after it; the watch
+    /// remembers the latest Sweep.
+    @Test func freezeHoldsTheSceneAndWatchSeesSweeps() {
+        #expect(AppRules.holdsSceneAtFreeze(pinnedBand: false))
+        #expect(!AppRules.holdsSceneAtFreeze(pinnedBand: true))
+        var watch = StageWatch(plan: DemoStages.plan(.sweep, today: 300))
+        let snap = DawnSnapshot(mode: .level(3), phase: .playing, time: 3.4)
+        _ = watch.step(snapshot: snap, events: [.swept(count: 3, bonus: 90)])
+        #expect(watch.lastSweep == 3.4)
     }
 
     /// R5d: `busy` wants N glooms out of the ground (submerged ones don't count) and M of them lit.

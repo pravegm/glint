@@ -88,6 +88,9 @@ final class GameController: ObservableObject, GardenDriver {
     @Published private(set) var isDuo = false
     @Published private(set) var hingeSeen: Bool
     @Published private(set) var scene: GardenScene?
+    /// R5d: a demo freeze holds the garden's view (SpriteKit stops), so the pop bursts, "Sweep!" and the squints
+    /// drawn at the freeze stay on screen for the capture instead of playing out while the session stands still.
+    @Published private(set) var sceneHeld = false
     @Published private(set) var hingeRefresh = 0
     @Published private(set) var showsIcon = false
     /// Demo `screen=badges`: the ten Game Center badges on screen (while they are written to Documents/badges).
@@ -582,6 +585,7 @@ final class GameController: ObservableObject, GardenDriver {
         finishAt = nil
         sunriseStars = nil
         demoFrozen = false
+        sceneHeld = false
         freezeAt = nil
         graceLeft = 0
         setPause(PauseFlags())
@@ -680,6 +684,7 @@ final class GameController: ObservableObject, GardenDriver {
         pendingHint = nil
         finishAt = nil
         demoFrozen = false
+        sceneHeld = false
         freezeAt = nil
         fixedStep = false
         demoTarget = nil
@@ -1473,9 +1478,18 @@ final class GameController: ObservableObject, GardenDriver {
         demoFrozen = true
         freezeAt = nil
         setFeedbackPaused(true)
+        // R5d: hold the view (published, so SwiftUI pauses it after this frame has drawn the freeze). Not with
+        // `pinBand=`, whose pinned light is drawn on the frames after the freeze.
+        sceneHeld = AppRules.holdsSceneAtFreeze(pinnedBand: demo?.pinBand != nil)
         AppTrace.note("freeze \(tag)")
         #if DEBUG
         AppTrace.demo("GLINT-T freeze \(tag)")
+        if sceneHeld, !tag.hasPrefix("stage-"), let snap = session?.snapshot {
+            // A held view stops the 2 Hz band lines, so the light at the freeze is logged here (stages log theirs).
+            AppTrace.demo("GLINT-T band \(AppTrace.fixed(snap.band, 3)) angle "
+                          + "\(hinge.hasHinge ? AppTrace.fixed(hinge.angle ?? -1, 1) : "-1") phase "
+                          + "\(AppRules.phaseName(snap.phase)) shut \(hinge.hasHinge && hinge.isShut ? 1 : 0)")
+        }
         #endif
     }
 

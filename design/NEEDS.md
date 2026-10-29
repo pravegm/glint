@@ -95,3 +95,14 @@ not) and deleting the line.
   (Contracts) and Core raising it on L3. The App will add the copy and the subject rule once the case exists.
 - Player QA copy for `Achievements.swift`: "Pop 3 or more shadows in one Sweep." and "Reach a ×4 multiplier: 13 pops
   in a row." (these are Core strings).
+
+## App (R5d) → Scene / founder
+- **Fireflies read small (store P04):** at store-frame scale a firefly is a tiny dot beside a murk. Could the Scene
+  give fireflies a bigger lime halo and a short trail that shows even at the drift speed (0.075 d/s), not only
+  during a dart? `stage=fireflies` now freezes one just past the band, mid-dart, plus two higher up.
+- **Demo freezes hold the view:** a demo freeze now pauses the `SpriteView` (`GameController.sceneHeld`), so FX stay
+  exactly as drawn at the freeze. If a Scene effect needs frames after a freeze, tell App.
+- **Dynamic Island pill in raw P04 (run 40933534304):** nothing in the app differs for that stage. The status bar
+  and system overlays are always hidden, no hint, toast or alert was up at capture (log), and the app has no Live
+  Activity or Now Playing. The black pill is the simulator's own island state at that capture. Re-capture, or have
+  `ci/store-set.sh` flag a dark pill at the top centre (CI is not App's file).

@@ -20,12 +20,12 @@ enum StageWant: Equatable, Sendable {
     case lit(GloomKind)
     /// A firefly out of the crease shade within reach of the band.
     case firefly
-    /// An event (freezes `delay` s after it): `.sweep` 0.12 s, `.split` 0.35 s, `.eaten` 0.3 s, `.wave` 0.6 s.
+    /// An event (freezes `delay` s after the FIRST one): `.sweep` 0.05 s, `.split` 0.35 s, `.eaten` 0.3 s.
     case event(DemoMode.Stop, Double)
     /// R5d: a full field: at least `surfaced` glooms out of the ground, `lit` of them in the light.
     case busy(surfaced: Int, lit: Int)
-    /// R5d: a firefly within reach of the band AND at least `glooms` surfaced glooms on the field.
-    case fireflyWith(glooms: Int)
+    /// R5d: a firefly within reach of the band AND at least `glooms` surfaced glooms, `lit` of them lit.
+    case fireflyWith(glooms: Int, lit: Int)
 }
 
 /// One point of the band's scripted path: session time → band (d).
@@ -85,6 +85,17 @@ enum DemoStages {
         SpawnGroup(time: t, kind: kind, count: n, u: u, formation: f, speedScale: speed, surface: surface)
     }
 
+    /// R5d: one gloom placed by hand: it rises from just under `d` (surfacing ~0.1 s after `t`) at `u`.
+    private static func one(_ t: Double, _ kind: GloomKind, u: Double, d: Double, speed: Double) -> SpawnGroup {
+        SpawnGroup(time: t, kind: .gloom(kind), count: 1, u: u...u, formation: .cluster, speedScale: speed,
+                   surface: d...d, startD: d - 0.01)
+    }
+
+    /// R5d: one firefly at `u`, rising from the crease at `t`.
+    private static func firefly(_ t: Double, u: Double) -> SpawnGroup {
+        SpawnGroup(time: t, kind: .firefly, count: 1, u: u...u, formation: .cluster, speedScale: 1.0)
+    }
+
     private static func spec(_ n: Int, _ title: String, _ duration: Double, _ groups: [SpawnGroup],
                              clouds: [CloudSpec] = []) -> LevelSpec {
         LevelSpec(number: n, world: LevelBook.world(of: n), title: title, duration: duration,
@@ -111,16 +122,22 @@ enum DemoStages {
                                  usesPilot: false, pilotSkill: 0, pilotLag: 0, freezeFrom: 5.0, freezeBy: 7.0,
                                  want: .pops(2))
         case .sweep:
-            // A flock of six wisps surfacing in a line at d 0.5; the band sweeps through them.
-            let s = spec(3, "Ladder of Wisps", 12, [
-                group(0.5, .gloom(.wisp), 6, 0.15...0.85, .line, 0.6, 0.5...0.5),
-                group(1.5, .gloom(.murk), 2, 0.25...0.75, .line, 0.8, 0.30...0.35),
-            ])
+            // R5d: eight wisps in a shallow diagonal (d 0.400 → 0.449 across u), surfaced together at 2.05 s and
+            // walking out at 0.126 d/s; the band closes on them at 0.15 d/s, so they pop one by one ~0.05 s apart
+            // (each when the band is ~0.076 short of it). Frozen 0.05 s after the first Sweep (the 3rd pop): three
+            // fresh bursts, "Sweep!", the 4th popping and 4 more lit (squinting) ahead. Two murks deep, unlit.
+            var groups: [SpawnGroup] = (0..<8).map { i in
+                one(2.0, .wisp, u: 0.12 + 0.76 * Double(i) / 7, d: 0.400 + 0.007 * Double(i), speed: 0.6)
+            }
+            groups.append(one(0.5, .murk, u: 0.3, d: 0.58, speed: 0.8))
+            groups.append(one(0.5, .murk, u: 0.72, d: 0.6, speed: 0.8))
+            let s = spec(3, "Ladder of Wisps", 12, groups)
             return DemoStagePlan(name: name, mode: .level(3), spec: s,
-                                 path: [StageKey(t: 0, band: 0.2), StageKey(t: 3.3, band: 0.2),
-                                        StageKey(t: 3.9, band: 0.72), StageKey(t: 9, band: 0.72)],
+                                 path: [StageKey(t: 0, band: 0.2), StageKey(t: 2.6, band: 0.2),
+                                        StageKey(t: 3.0, band: 0.394), StageKey(t: 4.0, band: 0.67),
+                                        StageKey(t: 9, band: 0.72)],
                                  usesPilot: false, pilotSkill: 0, pilotLag: 0, freezeFrom: 3.0, freezeBy: 6.0,
-                                 want: .event(.sweep, 0.12))
+                                 want: .event(.sweep, 0.05))
         case .brute:
             // A brute surfacing at d 0.5, tracked by the band (lit and steaming), murks around, one still underground.
             let s = spec(6, "Clover", 20, [
@@ -135,18 +152,23 @@ enum DemoStages {
                                  usesPilot: false, pilotSkill: 0, pilotLag: 0, freezeFrom: 7.5, freezeBy: 9.5,
                                  want: .lit(.brute))
         case .fireflies:
-            // R5d: the band waits beyond the fireflies (they drift out towards it, never through it), four murks
-            // surface below it and walk up into the light: a firefly within 0.15 of the band, glooms around it.
-            // (A firefly rises at 0.075 d/s: within 0.15 of the band at 0.74 by ~8.2 s; the murks, out at ~5.5 s at
-            // d 0.28–0.38, reach the light (d > 0.62) only after ~9 s.)
+            // R5d (founder, store run 40933534304): three fireflies, one just past the band (safe), the band lighting
+            // two murks just above it, the rest scattered. The band waits deep (0.86, nothing near it), then at 7.0 s
+            // sweeps up to 0.48 in 0.35 s, through firefly 1 (~0.13 s in the core of the 0.6 s that scorch; the light
+            // makes it dart 0.08 out): at 7.5 s it is ~0.13 past the band, unlit. Fireflies 2 and 3 (d ~0.35, ~0.24)
+            // stay out of the light. Murks walk 0.06 d/s from 6.1 s: the pair at d ~0.40/0.43 lit (squinting, ~0.2 s
+            // of their 0.55 HP burnt), three at 0.23–0.32 unlit.
             let s = spec(4, "Fireflies", 20, [
-                group(0.1, .firefly, 2, 0.35...0.65, .stagger(1.2), 1.0, 0...0),
-                group(2.8, .gloom(.murk), 5, 0.12...0.88, .line, 0.8, 0.28...0.38),
+                firefly(0.1, u: 0.62), firefly(2.6, u: 0.22), firefly(4.0, u: 0.84),
+                one(6.0, .murk, u: 0.40, d: 0.316, speed: 0.6), one(6.0, .murk, u: 0.80, d: 0.346, speed: 0.6),
+                one(6.0, .murk, u: 0.14, d: 0.17, speed: 0.6), one(6.0, .murk, u: 0.54, d: 0.21, speed: 0.6),
+                one(6.0, .murk, u: 0.68, d: 0.15, speed: 0.6),
             ])
             return DemoStagePlan(name: name, mode: .level(4), spec: s,
-                                 path: [StageKey(t: 0, band: 0.74), StageKey(t: 20, band: 0.74)],
-                                 usesPilot: false, pilotSkill: 0, pilotLag: 0, freezeFrom: 6.5, freezeBy: 13.0,
-                                 want: .fireflyWith(glooms: 3))
+                                 path: [StageKey(t: 0, band: 0.86), StageKey(t: 7.0, band: 0.86),
+                                        StageKey(t: 7.35, band: 0.48), StageKey(t: 20, band: 0.48)],
+                                 usesPilot: false, pilotSkill: 0, pilotLag: 0, freezeFrom: 7.5, freezeBy: 9.0,
+                                 want: .fireflyWith(glooms: 3, lit: 2))
         case .rooftops:
             // L14's tiles, a cloud shadow cutting the band, a splitter popping into wisps, a hopper hopping.
             let s = spec(14, "Hop Along", 20, [
@@ -215,7 +237,8 @@ enum DemoStages {
     /// Runs a stage headless to its freeze (tests; the app does the same, the last stretch live). Returns the freeze
     /// and what triggered it ("want", "timeout" or "ended").
     @MainActor
-    static func simulate(_ plan: DemoStagePlan, seed: UInt64 = 7) -> (snapshot: DawnSnapshot, reason: String) {
+    static func simulate(_ plan: DemoStagePlan, seed: UInt64 = 7)
+        -> (snapshot: DawnSnapshot, reason: String, watch: StageWatch) {
         let s = session(plan, seed: seed)
         let scripted = source(plan, seed: seed)
         var watch = StageWatch(plan: plan)
@@ -226,11 +249,11 @@ enum DemoStages {
             let input = scripted.mirror(at: clock)
             let events = s.step(dt: step, input: input)
             scripted.observe(s.snapshot)
-            if watch.step(snapshot: s.snapshot, events: events) { return (s.snapshot, watch.reason) }
+            if watch.step(snapshot: s.snapshot, events: events) { return (s.snapshot, watch.reason, watch) }
             clock += step
             budget -= 1
         }
-        return (s.snapshot, "ended")
+        return (s.snapshot, "ended", watch)
     }
 }
 
@@ -239,6 +262,8 @@ struct StageWatch: Equatable {
     let plan: DemoStagePlan
     private(set) var pops = 0
     private(set) var lastPop: Double?
+    /// R5d: the session time of the latest `.swept` (the "Sweep!" text is fresh just after it).
+    private(set) var lastSweep: Double?
     private var pendingAt: Double?
     private(set) var reason = ""
 
@@ -251,6 +276,7 @@ struct StageWatch: Equatable {
                 pops += 1
                 lastPop = snap.time
             }
+            if case .swept = e { lastSweep = snap.time }
         }
         if let at = pendingAt {
             if snap.time >= at {
@@ -288,8 +314,9 @@ struct StageWatch: Equatable {
                 reason = "want"
                 return true
             }
-        case let .fireflyWith(glooms):
-            if DemoBusy.fireflyNearBand(snap) && snap.glooms.filter({ !$0.submerged }).count >= glooms {
+        case let .fireflyWith(glooms, lit):
+            let out = snap.glooms.filter { !$0.submerged }
+            if DemoBusy.fireflyNearBand(snap) && out.count >= glooms && out.filter({ $0.lit > 0.1 }).count >= lit {
                 reason = "want"
                 return true
             }

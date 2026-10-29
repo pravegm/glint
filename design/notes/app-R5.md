@@ -195,3 +195,23 @@ Nothing here has been compiled (CI is the compiler). Nothing is committed. Sourc
   `aimKeyFollowsTheCrowd`.
 - **Caveat.** The app's Long Night seed is the demo's rolling seed, not the test's 7, so its waves differ. The
   crowd-gated aim is what makes the app's frame land anyway.
+
+## R5e store frames (run 40933534304: P02 empty, P04 staged)
+- **The cause of P02's empty garden.** The freeze stopped the session, but SpriteKit kept animating: bursts and
+  labels aged out before the capture, seconds later. A demo freeze now publishes `sceneHeld`, and RootView pauses the
+  `SpriteView`, after the freeze frame has drawn. Not with `pinBand=` (`AppRules.holdsSceneAtFreeze`). A held view
+  stops the 2 Hz band lines, so `freeze()` logs one `GLINT-T band` line itself (stages already logged theirs).
+- **`sweep`.** Eight wisps placed by hand (`one(...)`: `startD` just under the surface, so they surface together at
+  2.05 s) in a shallow diagonal, d 0.400 → 0.449 across u 0.12 → 0.88. The band closes at 0.15 d/s relative, so a
+  wisp pops roughly every 0.047 s (each about 0.076 short of the band). Freeze 0.05 s after the FIRST `.swept` (the
+  3rd pop, ~3.42 s): three fresh bursts plus "Sweep!", the 4th popping, 4–5 still lit ahead. Two murks deep, unlit.
+- **`fireflies`.** Three fireflies at u 0.62 / 0.22 / 0.84 (t 0.1 / 2.6 / 4.0). The band waits deep at 0.86, then
+  at 7.0 s sweeps up to 0.48 in 0.35 s through firefly 1. That is about 0.13 s in the core (0.6 s scorches); it
+  darts 0.08 out and sits ~0.13 past the band at 7.5 s. Five murks are placed by hand at scattered u/d: two lit at
+  ~0.40/0.43, three unlit higher up. The want is `fireflyWith(glooms: 3, lit: 2)`.
+- **Tests.**
+  - sweep: ≥ 3 lit, a `.swept` within 0.1 s of the freeze (`StageWatch.lastSweep`), ≥ 3 pops.
+  - fireflies: ≥ 2 lit, ≥ 2 fireflies, one past the band within reach.
+  - `freezeHoldsTheSceneAndWatchSeesSweeps`. `simulate` now also returns the watch.
+- **Not App's.** The firefly art size (NEEDS → Scene). The Dynamic Island pill in raw P04: nothing in the app
+  differs, so it is the simulator's island state at capture (NEEDS → founder/CI).

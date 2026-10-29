@@ -361,6 +361,12 @@ enum AppRules {
         route == .play && stage == .live && phase == .playing && !paused
     }
 
+    /// R5d: a demo freeze holds the garden's view (its FX stay as drawn), except with `pinBand=` (the pinned light
+    /// is drawn on the frames after the freeze).
+    static func holdsSceneAtFreeze(pinnedBand: Bool) -> Bool {
+        !pinnedBand
+    }
+
     /// R5 (QA P1-4): a world's last level won while the next world is still shut: what it needs.
     static func worldGateNote(level n: Int, data: ProgressData) -> String? {
         let w = LevelBook.world(of: n)
