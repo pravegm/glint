@@ -102,6 +102,15 @@ b=$(lastband "$m")
 near "$b" 0.51 0.10 && since "$m" | grep -q "phase playing" && ok=1 || ok=0
 verdict BAND-MID $ok "108°: band ${b:-none}"
 
+# PAUSE-SHUT right away (R3: holding still for long now loses the level, so later checks would see Results).
+shot 07-playing
+m=$(mark); hsweep 108 5 1.5; sleep 2; shot 08-paused-cover
+since "$m" | grep -q "GLINT-T paused shut" && p=1 || p=0
+m2=$(mark); hsweep 5 108 1.5; sleep 3; shot 09-resumed
+since "$m2" | grep -q "GLINT-T resumed" && r=1 || r=0
+[[ $p == 1 && $r == 1 ]] && ok=1 || ok=0
+verdict PAUSE-SHUT $ok "paused=$p resumed=$r"
+
 m=$(mark); hsweep 108 135 1.5; sleep 2; shot 05-band-edge
 b=$(lastband "$m")
 awk -v b="${b:-0}" 'BEGIN { exit !(b >= 0.92) }' && ok=1 || ok=0
@@ -112,13 +121,6 @@ b=$(lastband "$m")
 near "$b" 0.255 0.10 && ok=1 || ok=0
 verdict BAND-BACK $ok "94°: band ${b:-none}"
 
-sleep 6; shot 07-playing
-m=$(mark); hsweep 94 5 1.5; sleep 2; shot 08-paused-cover
-since "$m" | grep -q "GLINT-T paused shut" && p=1 || p=0
-m2=$(mark); hsweep 5 100 1.5; sleep 3; shot 09-resumed
-since "$m2" | grep -q "GLINT-T resumed" && r=1 || r=0
-[[ $p == 1 && $r == 1 ]] && ok=1 || ok=0
-verdict PAUSE-SHUT $ok "paused=$p resumed=$r"
 
 sleep 10; shot 10-later
 to 30 xcrun simctl terminate "$UDID" "$BUNDLE" 2>/dev/null || true
