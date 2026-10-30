@@ -66,3 +66,9 @@
 - Store frames: stage= moments; demo freezes now hold the scene. Store run 40941504707: 6.9" 10/10, 6.3" 10/10,
   Duo 10/10, header + search art OK. **Uploaded to App Store Connect** (asc 40946051208): all three sets for en-GB and
   en-US, header and search art. Build 3 attached. Founder-only steps are in docs/SUBMISSION.md.
+
+## Fri 30 Oct 2026: release on approval, then on hold
+- Founder: release on approval. asc 41025448018: releaseType AFTER_APPROVAL, nomination 24 Nov, glint.daily from 2 Nov.
+- Founder: **hold the submission until Swoop or Snapjaw clears its 4.3** (both rejected 29 Oct). Everything stays ready
+  (build 3 attached, listing, screenshots, Game Center). On clearance: check build 3 is still current and the nomination
+  date still has 3 weeks' notice.

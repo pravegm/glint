@@ -4,6 +4,8 @@
 header and search art, Game Center leaderboards, achievements and badges, age rating, review notes, the build). This
 page lists only the clicks that need you. Do them in order. Each takes a minute or two.*
 
+> **ON HOLD (founder, 30 Oct 2026): don’t submit until Swoop or Snapjaw clears its 4.3.** Everything below stays ready.
+>
 > **Read first: Apple 4.3 (spam) risk, 30 Oct 2026.** On 29 Oct Apple rejected **Swoop** and **Snapjaw** under
 > guideline 4.3 ("spam": one account shipping many similar apps). Guideline 4.3(b) says repeated cases "may lead to
 > removal from the Apple Developer Program", which would take down every app on the account (Squish, Brim, Hush
