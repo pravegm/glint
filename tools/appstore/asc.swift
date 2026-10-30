@@ -2807,7 +2807,7 @@ let manualAlways = [
     "Accessibility Nutrition Labels: on launch day, only the labels accessibility.md marks as passed (runbook §7, step 3).",
     "EU trader status (DSA): App Information > App Store Regulations and Permits. Handled at account level for Squish, but the sister apps were asked again per app: check it shows complete for Glint: Sun Mirror (runbook §6a).",
     "The build: pick it on the 1.0 version page, Add for Review, Submit to App Review (docs/LAUNCH-RUNBOOK.md §6).",
-    "Release: manual (metadata.md §9): the founder presses Release This Version on Tue 15 Dec 2026 (runbook §7). This tool never submits or releases.",
+    "Release: automatic on approval (founder 30 Oct 2026, metadata.md §9). This tool never submits or releases.",
 ]
 
 // MARK: - Inherited personal fields (--inherit-from)
