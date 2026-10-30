@@ -79,8 +79,8 @@
     }
   },
   "release": {
-    "_comment": "metadata.md §9 and §12: manual release; the founder presses Release This Version on Tue 15 Dec 2026 at about 08:00 UK (runbook §7). The tool never releases or submits.",
-    "type": "MANUAL",
+    "_comment": "metadata.md §9 and §12: founder 30 Oct 2026, release automatically as soon as App Review approves. The tool never submits; the founder presses Submit.",
+    "type": "AFTER_APPROVAL",
     "earliestReleaseDate": null
   },
   "price": {
@@ -329,7 +329,7 @@
       "scoreRangeStart": 0,
       "scoreRangeEnd": 10000000,
       "recurrence": {
-        "startDate": "2026-12-15T00:00:00Z",
+        "startDate": "2026-11-02T00:00:00Z",
         "duration": "PT24H",
         "rule": "FREQ=DAILY;INTERVAL=1"
       },
@@ -409,12 +409,12 @@
     ]
   },
   "nomination": {
-    "_comment": "docs/appstore/featuring-nomination.md. notes = Helpful Details. submit: false (R5): the tool saves it as a draft; the founder reads it and presses Submit in App Store Connect > Featuring > Nominations by Mon 23 Nov 2026 (3 weeks before launch). Set true to let the tool submit.",
+    "_comment": "docs/appstore/featuring-nomination.md. notes = Helpful Details. submit: false: the tool never submits a nomination (the one submitted by mistake on 29 Oct is updated in place). Founder 30 Oct: release on approval, so the publish date is Tue 24 Nov 2026, the earliest with Apple’s 3 weeks’ notice and after Brim’s week.",
     "name": "Glint: Sun Mirror - App Launch - iPhone Duo light game",
     "type": "APP_LAUNCH",
     "description": "Glint turns the top half of iPhone Duo into a mirror. Open the phone and it catches the sunrise, throwing a band of light across the garden on the other half. The phone's angle is the aim: the wider you open it, the further the light reaches, smoothly and both ways, and shut means dark.\n\nShadow critters seep out of the crease towards five flowers. Light pops them in gold sparks and petals, and a sweep through a crowd climbs a rising scale of notes. Fireflies must be spared: they replant lost flowers. Five kinds of shadow each want a different move, from flocks of wisps to brutes that have to be followed.\n\n30 handmade sunrises in three worlds, with stars to earn, then an endless Long Night and a daily Today's Dawn for everyone. Every level starts with the phone shut; shutting it pauses. Other iPhones aim the light by dragging. Every sound is synthesized in the app. No ads, no in-app purchases, no data collected.",
     "notes": "Optimized for iPhone Duo: one half is a mirror, the other the play field, in laptop or book pose. Public iOS 27.1 hinge API: the angle maps continuously to where the light lands, from 80 to 135 degrees, so play is gentle and never flat, with no pause near 90 degrees. Closing is a real pause; the outer display shows it. A new hinge verb for us: reach, aimed by angle. Also from us: Squish, Brim, Swoop, Hush and Snapjaw.",
-    "publishStartDate": "2026-12-15T08:00:00Z",
+    "publishStartDate": "2026-11-24T08:00:00Z",
     "deviceFamilies": [
       "IPHONE"
     ],

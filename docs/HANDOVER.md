@@ -1,6 +1,14 @@
 # Glint: handover for the founder
 
-*Last updated Thu 29 Oct 2026, evening (round 5, TestFlight build 3).*
+*Last updated Fri 30 Oct 2026 (release on approval; round 5, TestFlight build 3).*
+
+> **Read first: Apple 4.3 (spam) risk, 30 Oct 2026.** On 29 Oct Apple rejected **Swoop** and **Snapjaw** under
+> guideline 4.3 ("spam": one account shipping many similar apps). Guideline 4.3(b) says repeated cases "may lead to
+> removal from the Apple Developer Program", which would take down every app on the account (Squish, Brim, Hush
+> included). **Recommendation: do not submit Glint until Swoop’s and Snapjaw’s 4.3 replies are answered and at least
+> one clears.** Everything is ready, so submitting later costs nothing. If you submit anyway, answer any 4.3 honestly
+> (shared code, AI-assisted development) with a phone video of the hinge play; never resubmit unchanged.
+
 
 ## What it is
 **Glint: Sun Mirror ("Catch the sun, pop the shadows").** Your sixth Duo game. £1.99, no ads, no in-app purchases,
@@ -59,14 +67,13 @@ no data collected, rated 4+.
 See `docs/SUBMISSION.md` for every click. **Already in App Store Connect (pushed by Claude):** the listing
 (both English locales), keywords, categories, age rating 4+, review notes, the 6.9-inch, 6.3-inch and Duo screenshot
 sets, the header and search art, Game Center (10 achievements with badges, 3 leaderboards) and build 3. The featuring
-nomination was submitted by the tool on 29 Oct (launch date Tue 15 Dec in its text): check it under Featuring →
-Nominations.
+nomination was submitted by the tool on 29 Oct by mistake; on 30 Oct its date moved to Tue 24 Nov (release on approval): check it under
+Featuring → Nominations.
 1. **TestFlight:** App Store Connect → TestFlight → your group → **+** → add **build 3**. To skip this next time, turn
    on the group's automatic distribution.
 2. **Website:** turn on GitHub Pages (Settings → Pages → main → /docs). Apple needs the support and privacy pages.
 3. **App Privacy** ("no data"), **Pricing** (£1.99, untick Mac and Vision Pro), **EU trader status**.
-4. **Submit for Review.** The default plan is a manual release on Tue 15 Dec, the free week after your other games;
-   you can release earlier.
+4. **Submit for Review.** Release is automatic on approval (your choice, 30 Oct). Read the 4.3 note at the top first.
 
 ## Feedback
 One line per thing in chat is enough. Settings › About › hold the version for 2 s copies a diagnostics log (the hinge

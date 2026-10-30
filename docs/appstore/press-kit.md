@@ -1,6 +1,6 @@
 # Glint: Press kit
 
-*Written Wed 28 Oct 2026 by the launch lead, from `design/GAME-DESIGN.md` and `research/01-market.md`. Everything here is **embargo-free**: anyone may write about Glint from the day they receive it. The public version of the fact sheet is the Press section of `docs/site/index.html`; keep the two in step. The founder sends every email by hand; nothing is automated. **Launch: Tue 15 Dec 2026, about 08:00 UK** (manual release, `metadata.md` §12); send dates are in `social-launch.md` §4.*
+*Written Wed 28 Oct 2026 by the launch lead, from `design/GAME-DESIGN.md` and `research/01-market.md`. Everything here is **embargo-free**: anyone may write about Glint from the day they receive it. The public version of the fact sheet is the Press section of `docs/site/index.html`; keep the two in step. The founder sends every email by hand; nothing is automated. **Launch: on App Review approval** (automatic release, founder 30 Oct 2026; the dates below assumed 15 Dec and move with it); send dates are in `social-launch.md` §4.*
 
 **Links to fill in:** the App Store link `https://apps.apple.com/app/id<Apple ID>` once the app record exists (runbook §1d; it only works from launch morning, since there's no pre-order), the clip link, the press folder, the TestFlight link, promo codes and their expiry, and your name. Everywhere below, these are written in CAPITALS, like CLIP LINK, so they're easy to spot and replace.
 
@@ -27,7 +27,7 @@
 | **Name** | Glint: Sun Mirror (home-screen name Glint) |
 | **Developer** | An independent studio (GitHub `pravegm`), also making Squish, Brim, Swoop, Hush and Snapjaw |
 | **Founder** | Founder's name, left off the live page unless the founder chooses |
-| **Release** | **Tue 15 Dec 2026**, worldwide except China mainland and Vietnam |
+| **Release** | **On approval** (date announced on the day), worldwide except China mainland and Vietnam |
 | **Platform** | iPhone. Designed for iPhone Duo (the hinge is the aim), in laptop or book pose; drag to aim on other iPhones. Requires iOS 18 or later; hinge play uses iOS 27.1, which the Duo ships with |
 | **Price** | £1.99 / $1.99 / €1.99 one-off. No ads, no in-app purchases. Family Sharing on |
 | **Age rating** | 4+ |

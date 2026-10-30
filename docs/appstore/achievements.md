@@ -20,7 +20,7 @@
 | Sort order | High to Low | High to Low | High to Low |
 | Score submission | Best score | Best score | Best score |
 | Score range (optional) | 0 – 10,000,000 | 0 – 10,000,000 | 0 – 90 |
-| Recurring settings | — | Start **Tue 15 Dec 2026, 00:00 UTC** (launch day); duration **1 day**; repeats every **1 day** | — |
+| Recurring settings | — | Start **Mon 2 Nov 2026, 00:00 UTC**; duration **1 day**; repeats every **1 day** | — |
 | What the app submits | the score of every finished **Long Night** run (`PlayMode.endless`) | the score of every finished **Today's Dawn** run of the (UTC) day (`PlayMode.daily(day:)`); best of the day is kept by Game Center | the player's **total stars** across all 30 levels (`ProgressStore`), after every level result and on each Game Center sign-in. It only grows, so "best score" is the current total |
 
 **Why the ranges:** Long Night never ends and the chain reaches ×4, so 10 million leaves room; total stars are 30 levels × 3 = **90**. **Never submit** attract-mode (`PilotSource`) or demo scores.

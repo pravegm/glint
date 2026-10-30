@@ -4,7 +4,7 @@
 
 ## Timing
 
-**Launch date: Tue 15 Dec 2026, about 08:00 UK, released by the founder** (`metadata.md` §12). Brim launches Tue 17 Nov, Hush Tue 1 Dec and Snapjaw Tue 8 Dec; Glint takes the next free week.
+**Launch: as soon as App Review approves (automatic release, founder 30 Oct 2026).** The nomination date is Tue 24 Nov 2026: the earliest with Apple’s 3 weeks’ notice, after Brim’s launch week (17–23 Nov). The nomination itself was submitted on 29 Oct (by mistake, before founder review); the tool updates it in place and never submits.
 
 Apple asks for nominations as early as possible, ideally **at least 3 weeks before** the date: **submit by Mon 23 Nov** (3 weeks and a day). Sooner is better: the tool submits it in runbook §3, as soon as the app record and secrets exist (about 6 weeks' notice).
 
@@ -19,7 +19,7 @@ If the launch moves (the fallback is Tue 19 Jan 2027), tell Claude: the Publish 
 | Nomination Name | `Glint: Sun Mirror - App Launch - iPhone Duo light game` | printed by `build-metadata.js` / 60 |
 | Nomination Type | **App Launch** | — |
 | Description | the block below | printed / 1,000 |
-| Publish Date | **Specific day: 2026-12-15** | — |
+| Publish Date | **Specific day: 2026-11-24** | — |
 | Related Apps | Glint only (auto-filled). Don't add Squish, Brim, Swoop, Hush or Snapjaw: they have their own nominations | up to 10 |
 | Platforms | iOS | — |
 | Countries or Regions | leave the auto-selection (every territory the app is in) | — |

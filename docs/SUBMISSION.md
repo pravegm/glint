@@ -4,6 +4,14 @@
 header and search art, Game Center leaderboards, achievements and badges, age rating, review notes, the build). This
 page lists only the clicks that need you. Do them in order. Each takes a minute or two.*
 
+> **Read first: Apple 4.3 (spam) risk, 30 Oct 2026.** On 29 Oct Apple rejected **Swoop** and **Snapjaw** under
+> guideline 4.3 ("spam": one account shipping many similar apps). Guideline 4.3(b) says repeated cases "may lead to
+> removal from the Apple Developer Program", which would take down every app on the account (Squish, Brim, Hush
+> included). **Recommendation: do not submit Glint until Swoop’s and Snapjaw’s 4.3 replies are answered and at least
+> one clears.** Everything is ready, so submitting later costs nothing. If you submit anyway, answer any 4.3 honestly
+> (shared code, AI-assisted development) with a phone video of the hinge play; never resubmit unchanged.
+
+
 ## Before you submit (once)
 
 1. **Turn on the website** (the support and privacy pages Apple checks). github.com/pravegm/glint → **Settings** →
@@ -37,6 +45,5 @@ page lists only the clicks that need you. Do them in order. Each takes a minute 
 7. Press **Add for Review**, then **Submit to App Review**. Pick "**Manually release this version**" if it asks.
 8. Apple usually answers in 24–48 hours. If they reject it, paste their message to Claude: the replies are drafted
    in `docs/appstore/review-notes.md`.
-9. **Launch day** (the default plan is Tue 15 Dec 08:00 UK, the next free week after your other games; you can
-   release earlier): press **Release This Version**. Then tell Claude, who swaps the website's "Coming soon" for the
+9. **Launch day:** Glint releases **automatically as soon as Apple approves it** (your choice, 30 Oct). Nothing to press. Then tell Claude, who swaps the website's "Coming soon" for the
    App Store link.

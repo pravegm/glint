@@ -240,7 +240,7 @@ Why each risky item is None:
 | Price | Base country **United Kingdom, £1.99**; Apple equalises every other storefront (check the US shows **$1.99**). No launch discount |
 | Availability | Every country or region **except China mainland and Vietnam** (paid games there need a government game licence) |
 | Pre-order | **No** |
-| Release | **Manually release this version**, pressed by the founder on **Tue 15 Dec 2026 at about 08:00 UK** (§12) |
+| Release | **Automatically release this version** as soon as App Review approves it (founder, 30 Oct 2026; §12) |
 | Family Sharing | **On** (permanent once on) |
 | Small Business Program | Account-level; already enrolled for Squish (just confirm it shows Active) |
 | Copyright | `© 2026 pravegm` |

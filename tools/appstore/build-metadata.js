@@ -41,11 +41,11 @@ const site = 'https://pravegm.github.io/glint/';
 for (const u of [site, site + 'support.html', site + 'privacy.html']) need(md, '`' + u + '`', 'metadata.md §9');
 need(md, '**United Kingdom, £1.99**', 'metadata.md §9');
 need(md, '**except China mainland and Vietnam**', 'metadata.md §9');
-need(md, '**Manually release this version**', 'metadata.md §9');
+need(md, '**Automatically release this version**', 'metadata.md §9');
 const copyrightLine = (md.match(/^\| Copyright \| `([^`]+)` \|$/m) || [])[1];
 if (!copyrightLine) problems.push('Copyright row not found');
-const RELEASE = { type: 'MANUAL', earliestReleaseDate: null };
-const LAUNCH = '2026-12-15T08:00:00Z';
+const RELEASE = { type: 'AFTER_APPROVAL', earliestReleaseDate: null };   // founder 30 Oct: release on approval
+const LAUNCH = '2026-11-24T08:00:00Z';   // nomination date: the earliest with 3 weeks' notice, after Brim's week
 
 const rn = rd('docs/appstore/review-notes.md');
 const reviewNotes = blockAfter(rn, '<!-- REVIEW-NOTES:BEGIN -->');
@@ -54,7 +54,7 @@ const fn = rd('docs/appstore/featuring-nomination.md');
 const nomDesc = blockAfter(fn, '### Description');
 const nomNotes = blockAfter(fn, '### Helpful Details');
 const nomName = (fn.match(/\| Nomination Name \| `([^`]+)`/) || [])[1];
-need(fn, 'Specific day: 2026-12-15', 'featuring-nomination.md');
+need(fn, 'Specific day: 2026-11-24', 'featuring-nomination.md');
 
 const ach = rd('docs/appstore/achievements.md');
 const rows = ach.split('\n').filter(l => /^\| \d+ \| `glint\.ach\./.test(l)).map(l => l.split('|').slice(1, -1).map(c => c.trim()));
@@ -69,7 +69,7 @@ const achievements = rows.map(r => {
 });
 for (const s of ['`glint.endless`', '`glint.daily`', '`glint.stars`', '`Long Night`', '`Today\'s Dawn`', '`Total Stars`',
                  '` point` / ` points`', '` star` / ` stars`', '0 – 10,000,000', '0 – 90',
-                 'Start **Tue 15 Dec 2026, 00:00 UTC** (launch day); duration **1 day**; repeats every **1 day**']) need(ach, s, 'achievements.md');
+                 'Start **Mon 2 Nov 2026, 00:00 UTC**; duration **1 day**; repeats every **1 day**']) need(ach, s, 'achievements.md');
 const lbLoc = (n, one, many) => ({ name: n, formatterSuffix: many, formatterSuffixSingular: one });
 const leaderboards = [
   { vendorIdentifier: 'glint.endless', referenceName: 'Long Night', defaultFormatter: 'INTEGER', scoreSortType: 'DESC', submissionType: 'BEST_SCORE',
@@ -77,7 +77,7 @@ const leaderboards = [
     localizations: { 'en-GB': lbLoc('Long Night', ' point', ' points'), 'en-US': lbLoc('Long Night', ' point', ' points') } },
   { vendorIdentifier: 'glint.daily', referenceName: 'Today\'s Dawn', defaultFormatter: 'INTEGER', scoreSortType: 'DESC', submissionType: 'BEST_SCORE',
     scoreRangeStart: 0, scoreRangeEnd: 10000000,
-    recurrence: { startDate: '2026-12-15T00:00:00Z', duration: 'PT24H', rule: 'FREQ=DAILY;INTERVAL=1' },   // launch day (QA R5): never before the Game Center push
+    recurrence: { startDate: '2026-11-02T00:00:00Z', duration: 'PT24H', rule: 'FREQ=DAILY;INTERVAL=1' },   // founder 30 Oct: release on approval, so it starts before any possible launch (after the Game Center push)
     localizations: { 'en-GB': lbLoc('Today\'s Dawn', ' point', ' points'), 'en-US': lbLoc('Today\'s Dawn', ' point', ' points') } },
   { vendorIdentifier: 'glint.stars', referenceName: 'Total stars', defaultFormatter: 'INTEGER', scoreSortType: 'DESC', submissionType: 'BEST_SCORE',
     scoreRangeStart: 0, scoreRangeEnd: 90, recurrence: null,
@@ -146,14 +146,14 @@ const meta = {
     ageRatingOverrideV2: 'NONE', koreaAgeRatingOverride: 'NONE'
   },
   review: { notes: reviewNotes, demoAccountRequired: false, contact: { firstName: null, lastName: null, phone: null, email: null } },
-  release: { _comment: 'metadata.md §9 and §12: manual release; the founder presses Release This Version on Tue 15 Dec 2026 at about 08:00 UK (runbook §7). The tool never releases or submits.', ...RELEASE },
+  release: { _comment: 'metadata.md §9 and §12: founder 30 Oct 2026, release automatically as soon as App Review approves. The tool never submits; the founder presses Submit.', ...RELEASE },
   price: { baseTerritory: 'GBR', customerPrice: '1.99' },
   availability: { _comment: 'metadata.md §9: every territory except China mainland and Vietnam (both need a local game licence; the sister apps exclude both). Mac and Vision Pro availability has no public API: the tool prints the clicks.', excludedTerritories: ['CHN', 'VNM'], availableInNewTerritories: true },
   achievements,
   leaderboards,
   screenshots,
   nomination: {
-    _comment: 'docs/appstore/featuring-nomination.md. notes = Helpful Details. submit: false (R5): the tool saves it as a draft; the founder reads it and presses Submit in App Store Connect > Featuring > Nominations by Mon 23 Nov 2026 (3 weeks before launch). Set true to let the tool submit.',
+    _comment: 'docs/appstore/featuring-nomination.md. notes = Helpful Details. submit: false: the tool never submits a nomination (the one submitted by mistake on 29 Oct is updated in place). Founder 30 Oct: release on approval, so the publish date is Tue 24 Nov 2026, the earliest with Apple’s 3 weeks’ notice and after Brim’s week.',
     name: nomName, type: 'APP_LAUNCH', description: nomDesc, notes: nomNotes, publishStartDate: LAUNCH,
     deviceFamilies: ['IPHONE'], locales: ['en-GB', 'en-US'], supplementalMaterialsUris: [site],
     hasInAppEvents: false, launchInSelectMarketsFirst: false, preOrderEnabled: false, submit: false
